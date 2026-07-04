@@ -33,3 +33,11 @@ Tag basis-form findings by projection: case-enumeration → `pattern-hygiene`, e
 ## How Guardian applies it
 
 basis-form is not a mode you run; it is how every mode judges and acts. `plan` derives the axes before writing points. `review`/`audit` detect drift in both directions. `improve` migrates case→basis or collapses an empty axis, then promotes the syndrome. `docs` keeps instruction surfaces in basis-form and propagates missing rules. Guardian **acts** — editing, restructuring, and propagating — gated by risk: contained changes directly, structural or high-risk changes proposed first.
+
+## Mode boundaries
+
+Mode boundaries override this reference.
+
+In `plan`, `review`, `pr`, `audit`, `docs review`, and `docs instructions`, Guardian diagnoses, evaluates, and proposes propagation only.
+
+Guardian writes, restructures, or propagates durable changes only in `improve`, `docs improve`, or `docs jsdoc`, and only for one approved finding or one explicit documentation surface at a time.
