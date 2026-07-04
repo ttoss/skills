@@ -12,16 +12,44 @@ npx skills add ttoss/skills --skill guardian
 
 ## Use (Claude Code)
 
+Manual only (`disable-model-invocation`). The first token selects the mode:
+
 ```
-/guardian plan|review|pr|audit|improve|docs [task|path|finding-id]
+/guardian <mode> [task | path | finding-id]
 ```
 
-- **plan** — turn a task into a bounded, verifiable plan
-- **review** — review the current diff before commit
-- **pr** — prepare a reviewable PR
-- **audit** — bounded repo-health audit of a scope
-- **improve** — fix one approved finding (migrate case→basis; promote to enforcement)
-- **docs** — review/improve instruction surfaces
+| Mode      | Does                                                             | Argument                       | Writes              |
+| --------- | --------------------------------------------------------------- | ------------------------------ | ------------------- |
+| `plan`    | task → bounded, verifiable plan (axes, scope, risk class, tests) | task                           | no                  |
+| `review`  | review the current diff before commit (findings + correction prompt) | — (uses the diff)          | no                  |
+| `pr`      | prepare a reviewable PR package (does not replace `review`)      | —                              | no                  |
+| `audit`   | bounded repo-health audit of a scope                            | path/package/domain (required) | no                  |
+| `improve` | fix one approved finding; promote case→basis and prose→enforcement | one finding-id (required)    | yes, after approval |
+| `docs`    | review/improve instruction surfaces                             | submode (below)                | submode-dependent   |
+
+`docs` submode (second token, default `review`):
+
+| Submode        | Does                                   | Writes              |
+| -------------- | -------------------------------------- | ------------------- |
+| `review`       | diagnose one surface                   | no                  |
+| `instructions` | diagnose all surfaces (Deep baseline)  | no                  |
+| `improve`      | edit one surface                       | yes, after approval |
+| `jsdoc`        | edit JSDoc/TSDoc                        | yes, after approval |
+
+Contracts:
+
+- **Routing** — unknown first token → treated as a `plan` task; no argument → `review` if a diff exists, else asks for a mode.
+- **Read-only vs write** — `plan`, `review`, `pr`, `audit`, `docs review`, `docs instructions` only diagnose and propose. Only `improve`, `docs improve`, `docs jsdoc` write — one approved finding or surface at a time.
+- **Finding IDs** are per-conversation; in a new session, paste the finding text instead of an ID.
+
+Typical loop — the ratchet that makes it pay off:
+
+```
+/guardian plan <task>      # plan before code
+/guardian review           # findings on the diff
+/guardian improve <id>     # fix one finding → durable enforcement
+/guardian pr               # PR package
+```
 
 ## Layout
 
