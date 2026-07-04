@@ -1,0 +1,38 @@
+# Guardian — Enforcement promotion
+
+## Promotion path (the ratchet)
+
+Promote by class and by observable evidence — never by a remembered count you cannot verify.
+
+- Any mechanizable finding → propose codification now (test/type/schema/lint).
+- The high-risk class → propose deterministic enforcement immediately (lint/typecheck/test/CI/hook).
+- Observable repetition (the same issue across several files in this diff, a prior finding in this conversation, or an existing issue/TODO) → strengthen from a suggestion to a durable gate, and cite the evidence.
+- Do not assert a recurrence count you cannot point to.
+
+## Enforcement type by target
+
+```txt
+static rule       → lint / typecheck
+behavior          → test
+domain contract   → spec + test
+at PR/merge       → CI
+before an action / on stop / after an edit → platform hooks (see bindings.md)
+```
+
+## Syndrome → check (from basis-form)
+
+```txt
+case-enumeration      → cyclomatic/cognitive complexity limit, fan-out limit
+non-irreducible (dup) → duplication detector
+non-orthogonal        → import-restriction / dependency-cycle check
+non-spanning          → type exhaustiveness, schema validation
+```
+
+## Before codifying a prose rule, confirm
+
+- precise enough to enforce mechanically;
+- low false-positive rate;
+- doesn't encode product intent a human must approve first;
+- won't block legitimate future work.
+
+If any fails, keep it as guidance and record why — not every good guideline makes a good check. If enforcement needs a **new dependency** or a **hook/CI change**, stop and propose it (respect any "no new dependencies" rule).
