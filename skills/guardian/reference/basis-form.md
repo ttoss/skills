@@ -2,7 +2,7 @@
 
 basis-form is Guardian's definition of quality. It governs **structure, code, scripts, and instructions** alike: describe the decision space by its **basis** (the axes), never by its **cases** (the points). A finite basis generates every case, including ones never written; a case-list only covers what was enumerated.
 
-The four AI Repo properties are its consequences: compressible ← orthogonal + irreducible; contractual ← spanning captured in types/schemas; verifiable ← spanning + enforcement; safe ← off-axis points quarantined. The 8 dimensions in `methodology.md` are its projections.
+Its projections are the 8 dimensions (`methodology.md`) and its consequences are the 4 AI Repo properties; the **canonical crosswalk** below is the single source for how tests, dimensions, and checks map — `methodology.md` and `enforcement.md` reference it, never restate it.
 
 ## The four tests
 
@@ -18,11 +18,22 @@ The four AI Repo properties are its consequences: compressible ← orthogonal + 
 
 Never create an axis speculatively; never leave a visible axis as cases. This guardrail is intrinsic to basis-form, not borrowed from any repo.
 
-## Syndrome → enforcement (climb the ladder)
+## Canonical crosswalk (single source of truth)
 
-The essence — are these the domain's true axes? — is judgment; propose it, let the human confirm at the edges. The syndromes are mechanizable: each maps to a check in `enforcement.md`. Promote them into the repo's own enforcement.
+Every finding is tagged with exactly one **dimension** (the operational lens; the 8 live in `methodology.md`). Each dimension has exactly one parent **test** (the generative theory above). The 4 **properties** (compressible, contractual, verifiable, safe) are consequences — outcome adjectives for framing, never a finding tag. The 4 tests are theory: used in `plan` (derive axes before points) and to judge a novel case no dimension yet names. This table is the one home; `methodology.md` and `enforcement.md` reference it.
 
-Tag basis-form findings by projection: case-enumeration → `pattern-hygiene`, empty-axis → `compressibility`, non-orthogonal → `boundary-integrity`, non-spanning → `verification-loop`.
+| Test (theory) | Dimensions (finding tags) | Syndrome | Mechanizable check |
+|---|---|---|---|
+| irreducible | `debt-containment`, `instruction-hygiene` | duplication / more than one source of truth | duplication detector |
+| orthogonal | `compressibility`, `boundary-integrity` | concern spread; change amplification; empty axis | import-restriction / dependency-cycle |
+| spanning | `executable-spec`, `verification-loop` | partial function / unhandled case | type-exhaustiveness / schema validation |
+| decodable | `co-located-spec`, `pattern-hygiene` | clever/over-compressed; copied bad pattern; case-enumeration | complexity + fan-out limit (case-enumeration); otherwise **judgment only** |
+
+Don't over-collapse (these are *not* redundant): `compressibility` sits under orthogonal, but duplication (irreducible's check) also drains it — a dup finding may tag either. `decodable` has no general check — "clever/over-compressed" is judgment; never invent a clever-code lint. `executable-spec` (the contract exists) and `verification-loop` (a check runs fast and is discoverable) both survive under spanning. The two migration directions stay distinct because their fixes are **opposite**: case-enumeration (under-abstraction → migrate case→basis, tag `pattern-hygiene`) vs empty-axis (over-abstraction → collapse axis→cases, tag `compressibility`).
+
+The essence — are these the domain's true axes? — is judgment; propose it, let the human confirm at the edges. The syndromes are mechanizable: promote each into the repo's own enforcement (`enforcement.md`).
+
+Properties are consequences, framing only: compressible ← orthogonal + irreducible; contractual ← spanning captured in types/schemas; verifiable ← spanning + enforcement; safe ← off-axis points quarantined.
 
 ## Surfaces (basis-form applies uniformly)
 
@@ -32,7 +43,7 @@ Tag basis-form findings by projection: case-enumeration → `pattern-hygiene`, e
 
 ## How Guardian applies it
 
-basis-form is not a mode you run; it is how every mode judges and acts. `plan` derives the axes before writing points. `review`/`audit` detect drift in both directions. `improve` migrates case→basis or collapses an empty axis, then promotes the syndrome. `docs` keeps instruction surfaces in basis-form and propagates missing rules. Guardian **acts** — editing, restructuring, and propagating — gated by risk: contained changes directly, structural or high-risk changes proposed first.
+basis-form is not a mode you run; it is how every mode judges and acts. `plan` derives the axes before writing points. `review`/`audit` detect drift in both directions. `improve` migrates case→basis or collapses an empty axis, then promotes the syndrome. `docs` keeps instruction surfaces in basis-form and propagates missing rules. Writing follows the Action axis (`SKILL.md`): only ACT modes edit/restructure/propagate, one approved unit at a time; DIAGNOSE modes propose. A structural or high-risk change is proposed first, never done silently.
 
 ## Mode boundaries
 

@@ -2,7 +2,7 @@
 
 ## AI Repo dimensions
 
-Review only relevant dimensions; never flag what the baseline shows already enforced. These dimensions are projections of basis-form (`basis-form.md`) — the axes along which a basis-vs-cases repo is observed.
+Review only relevant dimensions; never flag what the baseline shows already enforced. These 8 dimensions are the single operational lens: every finding carries exactly one of these slugs (the 4 basis-form tests are never a finding tag). Each dimension's parent test and promotion check live in the canonical crosswalk in `basis-form.md`; the bad-lists below are the operational detail, not a restatement of that table.
 
 1. **Context compressibility** (`compressibility`) — can the change be explained through a small, bounded context packet? Bad: small behavior needs whole-system understanding; logic spread across layers; new cross-cutting knowledge with no contract; a large file becoming a gravity well.
 2. **Executable specification** (`executable-spec`) — is important intent in tests, types, schemas, validators, or specs (not just conversation)? Bad: new behavior without acceptance tests; business rule hidden in a conditional; requirement only in an issue comment; spec duplicating code-readable facts instead of intent/boundaries/non-goals.

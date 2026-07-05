@@ -2,6 +2,8 @@
 
 This document defines **what Guardian is and why**, independent of any host agent, file format, or platform. `SKILL.md` and `reference/` say how Guardian runs on Claude Code today. This file says what any faithful reimplementation — on another agent, another platform, even a human process — must preserve. If the two ever disagree, this document explains the intent; the implementation is what should change.
 
+**Runtime boundary:** this file is never loaded during a Guardian run — it is for humans reading or porting Guardian. Every operating rule the agent must follow lives in `SKILL.md` (always loaded) or a mode's on-demand reference. Never place an enforceable invariant only here, or the agent will never see it.
+
 ## 1. The problem
 
 Coding agents don't just write code faster — they amplify whatever the repo already is. DORA's 2025 findings are blunt about this: AI amplifies existing strengths and existing dysfunction; it correlates with higher throughput but *lower* stability in repos that lack tests, mature version control, fast feedback, and decoupled architecture. A repo's ambient quality — its patterns, its enforced rules, its instruction files — is not neutral scaffolding. It is training signal for every future generation.

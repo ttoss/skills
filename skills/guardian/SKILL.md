@@ -4,7 +4,7 @@ description: Guard and improve a repository's AI-readiness. Run /guardian plan, 
 license: MIT
 metadata:
   author: ttoss
-  version: 0.1.1
+  version: 0.2.0
 disable-model-invocation: true
 argument-hint: 'plan|review|pr|audit|improve|docs [task|path|finding-id]'
 ---
@@ -30,13 +30,20 @@ human review, risk-tiered                                                       
 - **Product & architecture intent** (humans own; Guardian respects, never "fixes"): language, theme, scope, stack, business rules, security posture, chosen conventions. A choice with no universal right answer is product intent; a general property of an AI Repo is methodology.
 - When a repo quality rule conflicts with the methodology, raise a finding — do not silently obey.
 
+## Action axis (always applies)
+
+Every mode sits on one axis — **DIAGNOSE** or **ACT** — stated once here; the modes never re-implement it:
+
+- **DIAGNOSE** (`plan`, `review`, `pr`, `audit`, `docs review`, `docs instructions`) — read-only. Never mutates the repo **or the session**: no file writes, no memory or persistent records, and no internal bookkeeping in the output (recalled/wrote-memory notes, subagent chatter) — unless the user explicitly asks. Surface only repo-relevant evidence and next actions.
+- **ACT** (`improve`, `docs improve`, `docs jsdoc`) — writes exactly one approved unit at a time: a *finding* for `improve`, a *surface* for `docs improve`/`docs jsdoc`. Only after the change is approved; never touch the high-risk class without explicit instruction.
+
 ## Core rules
 
 1. Evidence over confidence.
 2. Enforcement over prose.
 3. Small, reversible fixes.
-4. Read-only by default (`plan`, `review`, `pr`, `audit`, and `docs review`/`docs instructions` diagnose).
-5. One finding per `improve`.
+4. Read-only by default — DIAGNOSE modes never mutate the repo or session (see Action axis).
+5. ACT writes one approved unit at a time — a finding for `improve`, a surface for `docs improve`/`docs jsdoc` (see Action axis).
 6. No style-only blocking.
 7. No documentation for its own sake.
 8. No high-risk autonomy (any change in the high-risk class → propose, don't act).
@@ -50,7 +57,7 @@ human review, risk-tiered                                                       
 
 ## Argument parsing
 
-The first token of `$ARGUMENTS` selects the mode: `plan|review|pr|audit|improve|docs`. For `docs`, a second token selects the submode (`review|improve|instructions|jsdoc`; default `review`): `review` and `instructions` are read-only; `improve` and `jsdoc` may edit one surface at a time after the change is approved. If the first token is not a known mode, treat the whole `$ARGUMENTS` as a task for `plan`, or ask which mode to run. If absent: a git diff exists → `review`; no diff → ask for a mode. Never run `audit` without a bounded scope (path/package/domain). Never run `improve` without one explicit finding ID.
+The first token of `$ARGUMENTS` selects the mode: `plan|review|pr|audit|improve|docs`. For `docs`, a second token selects the submode (`review|improve|instructions|jsdoc`; default `review`): `review` and `instructions` are read-only; `improve` and `jsdoc` may edit one surface at a time after the change is approved. If the first token is not a known mode, treat the whole `$ARGUMENTS` as a task for `plan`, or ask which mode to run. If absent: a git diff exists → `review`; no diff → ask for a mode. Never run `audit` without a bounded scope (path/package/domain). Never run `improve` without one explicit finding reference (an in-session `G-NNN` or a durable key).
 
 ## Tool policy
 
@@ -69,27 +76,28 @@ P3 BACKLOG        larger structural opportunity.
 
 Verdicts: `PASS` · `PASS_WITH_FIXES` (P1 exists) · `PASS_WITH_ACCEPTED_RISK` · `BLOCK` (unaccepted P0). A human may accept a P0/P1 only explicitly; record who accepted, what, why, a follow-up/expiry, and any compensating control. Accepted risk is `PASS_WITH_ACCEPTED_RISK`, never `PASS`.
 
-Finding format (stable IDs so `audit → improve` can reference them):
+Finding format — a short in-session `G-NNN` plus a durable composite key, so `audit → improve` survives across sessions:
 
 ```txt
 [P1][G-001][verification-loop][enforcement] Missing focused test for new permission check
+  Key: src/auth/checkPerm.ts:checkPerm:verification-loop:missing-test
   Evidence / Risk / Fix
 ```
 
-Fields: severity, `G-NNN`, dimension (one of the 8 canonical slugs in `reference/methodology.md`), target ladder rung (`enforcement|path-scoped-context|procedure|prose`). Finding IDs reference findings within the current conversation; in a new session, paste the finding text instead of an ID.
+Fields: severity (`P0–P3`); `G-NNN` (short, in-session readability); the **durable key** `path:symbol-or-heading:dimension:rule` (structural anchor — never a line number — so it survives edits and new sessions); dimension (exactly one of the 8 canonical slugs in `reference/methodology.md` — the only lens tag; a basis-form test name is never a finding tag); target ladder rung (`enforcement|path-scoped-context|procedure|prose`). `improve` accepts either the in-session `G-NNN` or the durable key; across sessions, use the key. For durable/team tracking, promote a finding into the existing issue tracker/TODOs — never a bespoke backlog file.
 
 ## Modes — load only what the mode needs
 
-Files below live in this skill's directory; read each relative to it, on demand:
+Behavioral invariants live in this file (`SKILL.md`, always loaded); rationale and the portable definition live in `CONCEPT.md` (human-facing, never loaded at runtime — never put an operating rule only there). Files below live in this skill's directory; read each relative to it, on demand. Each mode also loads `reference/examples.md` for its one worked example.
 
-| Mode    | Read                                                                                                                                                  |
-| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| plan    | `reference/basis-form.md`, `modes/plan.md`                                                                                                            |
-| review  | `reference/basis-form.md`, `reference/baseline.md`, `reference/methodology.md`, `modes/review.md`                                                     |
-| pr      | `modes/pr.md`                                                                                                                                         |
-| audit   | `reference/basis-form.md`, `reference/baseline.md`, `reference/methodology.md`, `reference/enforcement.md`, `reference/bindings.md`, `modes/audit.md` |
-| improve | `reference/basis-form.md`, `reference/enforcement.md`, `modes/improve.md`                                                                             |
-| docs    | `reference/basis-form.md`, `reference/methodology.md`, `reference/baseline.md`, `reference/bindings.md`, `modes/docs.md`                              |
+| Mode    | Read                                                                                                                                                                       |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| plan    | `reference/basis-form.md`, `reference/baseline.md`, `modes/plan.md`, `reference/examples.md`                                                                              |
+| review  | `reference/basis-form.md`, `reference/baseline.md`, `reference/methodology.md`, `modes/review.md`, `reference/examples.md`                                                 |
+| pr      | `modes/pr.md`, `reference/examples.md`                                                                                                                                    |
+| audit   | `reference/basis-form.md`, `reference/baseline.md`, `reference/methodology.md`, `reference/enforcement.md`, `reference/bindings.md`, `modes/audit.md`, `reference/examples.md` |
+| improve | `reference/basis-form.md`, `reference/enforcement.md`, `modes/improve.md`, `reference/examples.md`                                                                        |
+| docs    | `reference/basis-form.md`, `reference/methodology.md`, `reference/baseline.md`, `reference/bindings.md`, `modes/docs.md`, `reference/examples.md`                          |
 
 Platform-specific mechanics (surface loading, hooks, skill/tool semantics) are isolated in `reference/bindings.md` — the only Claude Code-specific file; swap it to port Guardian to another coding agent.
 

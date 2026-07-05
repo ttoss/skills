@@ -32,7 +32,7 @@ Manual only (`disable-model-invocation`). The first token selects the mode:
 | `review`  | review the current diff before commit (findings + correction prompt) | — (uses the diff)          | no                  |
 | `pr`      | prepare a reviewable PR package (does not replace `review`)      | —                              | no                  |
 | `audit`   | bounded repo-health audit of a scope                            | path/package/domain (required) | no                  |
-| `improve` | fix one approved finding; promote case→basis and prose→enforcement | one finding-id (required)    | yes, after approval |
+| `improve` | fix one approved finding; promote case→basis and prose→enforcement | one finding id / key (required) | yes, after approval |
 | `docs`    | review/improve instruction surfaces                             | submode (below)                | submode-dependent   |
 
 `docs` submode (second token, default `review`):
@@ -47,8 +47,8 @@ Manual only (`disable-model-invocation`). The first token selects the mode:
 Contracts:
 
 - **Routing** — unknown first token → treated as a `plan` task; no argument → `review` if a diff exists, else asks for a mode.
-- **Read-only vs write** — `plan`, `review`, `pr`, `audit`, `docs review`, `docs instructions` only diagnose and propose. Only `improve`, `docs improve`, `docs jsdoc` write — one approved finding or surface at a time.
-- **Finding IDs** are per-conversation; in a new session, paste the finding text instead of an ID.
+- **Action axis (read-only vs write)** — DIAGNOSE modes (`plan`, `review`, `pr`, `audit`, `docs review`, `docs instructions`) only diagnose and propose; they never mutate the repo or session (no writes, no memory, no bookkeeping in output). ACT modes (`improve`, `docs improve`, `docs jsdoc`) write one approved unit at a time — a finding for `improve`, a surface for the docs writers.
+- **Finding IDs** — a short `G-NNN` for in-session use plus a durable composite key (`path:symbol:dimension:rule`, structural anchor, no line numbers); `improve` accepts either. Across sessions use the key, or promote the finding to your issue tracker.
 
 Typical loop — the ratchet that makes it pay off:
 
