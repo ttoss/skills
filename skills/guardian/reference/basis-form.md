@@ -31,7 +31,7 @@ Every finding is tagged with exactly one **dimension** (the operational lens; th
 
 Don't over-collapse (these are *not* redundant): `compressibility` sits under orthogonal, but duplication (irreducible's check) also drains it — a dup finding may tag either. `decodable` has no general check — "clever/over-compressed" is judgment; never invent a clever-code lint. `executable-spec` (the contract exists) and `verification-loop` (a check runs fast and is discoverable) both survive under spanning. The two migration directions stay distinct because their fixes are **opposite**: case-enumeration (under-abstraction → migrate case→basis, tag `pattern-hygiene`) vs empty-axis (over-abstraction → collapse axis→cases, tag `compressibility`).
 
-The essence — are these the domain's true axes? — is judgment; propose it, let the human confirm at the edges. The syndromes are mechanizable: promote each into the repo's own enforcement (`enforcement.md`).
+The essence — are these the domain's true axes? — is judgment; propose it, let the human confirm at the edges. The syndromes are mechanizable: promote each into the repo's own enforcement (`enforcement.md`). The instruction-side parallel of these checks — the instruction-artifact syndromes — lives in `methodology.md`.
 
 Properties are consequences, framing only: compressible ← orthogonal + irreducible; contractual ← spanning captured in types/schemas; verifiable ← spanning + enforcement; safe ← off-axis points quarantined.
 
@@ -43,12 +43,4 @@ Properties are consequences, framing only: compressible ← orthogonal + irreduc
 
 ## How Guardian applies it
 
-basis-form is not a mode you run; it is how every mode judges and acts. `plan` derives the axes before writing points. `review`/`audit` detect drift in both directions. `improve` migrates case→basis or collapses an empty axis, then promotes the syndrome. `docs` keeps instruction surfaces in basis-form and propagates missing rules. Writing follows the Action axis (`SKILL.md`): only ACT modes edit/restructure/propagate, one approved unit at a time; DIAGNOSE modes propose. A structural or high-risk change is proposed first, never done silently.
-
-## Mode boundaries
-
-Mode boundaries override this reference.
-
-In `plan`, `review`, `pr`, `audit`, `docs review`, and `docs instructions`, Guardian diagnoses, evaluates, and proposes propagation only.
-
-Guardian writes, restructures, or propagates durable changes only in `improve`, `docs improve`, or `docs jsdoc`, and only for one approved finding or one explicit documentation surface at a time.
+basis-form is not a mode you run; it is how every mode judges and acts. `plan` derives the axes before writing points. `review`/`audit` detect drift in both directions. `improve` migrates case→basis or collapses an empty axis, then promotes the syndrome. `docs` keeps instruction surfaces in basis-form and propagates missing rules. Writing follows the Action axis (`SKILL.md`), which overrides this reference: only ACT modes edit/restructure/propagate, one approved unit at a time; DIAGNOSE modes propose. A structural or high-risk change is proposed first, never done silently.

@@ -76,6 +76,31 @@ export function validate(skillsDir) {
         err(skill, `modes/ (${fileModes.join(',')}) != argument-hint (${hintModes.join(',')})`);
       }
     }
+
+    // 4. Finding-tag integrity (raw text — tags live inside fenced templates/examples):
+    //    concrete [Pn][G-nnn][slug][rung] tags must use a dimension slug defined in
+    //    reference/methodology.md's numbered list and a known ladder rung; a file that
+    //    emits concrete tags must also carry the mandatory `Key:` line.
+    const RUNGS = new Set(['enforcement', 'path-scoped-context', 'procedure', 'prose']);
+    const methodologyPath = join(root, 'reference', 'methodology.md');
+    const slugs = new Set();
+    if (existsSync(methodologyPath)) {
+      for (const m of readFileSync(methodologyPath, 'utf8').matchAll(/^\d+\.\s+\*\*[^*]+\*\*\s+\(`([a-z-]+)`\)/gm)) slugs.add(m[1]);
+    }
+    for (const file of scanFiles) {
+      const rel = file.slice(root.length + 1);
+      const rawText = readFileSync(file, 'utf8');
+      const tags = [...rawText.matchAll(/\[P\d\]\[G-\d+\]\[([a-z-]+)\]\[([a-z-]+)\]/g)];
+      for (const t of tags) {
+        if (slugs.size && !slugs.has(t[1])) err(skill, `${rel} uses unknown dimension slug "${t[1]}"`);
+        if (!RUNGS.has(t[2])) err(skill, `${rel} uses unknown ladder rung "${t[2]}"`);
+      }
+      if (tags.length && !rawText.includes('Key:')) err(skill, `${rel} emits finding tags but has no Key: line`);
+    }
+
+    // 5. Always-loaded body stays lean: SKILL.md hard cap.
+    const lineCount = raw.split('\n').length;
+    if (lineCount > 130) err(skill, `SKILL.md is ${lineCount} lines (max 130 — the always-loaded body must stay lean)`);
   }
 
   return [...new Set(errors)];

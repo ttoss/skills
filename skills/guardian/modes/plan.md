@@ -2,7 +2,7 @@
 
 Turn a task into a small, verifiable, bounded plan before any code.
 
-Steps: restate the task; classify well-/ill-structured/mixed; run the Light baseline to reconcile the task against existing repo rules/contracts (`reference/baseline.md`) so the plan can't silently contradict a `CLAUDE.md`/`.claude/rules` rule; identify relevant files, contracts, tests, boundaries; derive the axes native to this change's decision space and put scope along domain seams (parametrize over the axis, don't branch per case); define scope + non-goals; classify risk by reusing the skill's vocabulary — is it in the **high-risk class** (→ propose, no autonomy) and/or does it carry **architecture/product ambiguity** (→ needs human judgment); otherwise routine; define required tests/commands; surface blocking questions; produce plan + implementation prompt.
+Steps: restate the task; run the Light baseline to reconcile the task against existing repo rules/contracts (`reference/baseline.md`) so the plan can't silently contradict a `CLAUDE.md`/`.claude/rules` rule; identify relevant files, contracts, tests, boundaries; derive the 1–3 axes native to this change's decision space (fill `### Axes`; write "none — trivial" if the change has no decision space) and put scope along them — parametrize over the axis, don't branch per case; define scope + non-goals; classify risk with the skill's vocabulary — **high-risk class** (→ propose, no autonomy) and/or **architecture/product ambiguity** (→ needs human judgment), else routine; define required tests/commands; surface blocking questions; produce plan + implementation prompt.
 
 ```md
 ### Verdict READY | NEEDS_CLARIFICATION | TOO_RISKY_FOR_DIRECT_IMPLEMENTATION
@@ -12,6 +12,8 @@ Steps: restate the task; classify well-/ill-structured/mixed; run the Light base
 ### Risk routine, or high-risk-class and/or architecture/product-ambiguity + reason
 
 ### Relevant files and contracts
+
+### Axes
 
 ### Scope
 
@@ -42,6 +44,9 @@ No high-risk-class surface (no billing mutation, no auth change); read-only expo
 ### Relevant files and contracts
 `src/invoices/InvoiceTable.tsx` (renders rows), `src/invoices/useInvoices.ts` (filter state),
 existing `src/lib/csv.ts` (reuse — do not write a new serializer).
+
+### Axes
+row-set → serialized format, owned by `csv.ts` — no per-column branching; the filter state is the single input.
 
 ### Scope
 Serialize the in-memory filtered rows via `csv.ts`; wire one button.
