@@ -84,6 +84,28 @@ test('template placeholders like [P0/P1][G-###] do not trigger tag checks', () =
   withSkill('foo', body, (dir) => assert.deepEqual(validate(dir), []));
 });
 
+test('README mode table drifting from modes/ fails; matching passes', () => {
+  withSkill('foo', fm('foo'), (dir) => {
+    mkdirSync(join(dir, 'foo', 'modes'), { recursive: true });
+    writeFileSync(join(dir, 'foo', 'modes', 'plan.md'), '# plan\n');
+    writeFileSync(join(dir, 'foo', 'README.md'), '| Mode | Does |\n| --- | --- |\n| `plan` | x |\n| `ghost` | y |\n');
+    const errors = validate(dir);
+    assert.ok(errors.some((e) => e.includes('README mode table')), errors.join('; '));
+    writeFileSync(join(dir, 'foo', 'README.md'), '| Mode | Does |\n| --- | --- |\n| `plan` | x |\n');
+    assert.deepEqual(validate(dir), []);
+  });
+});
+
+test('README referencing a nonexistent /skill mode fails', () => {
+  withSkill('foo', fm('foo'), (dir) => {
+    mkdirSync(join(dir, 'foo', 'modes'), { recursive: true });
+    writeFileSync(join(dir, 'foo', 'modes', 'plan.md'), '# plan\n');
+    writeFileSync(join(dir, 'foo', 'README.md'), 'Run /foo bogus to start.\n');
+    const errors = validate(dir);
+    assert.ok(errors.some((e) => e.includes('/foo bogus')), errors.join('; '));
+  });
+});
+
 test('SKILL.md over 130 lines fails', () => {
   const body = fm('foo') + Array.from({ length: 130 }, (_, i) => `line ${i}`).join('\n');
   withSkill('foo', body, (dir) => {

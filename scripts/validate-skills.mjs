@@ -101,6 +101,29 @@ export function validate(skillsDir) {
     // 5. Always-loaded body stays lean: SKILL.md hard cap.
     const lineCount = raw.split('\n').length;
     if (lineCount > 130) err(skill, `SKILL.md is ${lineCount} lines (max 130 — the always-loaded body must stay lean)`);
+
+    // 6. README drift: the human-facing mode table and /<skill> references must match modes/.
+    const readmePath = join(root, 'README.md');
+    if (existsSync(readmePath) && existsSync(modesDir)) {
+      const readme = readFileSync(readmePath, 'utf8');
+      const fileModes = new Set(readdirSync(modesDir).filter((f) => f.endsWith('.md')).map((f) => f.slice(0, -3)));
+      const lines = readme.split('\n');
+      const tableModes = [];
+      for (let i = 0; i < lines.length; i++) {
+        if (!/^\|\s*Mode\s*\|/.test(lines[i])) continue;
+        for (let j = i + 2; j < lines.length && lines[j].startsWith('|'); j++) {
+          const m = lines[j].match(/^\|\s*`([a-z-]+)`/);
+          if (m) tableModes.push(m[1]);
+        }
+      }
+      if (tableModes.length) {
+        const a = [...new Set(tableModes)].sort().join(','), b = [...fileModes].sort().join(',');
+        if (a !== b) err(skill, `README mode table (${a}) != modes/ (${b})`);
+      }
+      for (const m of readme.matchAll(new RegExp(`/${skill}\\s+([a-z]+)`, 'g'))) {
+        if (!fileModes.has(m[1])) err(skill, `README references /${skill} ${m[1]} but modes/${m[1]}.md does not exist`);
+      }
+    }
   }
 
   return [...new Set(errors)];

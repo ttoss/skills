@@ -44,11 +44,7 @@ Manual only (`disable-model-invocation`). The first token selects the mode:
 | `improve`      | edit one approved surface                            | yes    |
 | `jsdoc`        | alias for `improve` targeting a JSDoc/TSDoc surface  | yes    |
 
-Contracts:
-
-- **Routing** — a single unknown token (`help`, `status`, a typo) → Guardian prints the mode table and asks; unknown multi-word input → treated as a `plan` task (stating the assumption); no argument → `review` if a diff exists, else it asks.
-- **Action axis (read-only vs write)** — DIAGNOSE modes (`plan`, `review`, `pr`, `audit`, `docs review`, `docs instructions`) only diagnose and propose; they never mutate the repo or session (no writes, no memory, no bookkeeping in output). ACT modes (`improve`, `docs improve` — `jsdoc` is an alias) write one approved unit at a time; invoking the command is the approval, except high-risk/new-dependency/CI changes, which always show the patch and stop first.
-- **Finding IDs** — a short `G-NNN` (numbering continues across runs within a session) plus a durable composite key (`path:symbol:dimension:rule`, structural anchor, no line numbers); `improve` accepts either. Across sessions use the key, or promote the finding to your issue tracker.
+The contracts — routing, action axis (read-only vs write), severity, verdicts, finding format — are defined once in [`SKILL.md`](SKILL.md), the runtime source of truth; this README only mirrors the tables above, and CI validates they stay in sync. What the tables don't show: every finding carries a durable key that survives sessions (`improve` accepts a `G-NNN` or the key), and writes always target one approved unit at a time.
 
 Typical loop — the ratchet that makes it pay off:
 
