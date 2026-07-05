@@ -1,6 +1,6 @@
 # Guardian — Platform bindings (Claude Code)
 
-These are the platform-specific mechanics Guardian relies on. The methodology (basis-form, dimensions, severity, the ladder) is agent-agnostic; **only this file is Claude Code-specific. To port Guardian to another coding agent, swap this file** — the rest of the skill stands.
+These are the platform-specific mechanics Guardian relies on. The methodology (basis-form, dimensions, severity, the ladder rungs) is agent-agnostic; **this file isolates the Claude Code platform mechanics and is the primary file to swap when porting.** The durability ladder and doc-stewardship name Claude surfaces (`CLAUDE.md`, `.claude/rules`) as examples of the path-scoped rung — swap those names too; the rest of the skill stands.
 
 ## Instruction surfaces & loading
 

@@ -6,7 +6,7 @@ metadata:
   author: ttoss
   version: 0.2.0
 disable-model-invocation: true
-argument-hint: 'plan|review|pr|audit|improve|docs [task|path|finding-id]'
+argument-hint: 'plan|review|pr|audit|improve|docs [task|path|finding]'
 ---
 
 # Guardian
@@ -88,17 +88,17 @@ Fields: severity (`P0–P3`); `G-NNN` (short, in-session readability); the **dur
 
 ## Modes — load only what the mode needs
 
-Behavioral invariants live in this file (`SKILL.md`, always loaded); rationale and the portable definition live in `CONCEPT.md` (human-facing, never loaded at runtime — never put an operating rule only there). Files below live in this skill's directory; read each relative to it, on demand. Each mode also loads `reference/examples.md` for its one worked example.
+Behavioral invariants live in this file (`SKILL.md`, always loaded); rationale and the portable definition live in `CONCEPT.md` (human-facing, never loaded at runtime — never put an operating rule only there). Files below live in this skill's directory; read each relative to it, on demand. Each mode file ends with a worked `## Example`, loaded with the mode.
 
-| Mode    | Read                                                                                                                                                                       |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| plan    | `reference/basis-form.md`, `reference/baseline.md`, `modes/plan.md`, `reference/examples.md`                                                                              |
-| review  | `reference/basis-form.md`, `reference/baseline.md`, `reference/methodology.md`, `modes/review.md`, `reference/examples.md`                                                 |
-| pr      | `modes/pr.md`, `reference/examples.md`                                                                                                                                    |
-| audit   | `reference/basis-form.md`, `reference/baseline.md`, `reference/methodology.md`, `reference/enforcement.md`, `reference/bindings.md`, `modes/audit.md`, `reference/examples.md` |
-| improve | `reference/basis-form.md`, `reference/enforcement.md`, `modes/improve.md`, `reference/examples.md`                                                                        |
-| docs    | `reference/basis-form.md`, `reference/methodology.md`, `reference/baseline.md`, `reference/bindings.md`, `modes/docs.md`, `reference/examples.md`                          |
+| Mode    | Read                                                                                                                                                  |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| plan    | `reference/basis-form.md`, `reference/baseline.md`, `modes/plan.md`                                                                                   |
+| review  | `reference/basis-form.md`, `reference/baseline.md`, `reference/methodology.md`, `modes/review.md`                                                     |
+| pr      | `modes/pr.md`                                                                                                                                         |
+| audit   | `reference/basis-form.md`, `reference/baseline.md`, `reference/methodology.md`, `reference/enforcement.md`, `reference/bindings.md`, `modes/audit.md` |
+| improve | `reference/basis-form.md`, `reference/enforcement.md`, `modes/improve.md`                                                                             |
+| docs    | `reference/basis-form.md`, `reference/methodology.md`, `reference/baseline.md`, `reference/bindings.md`, `modes/docs.md`                              |
 
-Platform-specific mechanics (surface loading, hooks, skill/tool semantics) are isolated in `reference/bindings.md` — the only Claude Code-specific file; swap it to port Guardian to another coding agent.
+Platform-specific mechanics (surface loading, hooks, skill/tool semantics) are isolated in `reference/bindings.md` — the primary file to swap when porting to another coding agent. The durability ladder and doc-stewardship also name Claude surfaces (`CLAUDE.md`, `.claude/rules`) as examples of the path-scoped rung; swap those names too.
 
 End every run with one actionable next step: a correction prompt, a verification command, the first safe improvement, or a clear PASS.

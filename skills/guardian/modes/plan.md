@@ -25,3 +25,39 @@ Steps: restate the task; classify well-/ill-structured/mixed; run the Light base
 
 ### Implementation prompt
 ```
+
+## Example
+
+Task: "add CSV export to the invoices table."
+
+```md
+### Verdict READY
+
+### Task understanding
+Add a "Download CSV" action that exports the currently-filtered invoice rows.
+
+### Risk routine + reason
+No high-risk-class surface (no billing mutation, no auth change); read-only export of already-visible data.
+
+### Relevant files and contracts
+`src/invoices/InvoiceTable.tsx` (renders rows), `src/invoices/useInvoices.ts` (filter state),
+existing `src/lib/csv.ts` (reuse — do not write a new serializer).
+
+### Scope
+Serialize the in-memory filtered rows via `csv.ts`; wire one button.
+
+### Non-goals
+Server-side export; new columns; changing the filter model.
+
+### Required tests and verification
+Unit test: filtered rows → expected CSV string (incl. comma/quote escaping). `pnpm test --filter invoices`.
+
+### Open questions
+None blocking.
+
+### Implementation plan
+1. `toCsv(rows)` in `csv.ts` if missing. 2. Button calls it on current rows. 3. Test escaping.
+
+### Implementation prompt
+"Reuse src/lib/csv.ts; export the filtered rows from useInvoices; add an escaping unit test."
+```

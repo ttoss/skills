@@ -2,7 +2,7 @@
 
 Guardian keeps a repository in **basis-form**: its structure, code, scripts, and instructions written as a *basis* (the axes of the decision space), not as enumerated *cases*. It reviews and improves a repo's AI-readiness and migrates quality rules from prose into deterministic enforcement (lint, types, tests, CI, hooks).
 
-Cross-agent — built on the [Agent Skills](https://agentskills.io) standard. Only `reference/bindings.md` is Claude Code-specific; swap that one file to port Guardian to another coding agent.
+Cross-agent — built on the [Agent Skills](https://agentskills.io) standard. `reference/bindings.md` isolates the Claude Code platform mechanics and is the primary file to swap when porting; the durability ladder also names Claude surfaces (`CLAUDE.md`, `.claude/rules`) as examples to swap.
 
 ## Install
 

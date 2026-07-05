@@ -23,3 +23,40 @@ Output limits — actionable, never hide blockers: surface **every P0**; cap P1 
 
 ### Do-not-touch without approval
 ```
+
+## Example
+
+Scope `src/payments` (a slice — a full `src/` would be narrowed first).
+
+```md
+### Verdict AUDIT_BACKLOG
+
+### Scope audited
+src/payments
+
+### Baseline enforced vs prose-only, where enforcement runs
+Enforced: strict TS, lint (CI). Prose-only: "always use money integers" (CLAUDE.md) — no check.
+
+### AI Repo score
+| Dimension | Score | Evidence |
+| verification-loop | BAD | totals path has no test |
+| executable-spec | WEAK | "money integers" rule unenforced |
+| boundary-integrity | GOOD | payments never imported outside its package |
+
+### Findings
+[P0][G-001][verification-loop][enforcement] Float arithmetic on money in `sumLineItems`
+  Key: src/payments/totals.ts:sumLineItems:verification-loop:float-money
+  Evidence: `10.10+20.20+30.30 !== 60.6`; no test. Risk: billing drift. Fix: integer cents + test; CI gate.
+
+### Remaining categories summary + follow-up scope
+2 P2 (naming, a dead branch) — run `audit src/payments/refunds` next.
+
+### Suggested sequence
+G-001 first (high-risk), then the P2s.
+
+### First safe improvement
+G-001 — smallest change with the highest risk reduction.
+
+### Do-not-touch without approval
+The Stripe webhook signature check (high-risk class).
+```
