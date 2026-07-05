@@ -9,7 +9,7 @@ Steps: restate the task; classify well-/ill-structured/mixed; run the Light base
 
 ### Task understanding
 
-### Risk routine | high-risk-class | architecture/product-ambiguity + reason
+### Risk routine, or high-risk-class and/or architecture/product-ambiguity + reason
 
 ### Relevant files and contracts
 

@@ -13,7 +13,7 @@ Output limits — actionable, never hide blockers: surface **every P0**; cap P1 
 
 ### AI Repo score | Dimension | Score (GOOD/WEAK/BAD/UNKNOWN) | Evidence |
 
-### Findings all P0s · top P1s · capped P2/P3
+### Findings all P0s · top P1s · capped P2/P3 (each in SKILL finding format, incl. `Key:` line)
 
 ### Remaining categories summary + follow-up scope
 

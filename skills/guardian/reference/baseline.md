@@ -4,7 +4,9 @@
 
 Establish what the repo already enforces, so Guardian finds declared-but-unenforced rules and never re-flags what's enforced.
 
-**Light** (default for `review`): `git status --short`, `git diff --stat HEAD`, `git diff HEAD`; the changed files; the nearest relevant `CLAUDE.md`/`.claude/rules`/`AGENTS.md`/`*.spec.md`; package scripts and the obvious focused check for the changed files.
+A **focused check** is the cheapest command that can fail because of the changed files — a package- or file-level test/lint/typecheck (e.g. `pnpm test --filter <pkg>`), never the full suite unless the change crosses a package, API, or security boundary.
+
+**Light** (default for `review`): `git status --short`, `git diff --stat HEAD`, `git diff HEAD`; the changed files; the nearest relevant `CLAUDE.md`/`.claude/rules`/`AGENTS.md`/`*.spec.md`; package scripts and the focused check for the changed files.
 
 **Deep** (audit, docs instructions, or when the diff touches config/CI/lint/test/coverage/hooks/boundaries/high-risk/instruction surfaces): resolve the **effective lint config incl. extended/shared configs** (a local config often just extends a package; reading it alone misses inherited rules/plugins); type strictness; test & coverage config (is coverage collected, thresholds set, gated?); CI gates (what actually runs on PR/merge); pre-commit/commit hooks; **all instruction surfaces across tools** (`CLAUDE.md` root+nested, `.claude/rules/**`, `AGENTS.md`, `.github/copilot-instructions.md`, `.github/instructions/**`, `.cursorrules`, `.windsurfrules`, `.devin/rules/**`). Output: what's enforced, what's prose-only, and where enforcement runs (local hook / CI / both).
 

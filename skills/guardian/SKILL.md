@@ -13,7 +13,7 @@ argument-hint: 'plan|review|pr|audit|improve|docs [task|path|finding]'
 
 Guardian keeps this repository an **AI Repo**: one whose structure, code, scripts, and instructions are written as a **basis** (the axes of the decision space), not as **cases** (enumerated points). A good basis is irreducible, orthogonal, spanning, and decodable; its observable consequences are a repo that is compressible, contractual, verifiable, and safe. **basis-form** is this standard, and how each property follows from it: `reference/basis-form.md`.
 
-Guardian does not guarantee this by being prose. It **acts** on the repo — detecting, editing, restructuring, and propagating the basis into the repo's durable surfaces — and migrates rules up the durability ladder into enforcement.
+Guardian does not guarantee this by being prose. It diagnoses drift in every mode and, in ACT modes only (see Action axis), **acts** — editing, restructuring, and propagating the basis into the repo's durable surfaces, migrating rules up the durability ladder into enforcement.
 
 ```txt
 deterministic enforcement   types, schemas, lint, tests, coverage gates, CI, hooks   ← strongest, prefer
@@ -57,7 +57,7 @@ Every mode sits on one axis — **DIAGNOSE** or **ACT** — stated once here; th
 
 ## Argument parsing
 
-The first token of `$ARGUMENTS` selects the mode: `plan|review|pr|audit|improve|docs`. For `docs`, a second token selects the submode (`review|improve|instructions|jsdoc`; default `review`): `review` and `instructions` are read-only; `improve` and `jsdoc` may edit one surface at a time after the change is approved. If the first token is not a known mode, treat the whole `$ARGUMENTS` as a task for `plan`, or ask which mode to run. If absent: a git diff exists → `review`; no diff → ask for a mode. Never run `audit` without a bounded scope (path/package/domain). Never run `improve` without one explicit finding reference (an in-session `G-NNN` or a durable key).
+The invocation arguments are: `$ARGUMENTS`. Its first whitespace-delimited token selects the mode (`plan|review|pr|audit|improve|docs`); the remaining tokens are that mode's argument (task / path / finding reference). For `docs`, the second token is the submode (`review|improve|instructions|jsdoc`; default `review`): `review` and `instructions` are read-only; `improve` and `jsdoc` edit one surface at a time after approval. If the first token is not a known mode, treat all arguments as a task for `plan`, or ask which mode to run. If there are no arguments: a git diff exists → `review`; no diff → ask for a mode. Never run `audit` without a bounded scope (path/package/domain). Never run `improve` without one explicit finding reference (an in-session `G-NNN` or a durable key).
 
 ## Tool policy
 
@@ -68,7 +68,7 @@ This multipurpose skill declares no broad `allowed-tools`. For `plan/review/pr/a
 **High-risk class** (referenced across the skill): security, auth, permissions, privacy, billing/payments, data loss or deletion, migrations, public APIs, infra.
 
 ```txt
-P0 BLOCK          a high-risk-class change, CI breakage, unverified critical behavior, or a major boundary violation.
+P0 BLOCK          a high-risk-class change (posture: clears only with tests + explicit human acceptance → PASS_WITH_ACCEPTED_RISK, never silent PASS), CI breakage, unverified critical behavior, or a major boundary violation.
 P1 REQUIRED FIX   missing relevant test, implicit business rule, meaningful scope creep, strong complexity increase, missing spec, unclear verification, or a core quality rule enforced only by prose.
 P2 SUGGESTED      improves the AI Repo, non-blocking.
 P3 BACKLOG        larger structural opportunity.
