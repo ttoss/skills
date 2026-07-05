@@ -1,6 +1,6 @@
 # Guardian — Platform bindings (Claude Code)
 
-These are the platform-specific mechanics Guardian relies on. The methodology (basis-form, dimensions, severity, the ladder) is agent-agnostic; **only this file is Claude Code-specific. To port Guardian to another coding agent, swap this file** — the rest of the skill stands.
+These are the platform-specific mechanics Guardian relies on. The methodology (basis-form, dimensions, severity, the ladder rungs) is agent-agnostic; **this file isolates the Claude Code platform mechanics and is the primary file to swap when porting.** The durability ladder and doc-stewardship name Claude surfaces (`CLAUDE.md`, `.claude/rules`) as examples of the path-scoped rung — swap those names too; the rest of the skill stands.
 
 ## Instruction surfaces & loading
 
@@ -24,5 +24,6 @@ after an edit, to flag/suggest  → PostToolUse hook (cannot prevent; advisory)
 ## Skill mechanics
 
 - A skill's directory name is its command (`.claude/skills/guardian/` → `/guardian`). Its `SKILL.md` body stays in context for the whole session once invoked, so keep it lean and put depth in on-demand reference files; reference the skill's own files as `${CLAUDE_SKILL_DIR}/<path>`.
+- `$ARGUMENTS` in a skill body is substituted **literally** at invocation (empty string if none) — write parsing rules that survive empty / one / many tokens, never sentences that embed `$ARGUMENTS` as a noun.
 - `disable-model-invocation: true` = manual `/name` only.
 - `allowed-tools` grants (does not restrict) tools without a prompt while the skill is active; `disallowed-tools` removes tools from the pool.

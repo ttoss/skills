@@ -1,19 +1,62 @@
 # Mode: review
 
-Use after implementation, before commit. Apply the trivial fast path first. Otherwise run the Light baseline (escalate to Deep per triggers), review relevant dimensions (`reference/methodology.md`), flag basis-form drift in both directions (case-enumeration where an axis is visible; empty/speculative axis — `reference/basis-form.md`), reconcile touched rules (`reference/baseline.md`), classify with the finding format, note missing verification, write a correction prompt.
+Use after implementation, before commit. Steps:
+
+1. Apply the trivial fast path first (`SKILL.md` Scope control).
+2. Run the Light baseline; escalate to Deep per the triggers in `reference/baseline.md`. Record the choice and trigger for Coverage.
+3. Large diff (>~15 files or >~800 changed lines): list every changed file, group by package/domain, review group by group. The same rule violated in N places → one finding; list all instances under Evidence; anchor the key at the owning rule/config where one exists.
+4. Review the relevant dimensions (`reference/methodology.md`, incl. the relevance rule); on instruction surfaces apply the instruction-artifact syndromes; flag basis-form drift in both directions (case-enumeration where an axis is visible; empty/speculative axis — `reference/basis-form.md`); reconcile touched rules (`reference/baseline.md`).
+5. Classify with the SKILL finding format (incl. `Key:`); note missing verification; write a correction prompt.
+6. End the Summary with `reviewed N/N changed files`; name any unreviewed file under Missing verification — never sample silently.
 
 ```md
 ### Verdict PASS | PASS_WITH_FIXES | PASS_WITH_ACCEPTED_RISK | BLOCK
 
-### Summary
+### Summary (ends with `reviewed N/N changed files`)
 
-### Required fixes [P0/P1][G-###][dimension][rung] ...
+### Coverage Light|Deep (trigger) · dimensions checked: <slugs> / skipped: <slugs> (reason)
 
-### Suggested improvements [P2/P3][G-###][dimension][rung] ...
+### Required fixes [P0/P1][G-###][dimension][rung] title + `Key:` line (SKILL finding format) ...
+
+### Suggested improvements [P2/P3][G-###][dimension][rung] title + `Key:` line ...
 
 ### Missing verification
 
 ### Docs/instructions impact
 
 ### Correction prompt
+```
+
+## Example
+
+Diff adds a permission check but no test.
+
+```md
+### Verdict BLOCK
+
+### Summary
+New `canDelete()` gate on the delete route — permission behavior altered (high-risk class) with no test: unverified critical behavior. Reviewed 3/3 changed files.
+
+### Coverage
+Deep (high-risk domain) · dimensions checked: verification-loop, boundary-integrity, executable-spec / skipped: co-located-spec, compressibility, pattern-hygiene, debt-containment, instruction-hygiene (no artifact touched)
+
+### Required fixes
+[P0][G-001][verification-loop][enforcement] Permission gate altered with no test
+  Key: src/auth/canDelete.ts:canDelete:verification-loop:missing-test
+  Evidence: `canDelete` added; `git diff` shows no test touched; `pnpm test --filter auth` covers no case.
+  Risk: a future refactor silently opens the delete route; human review is the only sensor.
+  Fix: add allow/deny unit tests and gate in CI — or record explicit human acceptance → PASS_WITH_ACCEPTED_RISK.
+
+### Suggested improvements
+[P2][G-002][boundary-integrity][enforcement] Delete route imports the DB client directly
+  Key: src/routes/delete.ts:handler:boundary-integrity:layer-bypass — consider an import-restriction rule.
+
+### Missing verification
+`pnpm test --filter auth` (add the allow/deny cases above).
+
+### Docs/instructions impact
+None.
+
+### Correction prompt
+"Add allow/deny tests for canDelete, wire the auth suite into CI, then re-run /guardian review. To ship without them, record explicit acceptance (who/why/expiry) → PASS_WITH_ACCEPTED_RISK."
 ```

@@ -2,7 +2,7 @@
 
 ## AI Repo dimensions
 
-Review only relevant dimensions; never flag what the baseline shows already enforced. These dimensions are projections of basis-form (`basis-form.md`) — the axes along which a basis-vs-cases repo is observed.
+These 8 dimensions are the single operational lens: every finding carries exactly one of these slugs (the 4 basis-form tests are never a finding tag). Each dimension's parent test and promotion check live in the canonical crosswalk in `basis-form.md`; the bad-lists below are the operational detail. Relevance rule: a dimension is relevant iff the diff/scope touches an artifact it governs; when unsure, check it. Skipping is a decision, never silent — `audit` records skipped dimensions as `UNKNOWN` rows; `review` records them under Coverage. Never flag what the baseline shows already enforced.
 
 1. **Context compressibility** (`compressibility`) — can the change be explained through a small, bounded context packet? Bad: small behavior needs whole-system understanding; logic spread across layers; new cross-cutting knowledge with no contract; a large file becoming a gravity well.
 2. **Executable specification** (`executable-spec`) — is important intent in tests, types, schemas, validators, or specs (not just conversation)? Bad: new behavior without acceptance tests; business rule hidden in a conditional; requirement only in an issue comment; spec duplicating code-readable facts instead of intent/boundaries/non-goals.
@@ -11,7 +11,26 @@ Review only relevant dimensions; never flag what the baseline shows already enfo
 5. **Boundary integrity** (`boundary-integrity`) — are package/layer/domain/ownership/public-API boundaries preserved **and enforced**? Check both: does the change violate a boundary, and does the boundary exist only in prose (candidate for import-restriction lint / dependency-graph check)?
 6. **Pattern hygiene** (`pattern-hygiene`) — did the change copy or strengthen a bad local pattern (more nesting in a complex fn, more special cases in a god file, a workaround becoming the norm, "file style" that is actually debt)? Agents replicate whatever they see.
 7. **Debt containment** (`debt-containment`) — accept debt only if modular, visible, observable, cheap to repay. Unacceptable: invisible, systemic, untested, in core logic, or likely to be copied.
-8. **Instruction & context hygiene** (`instruction-hygiene`) — review all instruction surfaces across tools (from the deep baseline). Bad: CLAUDE.md grown into a manual (target <200 lines); generic advice; commands that don't exist; contradictions within/across surfaces; local rule placed globally; procedure that belongs in a skill; the same rule hand-duplicated across tools (drift). Platform loading and precedence mechanics live in `bindings.md` — the only agent-specific part; the hygiene principles above are universal.
+8. **Instruction & context hygiene** (`instruction-hygiene`) — review the instruction surfaces in scope (from the baseline) with the syndromes below. Also bad: CLAUDE.md grown into a manual (target <200 lines); generic advice; local rule placed globally; procedure that belongs in a skill; the same rule hand-duplicated across tools (drift). Loading/precedence mechanics live in `bindings.md`.
+
+## Instruction-artifact syndromes
+
+Apply to every instruction surface in scope — CLAUDE.md/rules/AGENTS.md-class files **and agent skill files**. Mechanical, one pass per surface; every hit cites file + quoted line:
+
+1. **Undefined term** — every term used operationally in ≥2 places has exactly one definition site.
+2. **Claim diff** — a fact stated in more than one file must agree in substance everywhere; diff the statements.
+3. **Quantifier audit** — for every `always/never/only/all/once/"X does Y"` claim, verify it holds against each mode/scope/constraint it spans (the JSDoc never/always rule below, applied to instructions).
+4. **Classification totality** — push boundary cases through every rule table (severity, routing, verdicts): exactly one bucket may fire; two or zero → finding.
+5. **Template drift** — every output template and worked example must carry every mandatory field of the format it instantiates; prose and template must agree on cardinality.
+6. **As-rendered** — evaluate the file as the runtime renders it: substitute placeholders (e.g. `$ARGUMENTS`) literally, under empty / one / many tokens (mechanics in `bindings.md`).
+
+## Self-review
+
+If any reviewed surface was authored or edited in this session:
+
+1. Fluency and memory of writing are zero evidence — re-read the file from disk; support every conclusion about it with a verbatim quote + path.
+2. Never score such a surface GOOD/PASS without at least one cited mechanical check (a syndrome pass, claim diff, or command run).
+3. State the self-review condition in the output; prefer a fresh-context pass (subagent) for instruction surfaces authored in-session.
 
 ## Documentation stewardship
 

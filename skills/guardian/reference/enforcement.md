@@ -19,14 +19,9 @@ at PR/merge       → CI
 before an action / on stop / after an edit → platform hooks (see bindings.md)
 ```
 
-## Syndrome → check (from basis-form)
+## Syndrome → check
 
-```txt
-case-enumeration      → cyclomatic/cognitive complexity limit, fan-out limit
-non-irreducible (dup) → duplication detector
-non-orthogonal        → import-restriction / dependency-cycle check
-non-spanning          → type exhaustiveness, schema validation
-```
+The syndrome→check mapping is the last column of the canonical crosswalk in `basis-form.md` — use it there; it is not restated here.
 
 ## Before codifying a prose rule, confirm
 
