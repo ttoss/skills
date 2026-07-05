@@ -10,6 +10,14 @@ Cross-agent — built on the [Agent Skills](https://agentskills.io) standard. On
 npx skills add ttoss/skills --skill guardian
 ```
 
+Scope the agent to avoid duplication. Without `--agent`, the CLI mirrors the skill into every supported agent's directory (e.g. both `.claude/skills/` and `.agents/skills/`). For Claude Code only:
+
+```bash
+npx skills add ttoss/skills --skill guardian --agent claude-code
+```
+
+Only install unscoped if the target repo also runs another agent (Copilot/Cursor/etc.) that should read the skill from its own directory.
+
 ## Use (Claude Code)
 
 Manual only (`disable-model-invocation`). The first token selects the mode:
