@@ -4,7 +4,7 @@ description: Guard and improve a repository's AI-readiness. Run /guardian plan, 
 license: MIT
 metadata:
   author: ttoss
-  version: 0.3.0
+  version: 0.4.0
 disable-model-invocation: true
 argument-hint: 'plan|review|pr|audit|improve|docs [task|path|finding|surface]'
 ---
@@ -35,7 +35,7 @@ human review, risk-tiered                                                       
 Every mode sits on one axis — **DIAGNOSE** or **ACT** — stated once here; mode files point here and never restate it:
 
 - **DIAGNOSE** (`plan`, `review`, `pr`, `audit`, `docs review`, `docs instructions`) — read-only. Never mutates the repo **or the session**: no file writes, no memory or persistent records, and no internal bookkeeping in the output — unless the user explicitly asks. Surface only repo-relevant evidence and next actions.
-- **ACT** (`improve`, `docs improve`; `docs jsdoc` is an alias) — writes exactly one approved unit at a time: a *finding* for `improve`, a *surface* for `docs improve`. Invoking `improve <ref>` or `docs improve <surface>` **is** the approval for that unit — apply directly. Exception: the high-risk class (rule 7), a new dependency, or a hook/CI change → show the proposed patch and stop for explicit confirmation.
+- **ACT** (`improve`, `docs improve`; `docs jsdoc` is an alias) — writes exactly one approved unit at a time: a *finding* for `improve`, a *surface* for `docs improve`. Invoking `improve <ref>` or `docs improve <surface>` **is** the approval for that unit — apply directly. Exception: the high-risk class (rule 7), a trade fix (rule 11), a new dependency, or a hook/CI change → show the proposed patch and stop for explicit confirmation.
 
 ## Core rules
 
@@ -49,6 +49,7 @@ Every mode sits on one axis — **DIAGNOSE** or **ACT** — stated once here; mo
 8. Convert recurring findings into durable structure.
 9. Never codify a bad or imprecise rule.
 10. Report a check result only from a command run in this session; otherwise write `NOT RUN` + reason.
+11. Prefer the dominant fix over the trade; never apply a trade autonomously (Fix classification below).
 
 ## Scope control
 
@@ -92,10 +93,12 @@ Finding format — a short in-session `G-NNN` plus a durable composite key, so `
 ```txt
 [P1][G-001][verification-loop][enforcement] Missing focused test for new discount rounding rule
   Key: src/pricing/discount.ts:applyDiscount:verification-loop:missing-test
-  Evidence / Risk / Fix
+  Evidence / Risk / Fix (dominant — checked: <what> | trade: <what worsens / open premise / verification cost>)
 ```
 
 Fields: severity (`P0–P3`); `G-NNN` (numbering continues across runs within a session — never restart at G-001; if a G-NNN is ambiguous or from a prior session, `improve` requires the durable key); the **durable key** `path:symbol-or-heading:dimension:rule` (structural anchor — never a line number — so it survives edits and new sessions); dimension (exactly one of the 8 slugs in `reference/methodology.md` — the only lens tag; a basis-form test name is never a finding tag); target ladder rung (`enforcement|path-scoped-context|procedure|prose`). For durable/team tracking, promote a finding into the existing issue tracker/TODOs — never a bespoke backlog file.
+
+**Fix classification** (rule 11) — every full-form `Fix` line and every `improve` run states exactly one class; short-form/cut findings omit it. **dominant** (a Pareto improvement): improves ≥1 dimension and the "worsens nothing" claim was checked this session at cost proportional to the gain — name what was checked. **trade**: everything else; an unverified premise the fix depends on is a cost, never neutral; when uncertain, classify as trade. Before proposing a trade, look for a dominant alternative to the same concrete pain; if one exists, recommend it and demote the trade to P2/P3 with its activation condition (`worth doing when <pain observed>`). A trade is never dropped or silently applied: in ACT it stops for confirmation (Action axis); accepting one is an explicit human decision, recorded like accepted risk. The classification judges the **fix**; severity judges the **finding** — the axes never mix.
 
 ## Modes — load only what the mode needs
 
