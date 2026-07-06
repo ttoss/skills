@@ -13,16 +13,18 @@ Then fix:
 - **Not mechanizable** → smallest correct prose/spec change, or produce a `plan` if it needs architectural/product judgment.
 - **basis-form migration** → migrate case→basis or collapse an empty axis under the visible-axis guardrail (`reference/basis-form.md`); then promote the syndrome to a check (`reference/enforcement.md`).
 
-Rules: one finding only; small patch; add/update verification if behavior changes; never mix feature work with repo-health cleanup; high-risk guard: Core rule 7. A structural change (many files or redrawn boundaries) is not one `improve`: run `plan`, then execute it as an ordered sequence of contained, verified `improve` steps.
+Rules: one finding only; small patch; add/update verification if behavior changes; never mix feature work with repo-health cleanup; high-risk guard: Core rule 7; classify the fix **before** writing (`SKILL.md` Fix classification) — a trade shows its terms and stops per the Action axis. A structural change (many files or redrawn boundaries) is not one `improve`: run `plan`, then execute it as an ordered sequence of contained, verified `improve` steps.
 
 ```md
 ### Finding fixed [G-### or key]
 
-### Ladder rung targeted enforcement | path-scoped context | procedure | prose
+### Ladder rung targeted enforcement | path-scoped-context | procedure | prose
 
 ### Files changed
 
 ### Why this improves the AI Repo
+
+### Trade-off dominant (checked: <what>) | trade: <what worsens / open premise / verification cost> — terms shown, awaiting confirmation
 
 ### Verification command / result (run this session — else `NOT RUN` + reason)
 
@@ -45,6 +47,9 @@ Fixing `G-001` from the audit example.
 
 ### Why this improves the AI Repo
 Turns a prose rule ("money integers") into a test + type; the syndrome (non-spanning money math) now fails a check, not a human.
+
+### Trade-off
+dominant (checked: the former failing case is now the test; no API, dependency, or behavior change beyond the fixed bug).
 
 ### Verification command / result
 `pnpm test --filter payments` — run: 6 passed, incl. the former failing case.

@@ -4,7 +4,7 @@ description: Guard and improve a repository's AI-readiness. Run /guardian plan, 
 license: MIT
 metadata:
   author: ttoss
-  version: 0.3.0
+  version: 0.4.0
 disable-model-invocation: true
 argument-hint: 'plan|review|pr|audit|improve|docs [task|path|finding|surface]'
 ---
@@ -35,7 +35,7 @@ human review, risk-tiered                                                       
 Every mode sits on one axis — **DIAGNOSE** or **ACT** — stated once here; mode files point here and never restate it:
 
 - **DIAGNOSE** (`plan`, `review`, `pr`, `audit`, `docs review`, `docs instructions`) — read-only. Never mutates the repo **or the session**: no file writes, no memory or persistent records, and no internal bookkeeping in the output — unless the user explicitly asks. Surface only repo-relevant evidence and next actions.
-- **ACT** (`improve`, `docs improve`; `docs jsdoc` is an alias) — writes exactly one approved unit at a time: a *finding* for `improve`, a *surface* for `docs improve`. Invoking `improve <ref>` or `docs improve <surface>` **is** the approval for that unit — apply directly. Exception: the high-risk class (rule 7), a new dependency, or a hook/CI change → show the proposed patch and stop for explicit confirmation.
+- **ACT** (`improve`, `docs improve`; `docs jsdoc` is an alias) — writes exactly one approved unit at a time: a *finding* for `improve`, a *surface* for `docs improve`. Invoking `improve <ref>` or `docs improve <surface>` **is** the approval for that unit — apply directly. Exception: the high-risk class (rule 7), a trade fix (rule 11), a new dependency, or a hook/CI change → show the proposed patch and stop for explicit confirmation.
 
 ## Core rules
 
@@ -49,10 +49,11 @@ Every mode sits on one axis — **DIAGNOSE** or **ACT** — stated once here; mo
 8. Convert recurring findings into durable structure.
 9. Never codify a bad or imprecise rule.
 10. Report a check result only from a command run in this session; otherwise write `NOT RUN` + reason.
+11. Prefer the dominant fix over the trade; never apply a trade autonomously (Fix classification below).
 
 ## Scope control
 
-- **Trivial fast path** (`review` only): if the diff is typo-, comment-, formatting-, or docs-only, or a localized non-behavioral change, skip discovery (never the full diff read) and return `PASS (trivial: <class>; checked: not misleading, no contract/verification/ambiguity change)`. If any of those four exclusions applies — or the diff touches an instruction surface, including skill files — the fast path is forfeited: run the normal baseline.
+- **Trivial fast path** (`review` only): if the diff is typo-, comment-, formatting-, or docs-only, or a localized non-behavioral change, skip discovery (never the full diff read) and return `PASS (trivial: <class>; checked: not misleading, no contract/verification/ambiguity change)`. If any of those four checks fails — the diff is misleading, or changes a contract, verification, or ambiguity — or it touches an instruction surface, including skill files, the fast path is forfeited: run the normal baseline.
 - **Light vs Deep baseline**: `review` defaults to Light; the Deep triggers live in `reference/baseline.md`; `audit` and `docs instructions` always use Deep.
 
 ## Argument parsing
@@ -62,11 +63,11 @@ Arguments: `$ARGUMENTS`. Route by the first whitespace-delimited token:
 1. Token is a mode (`plan|review|pr|audit|improve|docs`) → run it; the remaining tokens are its argument.
 2. No arguments: a git diff exists → `review`; none → ask for a mode.
 3. One unknown token (`help`, `status`, a likely typo) → print the mode table and ask.
-4. Unknown multi-word arguments that read as a task → run `plan` on them and state that assumption.
+4. Unknown multi-word arguments that read as a task → run `plan` on them and state that assumption; if they don't read as a task, ask.
 5. `review`: an optional path narrows the diff. `pr`: takes no argument (note and ignore extra tokens).
 6. `audit`: requires a bounded scope (path/package/domain) — ask if missing.
 7. `improve`: requires one finding reference (in-session `G-NNN` or durable key) — ask if missing.
-8. `docs`: second token selects the submode (`review|improve|instructions`, default `review`; `jsdoc` = alias for `improve` targeting a JSDoc/TSDoc surface); remaining tokens name the target surface (a file path).
+8. `docs`: second token selects the submode (`review|improve|instructions`, default `review`; `jsdoc` = alias for `improve` targeting a JSDoc/TSDoc surface); remaining tokens name the target surface (a file path) — required for `review`/`improve` (ask if missing); `instructions` takes none.
 
 ## Tool policy
 
@@ -85,17 +86,19 @@ P3 BACKLOG        larger structural opportunity.
 
 Tie-break: a missing test is P1 — unless the untested behavior is in the high-risk class, then P0.
 
-Verdicts for diff/surface reviews (`plan` and `audit` define theirs in their mode files): `PASS` · `PASS_WITH_FIXES` (P1 exists) · `PASS_WITH_ACCEPTED_RISK` · `BLOCK` (unaccepted P0). When several apply, emit the most severe: `BLOCK` > `PASS_WITH_ACCEPTED_RISK` > `PASS_WITH_FIXES` > `PASS`. A human may accept a P0/P1 only explicitly; record who accepted, what, why, a follow-up/expiry, and any compensating control. Accepted risk is `PASS_WITH_ACCEPTED_RISK`, never `PASS`.
+Verdicts for diff/surface reviews (`plan` and `audit` define theirs in their mode files; `docs instructions` emits `DOCS_BACKLOG`, defined in `modes/docs.md`): `PASS` · `PASS_WITH_FIXES` (P1 exists) · `PASS_WITH_ACCEPTED_RISK` · `BLOCK` (unaccepted P0). When several apply, emit the most severe: `BLOCK` > `PASS_WITH_ACCEPTED_RISK` > `PASS_WITH_FIXES` > `PASS`. A human may accept a P0/P1 only explicitly; record who accepted, what, why, a follow-up/expiry, and any compensating control. Accepted risk is `PASS_WITH_ACCEPTED_RISK`, never `PASS`.
 
 Finding format — a short in-session `G-NNN` plus a durable composite key, so `audit → improve` survives across sessions:
 
 ```txt
 [P1][G-001][verification-loop][enforcement] Missing focused test for new discount rounding rule
   Key: src/pricing/discount.ts:applyDiscount:verification-loop:missing-test
-  Evidence / Risk / Fix
+  Evidence / Risk / Fix (dominant — checked: <what> | trade: <what worsens / open premise / verification cost>)
 ```
 
-Fields: severity (`P0–P3`); `G-NNN` (numbering continues across runs within a session — never restart at G-001; if a G-NNN is ambiguous or from a prior session, `improve` requires the durable key); the **durable key** `path:symbol-or-heading:dimension:rule` (structural anchor — never a line number — so it survives edits and new sessions); dimension (exactly one of the 8 slugs in `reference/methodology.md` — the only lens tag; a basis-form test name is never a finding tag); target ladder rung (`enforcement|path-scoped-context|procedure|prose`). For durable/team tracking, promote a finding into the existing issue tracker/TODOs — never a bespoke backlog file.
+Fields: severity (`P0–P3`); `G-NNN` (numbering continues across runs within a session — never restart at G-001; if a G-NNN is ambiguous or from a prior session, `improve` requires the durable key); the **durable key** `path:symbol-or-heading:dimension:rule` (structural anchor — never a line number — so it survives edits and new sessions); dimension (exactly one of the 8 slugs in `reference/methodology.md` — the only lens tag; a basis-form test name is never a finding tag); target ladder rung (`enforcement|path-scoped-context|procedure|prose`; `prose` is the ladder's human-review rung — a rule stated only in words, enforced only by human attention). For durable/team tracking, promote a finding into the existing issue tracker/TODOs — never a bespoke backlog file.
+
+**Fix classification** (rule 11) — every full-form `Fix` line and every `improve` run states exactly one class; short-form/cut findings omit it. **dominant** (a Pareto improvement): improves ≥1 dimension and the "worsens nothing" claim was checked this session at cost proportional to the gain — name what was checked. **trade**: everything else; an unverified premise the fix depends on is a cost, never neutral; when uncertain, classify as trade. Before proposing a trade, look for a dominant alternative to the same concrete pain; if one exists, recommend it and record the trade as a separate P2/P3 opportunity finding with its activation condition (`worth doing when <pain observed>`) — the original finding keeps its severity. A trade is never dropped or silently applied: in ACT it stops for confirmation (Action axis); accepting one is an explicit human decision, recorded like accepted risk. The classification judges the **fix**; severity judges the **finding** — the axes never mix.
 
 ## Modes — load only what the mode needs
 

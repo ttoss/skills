@@ -62,7 +62,7 @@ Enforced: strict TS (tsconfig), lint (CI). Prose-only: "always use money integer
 ### Findings
 [P0][G-001][verification-loop][enforcement] Float arithmetic on money in `sumLineItems`
   Key: src/payments/totals.ts:sumLineItems:verification-loop:float-money
-  Evidence: `10.10+20.20+30.30 !== 60.6`; no test. Risk: billing drift. Fix: integer cents + test; CI gate.
+  Evidence: `10.10+20.20+30.30 !== 60.6`; no test. Risk: billing drift. Fix (dominant — checked: the failing case becomes the test; no API change): integer cents + test; CI gate.
 
 ### Cut findings
 [P1][executable-spec] "money integers" rule unenforced — Key: CLAUDE.md:money-rule:executable-spec:prose-only
