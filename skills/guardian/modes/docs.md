@@ -6,10 +6,12 @@ Steps: inspect the surfaces in scope; run the instruction-artifact syndromes on 
 
 Required/Optional changes entries use the SKILL finding format — instruction findings anchor as `path:heading:dimension:rule`.
 
+Verdicts: `review` and `improve` use the four ranked verdicts from `SKILL.md`. `instructions` always emits `DOCS_BACKLOG` — the instruction-surface mirror of `audit`'s `AUDIT_BACKLOG`: the verdict names the run's shape, not its severity; every P0 still surfaces in full under Required changes.
+
 For `instructions`, prepend `### Surfaces found / reviewed`: one line per surface from the Deep baseline list — disposition `reviewed | absent`, and for reviewed surfaces the enforced/prose-only status. A discovered surface missing from this section means unchecked — a defect in the run, not an allowed omission.
 
 ```md
-### Documentation verdict PASS | PASS_WITH_FIXES | PASS_WITH_ACCEPTED_RISK | BLOCK | DOCS_BACKLOG
+### Documentation verdict PASS | PASS_WITH_FIXES | PASS_WITH_ACCEPTED_RISK | BLOCK (`review`/`improve`) | DOCS_BACKLOG (`instructions`)
 
 ### Surfaces found / reviewed (`instructions` submode only)
 

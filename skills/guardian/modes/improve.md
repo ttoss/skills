@@ -18,7 +18,7 @@ Rules: one finding only; small patch; add/update verification if behavior change
 ```md
 ### Finding fixed [G-### or key]
 
-### Ladder rung targeted enforcement | path-scoped context | procedure | prose
+### Ladder rung targeted enforcement | path-scoped-context | procedure | prose
 
 ### Files changed
 
