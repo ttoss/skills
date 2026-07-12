@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Guardian field kit — record one Guardian run (or event) as a JSONL line.
-// Dependency-free. The Guardian output format (verdicts, [P?][G-NNN][dim][rung] tags,
-// Key: lines, coverage lines) is the parsing contract.
+// Dependency-free. The Guardian output format (verdicts, [P?][class][G-NNN][dim][rung]
+// headlines, Key: lines, coverage lines) is the parsing contract.
 //
 // Usage:
 //   node guardian-record.mjs <output.md>          # record a run from a saved output
@@ -55,15 +55,14 @@ const verdict = text.match(/### (?:Documentation verdict|Verdict)\s+`?([A-Z_]+)/
 // Coverage: review "reviewed N/N changed files" or audit "Read N/N files".
 const cov = text.match(/reviewed (\d+)\/(\d+) changed files/i) ?? text.match(/Read (\d+)\/(\d+) files/i);
 
-// Findings: concrete tags with their durable keys.
+// Findings: concrete tags with their durable keys. One regex covers both layouts, because
+// every finding now carries the full [Pn][class][G-nnn][dim][rung] headline: the full form
+// (Key on an indented line under the headline) and the one-line form (Key inline after "—").
+// The lazy [\s\S]*? binds each headline to its own nearest Key: line.
 const findings = [];
-const tagRe = /\[P(\d)\]\[G-(\d+)\]\[([a-z-]+)\]\[([a-z-]+)\][^\n]*\n\s*Key:\s*(\S+)/g;
+const tagRe = /\[P(\d)\]\[(dominant|trade)\]\[G-(\d+)\]\[([a-z-]+)\]\[([a-z-]+)\][\s\S]*?Key:\s*(\S+)/g;
 for (const m of text.matchAll(tagRe)) {
-  findings.push({ sev: `P${m[1]}`, id: `G-${m[2].padStart(3, '0')}`, dim: m[3], rung: m[4], key: m[5] });
-}
-// Cut findings (audit): `[P1][dim] title — Key: ...`
-for (const m of text.matchAll(/\[P(\d)\]\[([a-z-]+)\][^[\n]*?Key:\s*(\S+)/g)) {
-  if (!findings.some((f) => f.key === m[3])) findings.push({ sev: `P${m[1]}`, dim: m[2], key: m[3], cut: true });
+  findings.push({ sev: `P${m[1]}`, class: m[2], id: `G-${m[3].padStart(3, '0')}`, dim: m[4], rung: m[5], key: m[6] });
 }
 
 emit({

@@ -6,7 +6,7 @@ Use after implementation, before commit. Steps:
 2. Run the Light baseline; escalate to Deep per the triggers in `reference/baseline.md`. Record the choice and trigger for Coverage.
 3. Large diff (>~15 files or >~800 changed lines): list every changed file, group by package/domain, review group by group. The same rule violated in N places → one finding; list all instances under Evidence; anchor the key at the owning rule/config where one exists.
 4. Review the relevant dimensions (`reference/methodology.md`, incl. the relevance rule); on instruction surfaces apply the instruction-artifact syndromes; flag basis-form drift in both directions (case-enumeration where an axis is visible; empty/speculative axis — `reference/basis-form.md`); reconcile touched rules (`reference/baseline.md`).
-5. Classify with the SKILL finding format (incl. `Key:`); note missing verification; write a correction prompt.
+5. Classify with the SKILL finding format (headline + detail tier, incl. fix-class and `Key:`); render per **Output discipline** (SKILL: strict severity order, P1 capped at top 3 full + rest one-line, P2/P3 one line each); note missing verification; write a correction prompt.
 6. End the Summary with `reviewed N/N changed files`; name any unreviewed file under Missing verification — never sample silently.
 
 ```md
@@ -16,9 +16,9 @@ Use after implementation, before commit. Steps:
 
 ### Coverage Light|Deep (trigger) · dimensions checked: <slugs> / skipped: <slugs> (reason)
 
-### Required fixes [P0/P1][G-###][dimension][rung] title + `Key:` line (SKILL finding format) ...
+### Required fixes [P0/P1][dominant|trade][G-###][dimension][rung] title + detail tier (SKILL finding format; P0 first, then P1 — top 3 full, rest one-line) ...
 
-### Suggested improvements [P2/P3][G-###][dimension][rung] title + `Key:` line ...
+### Suggested improvements [P2/P3][dominant|trade][G-###][dimension][rung] title — one line each, or counts per dimension when >~5 ...
 
 ### Missing verification
 
@@ -41,15 +41,14 @@ New `canDelete()` gate on the delete route — permission behavior altered (high
 Deep (high-risk domain) · dimensions checked: verification-loop, boundary-integrity, executable-spec / skipped: co-located-spec, compressibility, pattern-hygiene, debt-containment, instruction-hygiene (no artifact touched)
 
 ### Required fixes
-[P0][G-001][verification-loop][enforcement] Permission gate altered with no test
+[P0][dominant][G-001][verification-loop][enforcement] Permission gate altered with no test
+  fix: add allow/deny unit tests + gate in CI  ·  src/auth/canDelete.ts:42
   Key: src/auth/canDelete.ts:canDelete:verification-loop:missing-test
-  Evidence: `canDelete` added; `git diff` shows no test touched; `pnpm test --filter auth` covers no case.
-  Risk: a future refactor silently opens the delete route; human review is the only sensor.
-  Fix (dominant — checked: test-only addition, no runtime surface; the CI gate still stops per the Action axis): add allow/deny unit tests and gate in CI — or record explicit human acceptance → PASS_WITH_ACCEPTED_RISK.
+  why: `canDelete` added, no test touched (`pnpm test --filter auth` covers no case); a future refactor silently opens the delete route — human review is the only sensor.
+  basis: dominant — test-only addition, no runtime surface; the CI gate still stops per the Action axis. To ship without: explicit human acceptance → PASS_WITH_ACCEPTED_RISK.
 
 ### Suggested improvements
-[P2][G-002][boundary-integrity][enforcement] Delete route imports the DB client directly
-  Key: src/routes/delete.ts:handler:boundary-integrity:layer-bypass — consider an import-restriction rule.
+[P2][trade][G-002][boundary-integrity][enforcement] Delete route imports the DB client directly — Key: src/routes/delete.ts:handler:boundary-integrity:layer-bypass (consider an import-restriction rule)
 
 ### Missing verification
 `pnpm test --filter auth` (add the allow/deny cases above).

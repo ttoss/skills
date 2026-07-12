@@ -4,7 +4,7 @@ Review/improve the repo's context/instruction surfaces. A **surface = one file**
 
 Steps: inspect the surfaces in scope; run the instruction-artifact syndromes on each (`reference/methodology.md`); identify the ambiguity/failure mode the doc should reduce; choose the smallest correct surface (stewardship table in `reference/methodology.md`); ensure surfaces are themselves written in basis-form and, where a basis-form rule belongs in a durable surface and is missing, write it there (propagate — `reference/basis-form.md`); prefer enforceable structure over prose; remove/propose removal of stale/duplicated text (stale criteria in methodology); verify any asserted behavior or recommend a test.
 
-Required/Optional changes entries use the SKILL finding format — instruction findings anchor as `path:heading:dimension:rule`.
+Required/Optional changes entries use the SKILL finding format and **Output discipline** (SKILL) — instruction findings anchor as `path:heading:dimension:rule`.
 
 Verdicts: `review` and `improve` use the four ranked verdicts from `SKILL.md`. `instructions` always emits `DOCS_BACKLOG` — the instruction-surface mirror of `audit`'s `AUDIT_BACKLOG`: the verdict names the run's shape, not its severity; every P0 still surfaces in full under Required changes.
 
@@ -21,9 +21,9 @@ For `instructions`, prepend `### Surfaces found / reviewed`: one line per surfac
 
 ### Recommended surface enforcement | nested CLAUDE.md | .claude/rules | root CLAUDE.md | skill | \*.spec.md | JSDoc/TSDoc | AGENTS.md
 
-### Required changes [P0/P1][G-###][dimension][rung] title + `Key:` line ...
+### Required changes [P0/P1][dominant|trade][G-###][dimension][rung] title + detail tier (SKILL finding format; P0 first, then P1) ...
 
-### Optional changes [P2/P3][G-###][dimension][rung] title + `Key:` line ...
+### Optional changes [P2/P3][dominant|trade][G-###][dimension][rung] title — one line each ...
 
 ### Patch or proposal
 
@@ -46,15 +46,14 @@ CLAUDE.md is 420 lines; most is a per-directory list — a case-enumeration wher
 Move the `src/api/**` conventions to `.claude/rules/api.md` with a `paths:` glob (loads on demand).
 
 ### Required changes
-[P1][G-001][instruction-hygiene][path-scoped-context] Per-directory case-list bloats the always-loaded surface
+[P1][dominant][G-001][instruction-hygiene][path-scoped-context] Per-directory case-list bloats the always-loaded surface
+  fix: extract the API section to `.claude/rules/api.md` (`paths:` glob); delete the 3 stale commands; leave a one-line pointer  ·  CLAUDE.md:12
   Key: CLAUDE.md:api-conventions:instruction-hygiene:global-case-list
-  Evidence: lines list conventions per directory; 3 named commands don't exist in package.json (stale).
-  Risk: context cost on every session; stale commands mislead agents.
-  Fix (dominant — checked: content moves verbatim; the 3 commands verified absent from package.json): extract the API section to `.claude/rules/api.md` (`paths:` glob); delete the 3 stale commands; leave a one-line pointer.
+  why: lines list conventions per directory, and 3 named commands are absent from package.json (stale) — context cost every session, stale commands mislead agents.
+  basis: dominant — content moves verbatim; the 3 commands verified absent from package.json.
 
 ### Optional changes
-[P2][G-002][instruction-hygiene][path-scoped-context] Test conventions could move to a nested CLAUDE.md under `src/`
-  Key: CLAUDE.md:test-conventions:instruction-hygiene:global-case-list
+[P2][trade][G-002][instruction-hygiene][path-scoped-context] Test conventions could move to a nested CLAUDE.md under `src/` — Key: CLAUDE.md:test-conventions:instruction-hygiene:global-case-list
 
 ### Patch or proposal
 (proposal — `docs review` is read-only; run `/guardian docs improve CLAUDE.md` to apply)
