@@ -44,7 +44,7 @@ Manual only (`disable-model-invocation`). The first token selects the mode:
 | `improve`      | edit one approved surface                            | yes    |
 | `jsdoc`        | alias for `improve` targeting a JSDoc/TSDoc surface  | yes    |
 
-The contracts — routing, action axis (read-only vs write), severity, verdicts, finding format — are defined once in [`SKILL.md`](SKILL.md), the runtime source of truth; this README only mirrors the tables above, and CI validates they stay in sync. What the tables don't show: every finding carries a durable key that survives sessions (`improve` accepts a `G-NNN` or the key), and writes always target one approved unit at a time.
+The contracts — routing, action axis (read-only vs write), severity, verdicts, finding format — are defined once in [`SKILL.md`](SKILL.md), the runtime source of truth; this README only mirrors the tables above, and CI validates they stay in sync. What the tables don't show: every finding is a scannable headline (severity · fix-class · id · dimension · rung) over an indented detail tier, carries a durable key that survives sessions (`improve` accepts a `G-NNN` or the key), and writes always target one approved unit at a time.
 
 Typical loop — the ratchet that makes it pay off:
 

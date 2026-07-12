@@ -53,8 +53,27 @@ test('empty skills dir reports an error', () => {
   }
 });
 
+test('valid finding tag ([Pn][class][G-nnn][slug][rung] + Key) passes', () => {
+  const body = `${fm('foo')}\n[P1][dominant][G-001][verification-loop][enforcement] Good tag\n  Key: a.ts:x:verification-loop:rule\n`;
+  withSkill('foo', body, (dir) => {
+    mkdirSync(join(dir, 'foo', 'reference'), { recursive: true });
+    writeFileSync(join(dir, 'foo', 'reference', 'methodology.md'), '1. **Verification loop** (`verification-loop`) — x.\n');
+    assert.deepEqual(validate(dir), []);
+  });
+});
+
+test('finding tag with unknown fix-class fails', () => {
+  const body = `${fm('foo')}\n[P1][bogus][G-001][verification-loop][enforcement] Bad class\n  Key: a.ts:x:verification-loop:rule\n`;
+  withSkill('foo', body, (dir) => {
+    mkdirSync(join(dir, 'foo', 'reference'), { recursive: true });
+    writeFileSync(join(dir, 'foo', 'reference', 'methodology.md'), '1. **Verification loop** (`verification-loop`) — x.\n');
+    const errors = validate(dir);
+    assert.ok(errors.some((e) => e.includes('unknown fix-class')), errors.join('; '));
+  });
+});
+
 test('finding tag with unknown dimension slug fails (slugs parsed from methodology.md)', () => {
-  const body = `${fm('foo')}\n[P1][G-001][not-a-slug][enforcement] Bad tag\n  Key: a.ts:x:not-a-slug:rule\n`;
+  const body = `${fm('foo')}\n[P1][dominant][G-001][not-a-slug][enforcement] Bad tag\n  Key: a.ts:x:not-a-slug:rule\n`;
   withSkill('foo', body, (dir) => {
     mkdirSync(join(dir, 'foo', 'reference'), { recursive: true });
     writeFileSync(join(dir, 'foo', 'reference', 'methodology.md'), '1. **Verification loop** (`verification-loop`) — x.\n');
@@ -64,7 +83,7 @@ test('finding tag with unknown dimension slug fails (slugs parsed from methodolo
 });
 
 test('finding tag with unknown ladder rung fails', () => {
-  const body = `${fm('foo')}\n[P1][G-001][verification-loop][not-a-rung] Bad rung\n  Key: a.ts:x:verification-loop:rule\n`;
+  const body = `${fm('foo')}\n[P1][dominant][G-001][verification-loop][not-a-rung] Bad rung\n  Key: a.ts:x:verification-loop:rule\n`;
   withSkill('foo', body, (dir) => {
     const errors = validate(dir);
     assert.ok(errors.some((e) => e.includes('unknown ladder rung')), errors.join('; '));
@@ -72,15 +91,15 @@ test('finding tag with unknown ladder rung fails', () => {
 });
 
 test('file emitting finding tags without a Key: line fails', () => {
-  const body = `${fm('foo')}\n[P1][G-001][verification-loop][enforcement] Tag without key\n`;
+  const body = `${fm('foo')}\n[P1][dominant][G-001][verification-loop][enforcement] Tag without key\n`;
   withSkill('foo', body, (dir) => {
     const errors = validate(dir);
     assert.ok(errors.some((e) => e.includes('no Key: line')), errors.join('; '));
   });
 });
 
-test('template placeholders like [P0/P1][G-###] do not trigger tag checks', () => {
-  const body = `${fm('foo')}\n### Required fixes [P0/P1][G-###][dimension][rung] ...\n`;
+test('template placeholders like [P0/P1][dominant|trade][G-###] do not trigger tag checks', () => {
+  const body = `${fm('foo')}\n### Required fixes [P0/P1][dominant|trade][G-###][dimension][rung] ...\n`;
   withSkill('foo', body, (dir) => assert.deepEqual(validate(dir), []));
 });
 

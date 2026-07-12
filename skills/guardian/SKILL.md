@@ -4,7 +4,7 @@ description: Guard and improve a repository's AI-readiness. Run /guardian plan, 
 license: MIT
 metadata:
   author: ttoss
-  version: 0.4.0
+  version: 0.5.0
 disable-model-invocation: true
 argument-hint: 'plan|review|pr|audit|improve|docs [task|path|finding|surface]'
 ---
@@ -88,17 +88,21 @@ Tie-break: a missing test is P1 — unless the untested behavior is in the high-
 
 Verdicts for diff/surface reviews (`plan` and `audit` define theirs in their mode files; `docs instructions` emits `DOCS_BACKLOG`, defined in `modes/docs.md`): `PASS` · `PASS_WITH_FIXES` (P1 exists) · `PASS_WITH_ACCEPTED_RISK` · `BLOCK` (unaccepted P0). When several apply, emit the most severe: `BLOCK` > `PASS_WITH_ACCEPTED_RISK` > `PASS_WITH_FIXES` > `PASS`. A human may accept a P0/P1 only explicitly; record who accepted, what, why, a follow-up/expiry, and any compensating control. Accepted risk is `PASS_WITH_ACCEPTED_RISK`, never `PASS`.
 
-Finding format — a short in-session `G-NNN` plus a durable composite key, so `audit → improve` survives across sessions:
+Finding format — a scannable **headline** (one line, all axes) over an indented **detail tier** (read only when acting on that finding):
 
 ```txt
-[P1][G-001][verification-loop][enforcement] Missing focused test for new discount rounding rule
+[P1][dominant][G-001][verification-loop][enforcement] Missing test for discount rounding
+  fix: add rounding unit test + wire into CI  ·  src/pricing/discount.ts:88
   Key: src/pricing/discount.ts:applyDiscount:verification-loop:missing-test
-  Evidence / Risk / Fix (dominant — checked: <what> | trade: <what worsens / open premise / verification cost>)
+  why: no test covers the new rounding branch; a refactor could silently change money math
+  basis: checked — test-only addition adds no runtime surface (trade → name what worsens / the open premise / verification cost)
 ```
 
-Fields: severity (`P0–P3`); `G-NNN` (numbering continues across runs within a session — never restart at G-001; if a G-NNN is ambiguous or from a prior session, `improve` requires the durable key); the **durable key** `path:symbol-or-heading:dimension:rule` (structural anchor — never a line number — so it survives edits and new sessions); dimension (exactly one of the 8 slugs in `reference/methodology.md` — the only lens tag; a basis-form test name is never a finding tag); target ladder rung (`enforcement|path-scoped-context|procedure|prose`; `prose` is the ladder's human-review rung — a rule stated only in words, enforced only by human attention). For durable/team tracking, promote a finding into the existing issue tracker/TODOs — never a bespoke backlog file.
+Headline axes, in order: severity (`P0–P3`); **fix-class** (`dominant|trade`, always present, adjacent to severity but a distinct axis — severity judges the finding, class judges the fix); `G-NNN` (numbering continues across runs within a session — never restart at G-001; if a G-NNN is ambiguous or from a prior session, `improve` requires the durable key); dimension (exactly one of the 8 slugs in `reference/methodology.md` — the only lens tag; a basis-form test name is never a finding tag); target ladder rung (`enforcement|path-scoped-context|procedure|prose`; `prose` is the human-review rung — a rule stated only in words). Detail tier: `fix:` (the one action + a clickable `path:line`, ephemeral — for navigating now); `Key:` the **durable key** `path:symbol-or-heading:dimension:rule` (structural anchor — never a line number — so it survives edits and new sessions); `why:` evidence + risk; `basis:` the fix-class justification. A one-line finding carries the full headline with the key inline (`… — Key: …`) and no detail tier. For durable/team tracking, promote a finding into the existing issue tracker/TODOs — never a bespoke backlog file.
 
-**Fix classification** (rule 11) — every full-form `Fix` line and every `improve` run states exactly one class; short-form/cut findings omit it. **dominant** (a Pareto improvement): improves ≥1 dimension and the "worsens nothing" claim was checked this session at cost proportional to the gain — name what was checked. **trade**: everything else; an unverified premise the fix depends on is a cost, never neutral; when uncertain, classify as trade. Before proposing a trade, look for a dominant alternative to the same concrete pain; if one exists, recommend it and record the trade as a separate P2/P3 opportunity finding with its activation condition (`worth doing when <pain observed>`) — the original finding keeps its severity. A trade is never dropped or silently applied: in ACT it stops for confirmation (Action axis); accepting one is an explicit human decision, recorded like accepted risk. The classification judges the **fix**; severity judges the **finding** — the axes never mix.
+**Fix classification** (rule 11) — every finding's headline carries exactly one class, including one-line findings; when the "worsens nothing" check hasn't been done, default to **trade**. **dominant** (a Pareto improvement): improves ≥1 dimension and the "worsens nothing" claim was checked this session at cost proportional to the gain — name what was checked. **trade**: everything else; an unverified premise the fix depends on is a cost, never neutral; when uncertain, classify as trade. Before proposing a trade, look for a dominant alternative to the same concrete pain; if one exists, recommend it and record the trade as a separate P2/P3 opportunity finding with its activation condition (`worth doing when <pain observed>`) — the original finding keeps its severity. A trade is never dropped or silently applied: in ACT it stops for confirmation (Action axis); accepting one is an explicit human decision, recorded like accepted risk. The classification judges the **fix**; severity judges the **finding** — the axes never mix.
+
+**Output discipline** (`review`, `audit`, `docs` render findings identically — never a wall of mixed prose and issues): strict severity order, all P0 then P1 then P2 then P3, and prose sections (Summary, Coverage, Docs impact) never sit between findings. P0 always full; P1 full for the top 3 by impact/cost, each extra as a one-line finding; P2/P3 one line each, or counts per dimension when >~5. Every finding — full or one-line — carries the full headline (incl. fix-class). End with exactly one recommended next action, under its own heading.
 
 ## Modes — load only what the mode needs
 

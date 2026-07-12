@@ -33,7 +33,7 @@ Why: Guardian's success metric is *"problems that stop recurring"*. This kit mak
 One JSON object per line in `stats.jsonl`:
 
 ```jsonc
-{"ts":"…","repo":"you/app","source":"local|ci","type":"run","mode":"review","verdict":"BLOCK","coverage":{"reviewed":3,"total":3},"findings":[{"sev":"P0","id":"G-001","dim":"verification-loop","rung":"enforcement","key":"src/auth/canDelete.ts:canDelete:verification-loop:missing-test"}]}
+{"ts":"…","repo":"you/app","source":"local|ci","type":"run","mode":"review","verdict":"BLOCK","coverage":{"reviewed":3,"total":3},"findings":[{"sev":"P0","class":"dominant","id":"G-001","dim":"verification-loop","rung":"enforcement","key":"src/auth/canDelete.ts:canDelete:verification-loop:missing-test"}]}
 {"ts":"…","repo":"you/app","source":"local","type":"improve","key":"…"}
 {"ts":"…","repo":"you/app","source":"local","type":"fp","key":"…","reason":"…"}
 ```
@@ -56,4 +56,4 @@ The loop this closes: **runs → JSONL → patterns (recurring dims, FP rate, co
 
 ## Contract
 
-The parser depends on Guardian's output format (verdict lines, `[P?][G-NNN][dim][rung]` tags, `Key:` lines, coverage lines) — that format is validated in the skill's own CI, so kit and skill version together. Kit works with guardian ≥ 0.3.0.
+The parser depends on Guardian's output format (verdict lines, `[P?][class][G-NNN][dim][rung]` headlines, `Key:` lines, coverage lines) — that format is validated in the skill's own CI, so kit and skill version together. Kit works with guardian ≥ 0.5.0.

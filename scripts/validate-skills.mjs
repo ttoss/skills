@@ -78,10 +78,12 @@ export function validate(skillsDir) {
     }
 
     // 4. Finding-tag integrity (raw text — tags live inside fenced templates/examples):
-    //    concrete [Pn][G-nnn][slug][rung] tags must use a dimension slug defined in
-    //    reference/methodology.md's numbered list and a known ladder rung; a file that
-    //    emits concrete tags must also carry the mandatory `Key:` line.
+    //    concrete [Pn][class][G-nnn][slug][rung] tags must use a known fix-class
+    //    (dominant|trade), a dimension slug defined in reference/methodology.md's numbered
+    //    list, and a known ladder rung; a file that emits concrete tags must also carry the
+    //    mandatory `Key:` line. Placeholders like [P0/P1][…] don't match `\[P\d\]` and are ignored.
     const RUNGS = new Set(['enforcement', 'path-scoped-context', 'procedure', 'prose']);
+    const CLASSES = new Set(['dominant', 'trade']);
     const methodologyPath = join(root, 'reference', 'methodology.md');
     const slugs = new Set();
     if (existsSync(methodologyPath)) {
@@ -90,10 +92,11 @@ export function validate(skillsDir) {
     for (const file of scanFiles) {
       const rel = file.slice(root.length + 1);
       const rawText = readFileSync(file, 'utf8');
-      const tags = [...rawText.matchAll(/\[P\d\]\[G-\d+\]\[([a-z-]+)\]\[([a-z-]+)\]/g)];
+      const tags = [...rawText.matchAll(/\[P\d\]\[([a-z]+)\]\[G-\d+\]\[([a-z-]+)\]\[([a-z-]+)\]/g)];
       for (const t of tags) {
-        if (slugs.size && !slugs.has(t[1])) err(skill, `${rel} uses unknown dimension slug "${t[1]}"`);
-        if (!RUNGS.has(t[2])) err(skill, `${rel} uses unknown ladder rung "${t[2]}"`);
+        if (!CLASSES.has(t[1])) err(skill, `${rel} uses unknown fix-class "${t[1]}" (expected dominant|trade)`);
+        if (slugs.size && !slugs.has(t[2])) err(skill, `${rel} uses unknown dimension slug "${t[2]}"`);
+        if (!RUNGS.has(t[3])) err(skill, `${rel} uses unknown ladder rung "${t[3]}"`);
       }
       if (tags.length && !rawText.includes('Key:')) err(skill, `${rel} emits finding tags but has no Key: line`);
     }
