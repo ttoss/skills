@@ -106,7 +106,7 @@ Headline axes, in order: severity (`P0–P3`); **fix-class** (`dominant|trade`, 
 
 ## Modes — load only what the mode needs
 
-Behavioral invariants live in this file (always loaded); rationale and the portable definition live in `CONCEPT.md` (human-facing, never loaded at runtime — never put an operating rule only there). Read each file below relative to this skill's directory, on demand; skip any listed file already read this session. Each mode file ends with a worked `## Example`.
+Behavioral invariants live in this file (always loaded); rationale and the portable definition live in CONCEPT.md, kept in the source repo at `docs/guardian/CONCEPT.md` (https://github.com/ttoss/skills/blob/main/docs/guardian/CONCEPT.md) — human-facing, never shipped with the skill or loaded at runtime; never put an operating rule only there. Read each file below relative to this skill's directory, on demand; skip any listed file already read this session. Each mode file ends with a worked `## Example`.
 
 | Mode    | Read                                                                                                                                                  |
 | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |

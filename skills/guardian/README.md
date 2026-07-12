@@ -57,7 +57,7 @@ Typical loop — the ratchet that makes it pay off:
 
 ## Layout
 
-- `CONCEPT.md` — what Guardian is and why, independent of any host agent or file format; read this to understand the thesis or to port Guardian to a new platform
+- [`CONCEPT.md`](https://github.com/ttoss/skills/blob/main/docs/guardian/CONCEPT.md) — what Guardian is and why, independent of any host agent or file format; read this to understand the thesis or to port Guardian to a new platform (lives in the source repo under `docs/guardian/`, not shipped with the skill)
 - `SKILL.md` — router: identity, rules, severity, mode routing
 - `reference/` — `basis-form` (the standard), `methodology` (dimensions + instruction-artifact syndromes), `baseline` (discovery + reconciliation), `enforcement` (promotion + checks), `bindings` (Claude Code specifics)
 - `modes/` — `plan`, `review`, `pr`, `audit`, `improve`, `docs` (each with a worked example)
