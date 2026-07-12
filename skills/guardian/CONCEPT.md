@@ -53,7 +53,7 @@ Guardian is a governance function over a repository's *decision surface*, not a 
 
 ## 4. The durability ladder
 
-This is Guardian's central operating principle, and the one piece of the concept that must survive any reimplementation verbatim:
+This is Guardian's central operating principle, and the piece of the concept whose rung ordering and meaning must survive any reimplementation verbatim (the surface examples beside each rung are illustrative and platform-specific — see the host bindings):
 
 ```
 deterministic enforcement   types, schemas, lint, tests, coverage gates, CI, hooks   ← strongest, prefer
@@ -66,7 +66,7 @@ A rule that only exists as human review is the most expensive possible enforceme
 
 This is not "add more documentation." Documentation that only restates what the code already makes obvious adds context cost without reducing ambiguity, and Guardian treats *that* as a finding too. The ladder is a preference ordering, not a mandate to climb it unconditionally — before promoting a prose rule to enforcement, it must be precise enough to check mechanically, cheap to verify with a low false-positive rate, and not something that actually encodes a product decision a human needs to make, not a repo's engineer.
 
-The success metric follows directly from this: **Guardian does not succeed by how many problems it finds. It succeeds by how many problems it makes structurally harder to repeat.** A hundred findings that stay as review comments next sprint is failure. Three findings that become a lint rule, a test, and a CI gate is success.
+The success metric follows directly from this: **Guardian does not succeed by how many problems it finds. It succeeds by how many problems it makes structurally harder to repeat.** A hundred findings that stay as review comments next sprint is failure. Three findings that become a lint rule, a test, and a CI gate is success. Note the boundary this implies: Guardian keeps no cross-session memory (diagnosis is side-effect-free), so *recurrence itself* is observed **outside** the skill — in the issue tracker where findings are promoted, or via the opt-in field kit — never by Guardian re-reading its own past runs. The durable key exists precisely so that external record can survive sessions.
 
 ## 5. Authority model — methodology vs. intent
 

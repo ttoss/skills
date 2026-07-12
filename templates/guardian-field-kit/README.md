@@ -56,4 +56,4 @@ The loop this closes: **runs → JSONL → patterns (recurring dims, FP rate, co
 
 ## Contract
 
-The parser depends on Guardian's output format (verdict lines, `[P?][class][G-NNN][dim][rung]` headlines, `Key:` lines, coverage lines) — that format is validated in the skill's own CI, so kit and skill version together. Kit works with guardian ≥ 0.5.0.
+The parser depends on Guardian's output format (verdict lines, `[P?][class][G-NNN][dim][rung]` headlines, `Key:` lines, coverage lines) — that format is validated in the skill's own CI, and this kit's parser is tested against the skill's worked examples there (`guardian-record.test.mjs`), so kit and skill version together. Kit works with guardian ≥ 0.5.0.

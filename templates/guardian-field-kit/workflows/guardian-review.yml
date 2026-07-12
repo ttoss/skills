@@ -40,6 +40,7 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           prompt: |
             /guardian review
+            This is a non-interactive (headless) run: do not use AskUserQuestion menus — end with the text next-step line only.
             After producing the review output, record the run exactly once:
             GUARDIAN_STATS_FILE=.guardian-stats/stats.jsonl node scripts/guardian-record.mjs <<'EOF'
             <paste the full review output here>

@@ -12,6 +12,7 @@
 // Sink: appends to $GUARDIAN_STATS_FILE (default ./guardian-stats.jsonl).
 import { readFileSync, appendFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 
 const STATS_FILE = process.env.GUARDIAN_STATS_FILE ?? './guardian-stats.jsonl';
 
@@ -30,45 +31,54 @@ const emit = (event) => {
   console.log(line);
 };
 
-const [, , arg1, arg2, ...rest] = process.argv;
+// Parse one Guardian run output into a run event (no ts/repo/source — emit() adds those).
+// Exported so it can be unit-tested; the CLI below only runs when invoked directly.
+export const parseRun = (text) => {
+  // Mode: inferred from the mode-specific template shapes.
+  const mode =
+    /### Verdict AUDIT_BACKLOG/.test(text) ? 'audit'
+    : /### Documentation verdict/.test(text) ? 'docs'
+    : /### Finding fixed/.test(text) ? 'improve'
+    : /### PR title/.test(text) ? 'pr'
+    : /### Verdict (READY|NEEDS_CLARIFICATION|TOO_RISKY)/.test(text) ? 'plan'
+    : 'review';
 
-if (arg1 === '--improve' || arg1 === '--fp') {
-  if (!arg2) { console.error(`usage: guardian-record.mjs ${arg1} <durable-key> [reason]`); process.exit(1); }
-  emit({ type: arg1 === '--improve' ? 'improve' : 'fp', key: arg2, ...(rest.length ? { reason: rest.join(' ') } : {}) });
-  process.exit(0);
+  const verdict = text.match(/### (?:Documentation verdict|Verdict)\s+`?([A-Z_]+)/)?.[1]
+    ?? (/PASS \(trivial/.test(text) ? 'PASS_TRIVIAL' : null);
+
+  // Coverage: review "reviewed N/N changed files" or audit "Read N/N files".
+  const cov = text.match(/reviewed (\d+)\/(\d+) changed files/i) ?? text.match(/Read (\d+)\/(\d+) files/i);
+
+  // Findings: each concrete [Pn][class][G-nnn][dim][rung] headline binds to a Key: only within
+  // its OWN span (headline → next headline), so a finding missing its Key can neither steal the
+  // next finding's key nor drop it. Full form = Key on an indented line under the headline;
+  // one-line form = Key inline after "—". A keyless finding is still emitted (without `key`).
+  const findings = [];
+  const headlineRe = /\[P(\d)\]\[(dominant|trade)\]\[G-(\d+)\]\[([a-z-]+)\]\[([a-z-]+)\]/g;
+  const heads = [...text.matchAll(headlineRe)];
+  for (let i = 0; i < heads.length; i++) {
+    const h = heads[i];
+    const span = text.slice(h.index + h[0].length, i + 1 < heads.length ? heads[i + 1].index : text.length);
+    const key = span.match(/Key:\s*(\S+)/)?.[1];
+    findings.push({ sev: `P${h[1]}`, class: h[2], id: `G-${h[3].padStart(3, '0')}`, dim: h[4], rung: h[5], ...(key ? { key } : {}) });
+  }
+
+  return {
+    type: 'run',
+    mode,
+    ...(verdict ? { verdict } : {}),
+    ...(cov ? { coverage: { reviewed: +cov[1], total: +cov[2] } } : {}),
+    findings,
+  };
+};
+
+// CLI — only when run directly (`node guardian-record.mjs …`), not when imported by a test.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const [, , arg1, arg2, ...rest] = process.argv;
+  if (arg1 === '--improve' || arg1 === '--fp') {
+    if (!arg2) { console.error(`usage: guardian-record.mjs ${arg1} <durable-key> [reason]`); process.exit(1); }
+    emit({ type: arg1 === '--improve' ? 'improve' : 'fp', key: arg2, ...(rest.length ? { reason: rest.join(' ') } : {}) });
+  } else {
+    emit(parseRun(arg1 ? readFileSync(arg1, 'utf8') : readFileSync(0, 'utf8')));
+  }
 }
-
-const text = arg1 ? readFileSync(arg1, 'utf8') : readFileSync(0, 'utf8');
-
-// Mode: inferred from the mode-specific template shapes.
-const mode =
-  /### Verdict AUDIT_BACKLOG/.test(text) ? 'audit'
-  : /### Documentation verdict/.test(text) ? 'docs'
-  : /### Finding fixed/.test(text) ? 'improve'
-  : /### PR title/.test(text) ? 'pr'
-  : /### Verdict (READY|NEEDS_CLARIFICATION|TOO_RISKY)/.test(text) ? 'plan'
-  : 'review';
-
-const verdict = text.match(/### (?:Documentation verdict|Verdict)\s+`?([A-Z_]+)/)?.[1]
-  ?? (/PASS \(trivial/.test(text) ? 'PASS_TRIVIAL' : null);
-
-// Coverage: review "reviewed N/N changed files" or audit "Read N/N files".
-const cov = text.match(/reviewed (\d+)\/(\d+) changed files/i) ?? text.match(/Read (\d+)\/(\d+) files/i);
-
-// Findings: concrete tags with their durable keys. One regex covers both layouts, because
-// every finding now carries the full [Pn][class][G-nnn][dim][rung] headline: the full form
-// (Key on an indented line under the headline) and the one-line form (Key inline after "—").
-// The lazy [\s\S]*? binds each headline to its own nearest Key: line.
-const findings = [];
-const tagRe = /\[P(\d)\]\[(dominant|trade)\]\[G-(\d+)\]\[([a-z-]+)\]\[([a-z-]+)\][\s\S]*?Key:\s*(\S+)/g;
-for (const m of text.matchAll(tagRe)) {
-  findings.push({ sev: `P${m[1]}`, class: m[2], id: `G-${m[3].padStart(3, '0')}`, dim: m[4], rung: m[5], key: m[6] });
-}
-
-emit({
-  type: 'run',
-  mode,
-  ...(verdict ? { verdict } : {}),
-  ...(cov ? { coverage: { reviewed: +cov[1], total: +cov[2] } } : {}),
-  findings,
-});

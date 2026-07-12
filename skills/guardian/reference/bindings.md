@@ -21,6 +21,12 @@ before stopping without checks  → Stop hook
 after an edit, to flag/suggest  → PostToolUse hook (cannot prevent; advisory)
 ```
 
+## Interactive menus
+
+The `SKILL.md` **Interactive menus** rule (when a run may close with a chooser, and the anti-flooding limits) is realized here with the `AskUserQuestion` tool: each option is a label that maps to the `/guardian …` command the user would otherwise type (e.g. `improve <G-NNN|key>`, a mode, or a sub-scope), plus a no-op ("stop here"). This is the swap point when porting — replace it with the host agent's chooser, or drop it entirely: the text next-step line is always emitted and is the source of truth, so removing the menu changes nothing about correctness.
+
+Detecting a **non-interactive** run (where the menu must be skipped): a headless invocation — `claude -p`, or CI such as the field-kit `guardian-review.yml` workflow — has no interactive channel; end with the text next-step only. A manual `/guardian` in a terminal or web session is interactive. When in doubt, skip the menu (the text next-step never regresses).
+
 ## Skill mechanics
 
 - A skill's directory name is its command (`.claude/skills/guardian/` → `/guardian`). Its `SKILL.md` body stays in context for the whole session once invoked, so keep it lean and put depth in on-demand reference files; reference the skill's own files as `${CLAUDE_SKILL_DIR}/<path>`.

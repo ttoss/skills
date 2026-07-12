@@ -19,7 +19,7 @@ const stripFences = (text) => {
 };
 
 const parseFrontmatter = (text) => {
-  const m = text.match(/^---\n([\s\S]*?)\n---/);
+  const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!m) return null;
   const fm = {};
   for (const line of m[1].split('\n')) {
@@ -89,17 +89,25 @@ export function validate(skillsDir) {
     if (existsSync(methodologyPath)) {
       for (const m of readFileSync(methodologyPath, 'utf8').matchAll(/^\d+\.\s+\*\*[^*]+\*\*\s+\(`([a-z-]+)`\)/gm)) slugs.add(m[1]);
     }
+    let anyTags = false;
     for (const file of scanFiles) {
       const rel = file.slice(root.length + 1);
       const rawText = readFileSync(file, 'utf8');
       const tags = [...rawText.matchAll(/\[P\d\]\[([a-z]+)\]\[G-\d+\]\[([a-z-]+)\]\[([a-z-]+)\]/g)];
-      for (const t of tags) {
+      if (tags.length) anyTags = true;
+      for (let i = 0; i < tags.length; i++) {
+        const t = tags[i];
         if (!CLASSES.has(t[1])) err(skill, `${rel} uses unknown fix-class "${t[1]}" (expected dominant|trade)`);
         if (slugs.size && !slugs.has(t[2])) err(skill, `${rel} uses unknown dimension slug "${t[2]}"`);
         if (!RUNGS.has(t[3])) err(skill, `${rel} uses unknown ladder rung "${t[3]}"`);
+        // Every finding must carry a Key: within its own span (headline → next headline), so a
+        // keyless finding can't borrow another finding's Key: elsewhere in the file.
+        const span = rawText.slice(t.index + t[0].length, i + 1 < tags.length ? tags[i + 1].index : rawText.length);
+        if (!/Key:\s*\S+/.test(span)) err(skill, `${rel} finding "${t[0]}" has no Key: before the next finding`);
       }
-      if (tags.length && !rawText.includes('Key:')) err(skill, `${rel} emits finding tags but has no Key: line`);
     }
+    // If any file emits concrete tags, the slug list must have loaded — else slug validation is blind.
+    if (anyTags && slugs.size === 0) err(skill, 'emits finding tags but reference/methodology.md is missing or unparseable — cannot validate dimension slugs');
 
     // 5. Always-loaded body stays lean: SKILL.md hard cap.
     const lineCount = raw.split('\n').length;
@@ -123,7 +131,10 @@ export function validate(skillsDir) {
         const a = [...new Set(tableModes)].sort().join(','), b = [...fileModes].sort().join(',');
         if (a !== b) err(skill, `README mode table (${a}) != modes/ (${b})`);
       }
-      for (const m of readme.matchAll(new RegExp(`/${skill}\\s+([a-z]+)`, 'g'))) {
+      // Only command references inside code (inline `…` or fenced ```…```) count as mode claims —
+      // prose like "run /guardian on any PR" must not flag `on` as a nonexistent mode.
+      const code = [...readme.matchAll(/`[^`\n]+`/g), ...readme.matchAll(/```[\s\S]*?```/g)].map((c) => c[0]).join('\n');
+      for (const m of code.matchAll(new RegExp(`/${skill}\\s+([a-z-]+)`, 'g'))) {
         if (!fileModes.has(m[1])) err(skill, `README references /${skill} ${m[1]} but modes/${m[1]}.md does not exist`);
       }
     }
