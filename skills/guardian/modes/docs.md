@@ -50,7 +50,7 @@ Move the `src/api/**` conventions to `.claude/rules/api.md` with a `paths:` glob
   fix: extract the API section to `.claude/rules/api.md` (`paths:` glob); delete the 3 stale commands; leave a one-line pointer  ·  CLAUDE.md:12
   Key: CLAUDE.md:api-conventions:instruction-hygiene:global-case-list
   why: lines list conventions per directory, and 3 named commands are absent from package.json (stale) — context cost every session, stale commands mislead agents.
-  basis: dominant — content moves verbatim; the 3 commands verified absent from package.json.
+  basis: checked — content moves verbatim; the 3 commands verified absent from package.json.
 
 ### Optional changes
 [P2][trade][G-002][instruction-hygiene][path-scoped-context] Test conventions could move to a nested CLAUDE.md under `src/` — Key: CLAUDE.md:test-conventions:instruction-hygiene:global-case-list

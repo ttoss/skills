@@ -45,7 +45,7 @@ Deep (high-risk domain) · dimensions checked: verification-loop, boundary-integ
   fix: add allow/deny unit tests + gate in CI  ·  src/auth/canDelete.ts:42
   Key: src/auth/canDelete.ts:canDelete:verification-loop:missing-test
   why: `canDelete` added, no test touched (`pnpm test --filter auth` covers no case); a future refactor silently opens the delete route — human review is the only sensor.
-  basis: dominant — test-only addition, no runtime surface; the CI gate still stops per the Action axis. To ship without: explicit human acceptance → PASS_WITH_ACCEPTED_RISK.
+  basis: checked — test-only addition, no runtime surface; the CI gate still stops per the Action axis. To ship without: explicit human acceptance → PASS_WITH_ACCEPTED_RISK.
 
 ### Suggested improvements
 [P2][trade][G-002][boundary-integrity][enforcement] Delete route imports the DB client directly — Key: src/routes/delete.ts:handler:boundary-integrity:layer-bypass (consider an import-restriction rule)

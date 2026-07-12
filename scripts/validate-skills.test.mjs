@@ -90,11 +90,52 @@ test('finding tag with unknown ladder rung fails', () => {
   });
 });
 
-test('file emitting finding tags without a Key: line fails', () => {
+test('file emitting a finding tag without a Key: in its span fails', () => {
   const body = `${fm('foo')}\n[P1][dominant][G-001][verification-loop][enforcement] Tag without key\n`;
   withSkill('foo', body, (dir) => {
     const errors = validate(dir);
-    assert.ok(errors.some((e) => e.includes('no Key: line')), errors.join('; '));
+    assert.ok(errors.some((e) => e.includes('has no Key: before the next finding')), errors.join('; '));
+  });
+});
+
+test('a finding with no Key: before the next finding fails (per-span, not file-global)', () => {
+  const body = `${fm('foo')}\n[P1][dominant][G-001][verification-loop][enforcement] First, no key of its own\n[P2][trade][G-002][verification-loop][enforcement] Second — Key: a.ts:y:verification-loop:rule\n`;
+  withSkill('foo', body, (dir) => {
+    mkdirSync(join(dir, 'foo', 'reference'), { recursive: true });
+    writeFileSync(join(dir, 'foo', 'reference', 'methodology.md'), '1. **Verification loop** (`verification-loop`) — x.\n');
+    const errors = validate(dir);
+    assert.ok(errors.some((e) => e.includes('has no Key: before the next finding')), errors.join('; '));
+  });
+});
+
+test('emitting finding tags with methodology.md missing fails (slug validation cannot run)', () => {
+  const body = `${fm('foo')}\n[P1][dominant][G-001][verification-loop][enforcement] Tag\n  Key: a.ts:x:verification-loop:rule\n`;
+  withSkill('foo', body, (dir) => {
+    const errors = validate(dir);
+    assert.ok(errors.some((e) => e.includes('cannot validate dimension slugs')), errors.join('; '));
+  });
+});
+
+test('argument-hint drifting from modes/ fails; matching passes', () => {
+  const skillMd = `---\nname: foo\ndescription: t\nargument-hint: 'plan|review [x]'\n---\n\n# foo\n`;
+  withSkill('foo', skillMd, (dir) => {
+    mkdirSync(join(dir, 'foo', 'modes'), { recursive: true });
+    writeFileSync(join(dir, 'foo', 'modes', 'plan.md'), '# plan\n');
+    assert.ok(validate(dir).some((e) => e.includes('argument-hint')), 'drift should fail');
+    writeFileSync(join(dir, 'foo', 'modes', 'review.md'), '# review\n');
+    assert.deepEqual(validate(dir), []);
+  });
+});
+
+test('/<skill> in prose is ignored; only code references are checked', () => {
+  withSkill('foo', fm('foo'), (dir) => {
+    mkdirSync(join(dir, 'foo', 'modes'), { recursive: true });
+    writeFileSync(join(dir, 'foo', 'modes', 'plan.md'), '# plan\n');
+    const table = '| Mode | Does |\n| --- | --- |\n| `plan` | x |\n\n';
+    writeFileSync(join(dir, 'foo', 'README.md'), `${table}Run /foo on any PR to start.\n`);
+    assert.deepEqual(validate(dir), [], 'prose /foo mention must not flag');
+    writeFileSync(join(dir, 'foo', 'README.md'), `${table}Run \`/foo bogus\` to start.\n`);
+    assert.ok(validate(dir).some((e) => e.includes('/foo bogus')), 'code /foo bogus must flag');
   });
 });
 
@@ -119,7 +160,7 @@ test('README referencing a nonexistent /skill mode fails', () => {
   withSkill('foo', fm('foo'), (dir) => {
     mkdirSync(join(dir, 'foo', 'modes'), { recursive: true });
     writeFileSync(join(dir, 'foo', 'modes', 'plan.md'), '# plan\n');
-    writeFileSync(join(dir, 'foo', 'README.md'), 'Run /foo bogus to start.\n');
+    writeFileSync(join(dir, 'foo', 'README.md'), 'Run `/foo bogus` to start.\n');
     const errors = validate(dir);
     assert.ok(errors.some((e) => e.includes('/foo bogus')), errors.join('; '));
   });

@@ -8,7 +8,7 @@ Bounded health review; require a scope (ask if missing). Probe first: `git ls-fi
 4. Reconcile declared-vs-enforced; check boundary enforcement.
 5. List findings in the SKILL finding format (incl. `Key:`); propose a safe sequence.
 
-Output — render findings per SKILL **Output discipline** (every P0 full; P1 top 3 full, each extra as a one-line finding; P2/P3 as counts per dimension); never hide blockers; name the first safe improvement as a runnable command.
+Output — render findings per SKILL **Output discipline** (every P0 full; P1 top 3 full, each extra as a one-line finding; P2/P3 one line each, or counts per dimension when >~5); never hide blockers; name the first safe improvement as a runnable command.
 
 ```md
 ### Verdict AUDIT_BACKLOG
@@ -23,7 +23,7 @@ Output — render findings per SKILL **Output discipline** (every P0 full; P1 to
 
 ### Findings all P0s · top-3 P1s in full (SKILL finding format: headline + detail tier, incl. `Key:`)
 
-### Cut findings every cut P1 as one line `[P1][dominant|trade][G-###][dim][rung] title — Key: ...` · P2/P3 as counts per dimension
+### Cut findings every cut P1 as one line `[P1][dominant|trade][G-###][dim][rung] title — Key: ...` · P2/P3 one line each, or counts per dimension when >~5
 
 ### Suggested sequence
 
@@ -64,11 +64,11 @@ Enforced: strict TS (tsconfig), lint (CI). Prose-only: "always use money integer
   fix: integer cents + test; gate in CI  ·  src/payments/totals.ts:31
   Key: src/payments/totals.ts:sumLineItems:verification-loop:float-money
   why: `10.10+20.20+30.30 !== 60.6`, no test — billing drift.
-  basis: dominant — the failing case becomes the test; no API change.
+  basis: checked — the failing case becomes the test; no API change.
 
 ### Cut findings
 [P1][trade][G-002][executable-spec][enforcement] "money integers" rule unenforced — Key: CLAUDE.md:money-rule:executable-spec:prose-only
-P2/P3: pattern-hygiene 1, debt-containment 1.
+P2/P3: none in examined dimensions (pattern-hygiene not swept — see its UNKNOWN row).
 
 ### Suggested sequence
 G-001 first (high-risk), then the cut P1.
