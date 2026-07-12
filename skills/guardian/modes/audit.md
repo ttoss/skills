@@ -1,6 +1,6 @@
 # Mode: audit
 
-Bounded health review; require a scope (ask if missing). Probe first: `git ls-files <scope> | wc -l` — more than ~30 files or more than 1 package → too large (heuristics; the human may override): propose 2–4 sub-scopes by seam (package/layer/domain) and audit one. Steps:
+Bounded health review; require a scope (ask if missing). Probe first: `git ls-files <scope> | wc -l` — more than ~30 files or more than 1 package → too large (heuristics; the human may override): propose 2–4 sub-scopes by seam (package/layer/domain) — interactive: offer them as a menu (`reference/bindings.md`) — and audit one. Steps:
 
 1. Run the Deep baseline (`reference/baseline.md`); disposition every item (`enforced`/`prose-only`/`absent`).
 2. Enumerate every file in scope; apply the applicable syndrome set to each — code: the crosswalk checks (`reference/basis-form.md`); instruction surfaces incl. skill files: the instruction-artifact syndromes (`reference/methodology.md`). When the scope is itself an instruction artifact, its files are the surface set for reconciliation.

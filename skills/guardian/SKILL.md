@@ -4,7 +4,7 @@ description: Guard and improve a repository's AI-readiness. Run /guardian plan, 
 license: MIT
 metadata:
   author: ttoss
-  version: 0.5.0
+  version: 0.6.0
 disable-model-invocation: true
 argument-hint: 'plan|review|pr|audit|improve|docs [task|path|finding|surface]'
 ---
@@ -66,7 +66,7 @@ Arguments: `$ARGUMENTS`. Route by the first whitespace-delimited token:
 4. Unknown multi-word arguments that read as a task → run `plan` on them and state that assumption; if they don't read as a task, ask.
 5. `review`: an optional path narrows the diff. `pr`: takes no argument (note and ignore extra tokens).
 6. `audit`: requires a bounded scope (path/package/domain) — ask if missing.
-7. `improve`: requires one finding reference (in-session `G-NNN` or durable key) — ask if missing.
+7. `improve`: requires one finding reference — the durable key or an unambiguous suffix of it, or an in-session `G-NNN` alias — ask if missing.
 8. `docs`: second token selects the submode (`review|improve|instructions`, default `review`; `jsdoc` = alias for `improve` targeting a JSDoc/TSDoc surface); remaining tokens name the target surface (a file path) — required for `review`/`improve` (ask if missing); `instructions` takes none.
 
 ## Tool policy
@@ -98,7 +98,7 @@ Finding format — a scannable **headline** (one line, all axes) over an indente
   basis: checked — test-only addition adds no runtime surface (trade → name what worsens / the open premise / verification cost)
 ```
 
-Headline axes, in order: severity (`P0–P3`); **fix-class** (`dominant|trade`, always present, adjacent to severity but a distinct axis — severity judges the finding, class judges the fix); `G-NNN` (numbering continues across runs within a session — never restart at G-001; if a G-NNN is ambiguous or from a prior session, `improve` requires the durable key); dimension (exactly one of the 8 slugs in `reference/methodology.md` — the only lens tag; a basis-form test name is never a finding tag); target ladder rung (`enforcement|path-scoped-context|procedure|prose`; `prose` is the human-review rung — a rule stated only in words). Detail tier: `fix:` (the one action + a clickable `path:line`, ephemeral — for navigating now); `Key:` the **durable key** `path:symbol-or-heading:dimension:rule` (structural anchor — never a line number — so it survives edits and new sessions); `why:` evidence + risk; `basis:` the fix-class justification. A one-line finding carries the full headline with the key inline (`… — Key: …`) and no detail tier. For durable/team tracking, promote a finding into the existing issue tracker/TODOs — never a bespoke backlog file.
+Headline axes, in order: severity (`P0–P3`); **fix-class** (`dominant|trade`, always present, adjacent to severity but a distinct axis — severity judges the finding, class judges the fix); `G-NNN` (a session-local **alias** for the durable key, which is the canonical identity — numbering continues across runs within a session, never restart at G-001; a stale or cross-session `G-NNN` does not resolve, so use the key or an unambiguous suffix of it); dimension (exactly one of the 8 slugs in `reference/methodology.md` — the only lens tag; a basis-form test name is never a finding tag); target ladder rung (`enforcement|path-scoped-context|procedure|prose`; `prose` is the human-review rung — a rule stated only in words). Detail tier: `fix:` (the one action + a clickable `path:line`, ephemeral — for navigating now); `Key:` the **durable key** `path:symbol-or-heading:dimension:rule` (structural anchor — never a line number — so it survives edits and new sessions); `why:` evidence + risk; `basis:` the fix-class justification. A one-line finding carries the full headline with the key inline (`… — Key: …`) and no detail tier. For durable/team tracking, promote a finding into the existing issue tracker/TODOs — never a bespoke backlog file.
 
 **Fix classification** (rule 11) — every finding's headline carries exactly one class, including one-line findings; when the "worsens nothing" check hasn't been done, default to **trade**. **dominant** (a Pareto improvement): improves ≥1 dimension and the "worsens nothing" claim was checked this session at cost proportional to the gain — name what was checked. **trade**: everything else; an unverified premise the fix depends on is a cost, never neutral; when uncertain, classify as trade. Before proposing a trade, look for a dominant alternative to the same concrete pain; if one exists, recommend it and record the trade as a separate P2/P3 opportunity finding with its activation condition (`worth doing when <pain observed>`) — the original finding keeps its severity. A trade is never dropped or silently applied: in ACT it stops for confirmation (Action axis); accepting one is an explicit human decision, recorded like accepted risk. The classification judges the **fix**; severity judges the **finding** — the axes never mix.
 
@@ -118,5 +118,7 @@ Behavioral invariants live in this file (always loaded); rationale and the porta
 | docs    | `reference/basis-form.md`, `reference/methodology.md`, `reference/baseline.md`, `reference/bindings.md`, `modes/docs.md`                              |
 
 Platform mechanics live in `reference/bindings.md` — the primary file to swap when porting to another coding agent.
+
+**Interactive menus** (Claude Code, interactive sessions only; the platform mechanic + how to detect a non-interactive run live in `reference/bindings.md`): a menu appears only as (a) the single **closing** next-step chooser, or (b) the rendering of a *stop-and-ask* Guardian already owes when the choice is a small enumerable set — never peppered through a run, never load-bearing. `AskUserQuestion` is not a mutation, so it is permitted even in DIAGNOSE modes. The **closing** chooser fires only when the next step is such a choice: ambiguous routing (the plausible modes), an oversized `audit` scope (the proposed sub-scopes), or a run with ≥1 actionable P0/P1 finding (`improve` the top few + "stop here"); an ambiguous `improve` reference is a case-(b) disambiguation. Cap at ~4 options, recommended first, a no-op always present. **Never** fire on a trivial/clean PASS, `plan`/`pr`, a *trade*/high-risk confirmation (the tool-approval flow already prompts — a menu would double-prompt), or a non-interactive run (`claude -p`, CI → emit the text next-step only). Selecting an option is **exactly** typing that `/guardian …` command — ACT safety is unchanged (a `dominant` fix applies; a *trade*/high-risk/new-dep/hook change still stops for confirmation).
 
 End every run with one actionable next step: a correction prompt, a verification command, the first safe improvement, or a clear PASS.
