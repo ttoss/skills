@@ -4,7 +4,7 @@ description: Guard and improve a repository's AI-readiness. Run /guardian plan, 
 license: MIT
 metadata:
   author: ttoss
-  version: 0.6.1
+  version: 0.6.2
 disable-model-invocation: true
 argument-hint: 'plan|review|pr|audit|improve|docs [task|path|finding|surface]'
 ---
@@ -75,7 +75,7 @@ DIAGNOSE modes: read-only tools, read-only Bash, and the focused check (`referen
 
 ## Severity, verdicts, findings
 
-**High-risk class**: security, auth, permissions, privacy, billing/payments, data loss or deletion, migrations, public APIs, infra. Membership test: a change is in the class only when it **alters** guarded behavior or a guarded contract — not when it merely edits files in a high-risk domain. A non-altering change in such a domain is classified normally, still triggers the Deep baseline, and names the domain in the mode's summary.
+**High-risk class** — any contract whose violation is **irreversible, silent, or defeats detection itself**: security, auth, permissions, privacy, billing/payments, data loss or deletion, migrations, public APIs, infra, and audit/evidence/provenance surfaces (immutable logs, signed records, the trail that makes the rest auditable) — plus any invariant a repo's own instruction surfaces declare as a hard rule (`reference/baseline.md` Reconciliation). The list is examples of the axis, not its bounds; a novel case judged against the axis joins the class even if unlisted. Membership test: a change is in the class only when it **alters** guarded behavior or a guarded contract — not when it merely edits files in a high-risk domain. A non-altering change in such a domain is classified normally, still triggers the Deep baseline, and names the domain in the mode's summary.
 
 ```txt
 P0 BLOCK          a high-risk-class change (posture: clears only with tests + explicit human acceptance → PASS_WITH_ACCEPTED_RISK, never silent PASS), CI breakage, unverified critical behavior, or a major boundary violation.

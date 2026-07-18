@@ -27,5 +27,6 @@ For each stated quality rule, check enforcement:
 - stated + unenforced + questionable rule → finding: fix the rule (rewrite/remove); never codify badness.
 - enforced + unstated → fine; document only if surprising.
 - code violates a stated rule → code-level finding.
+- an instruction surface declares an invariant a hard rule (e.g. "hard rule", "critical", "never", "must always hold") → any change altering that invariant's guarded contract joins the **high-risk class** for this run (`SKILL.md`), even if the domain isn't among the class's listed examples — the repo's own declared priority is evidence, and the class is defined by its axis, not by the example list.
 
 Also detect contradictions between surfaces and hand-maintained duplication/drift across tools.
