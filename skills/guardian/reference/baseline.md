@@ -26,7 +26,7 @@ For each stated quality rule, check enforcement:
 - stated + unenforced + mechanizable → finding: codify it.
 - stated + unenforced + questionable rule → finding: fix the rule (rewrite/remove); never codify badness.
 - enforced + unstated → fine; document only if surprising.
-- code violates a stated rule → code-level finding.
+- code diverges from a stated rule → **evidence, not a verdict**. Default hypothesis: the divergence marks an **undeclared invariant** — intentional behavior the rule never captured; "fixing" it is the costliest agent failure. Discharge the hypothesis with observable evidence (tests, git history, callers/usage — or ask) before attributing fault; then exactly one outcome: code wrong → code-level finding · rule stale → rule-level finding (rewrite/remove) · both right, axis undeclared → finding: declare the invariant at the smallest correct surface (stewardship table, `reference/methodology.md`).
 - an instruction surface declares an invariant a hard rule (e.g. "hard rule", "critical", "never", "must always hold") → any change altering that invariant's guarded contract joins the **high-risk class** for this run (`SKILL.md`), even if the domain isn't among the class's listed examples — the repo's own declared priority is evidence, and the class is defined by its axis, not by the example list.
 
 Also detect contradictions between surfaces and hand-maintained duplication/drift across tools.
