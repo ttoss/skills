@@ -1,12 +1,12 @@
 ---
 name: guardian
-description: Guard and improve a repository's AI-readiness. Run /guardian plan, review, pr, audit, improve, or docs to keep it in basis-form (a basis of decisions, not a list of cases) — compressible, contractual, verifiable, safe — and to migrate rules from prose into deterministic enforcement.
+description: Guard and improve a repository's AI-readiness. Run /guardian plan, review, audit, improve, or docs to keep it in basis-form (a basis of decisions, not a list of cases) — compressible, contractual, verifiable, safe — and to migrate rules from prose into deterministic enforcement.
 license: MIT
 metadata:
   author: ttoss
   version: 0.7.0
 disable-model-invocation: true
-argument-hint: 'plan|review|pr|audit|improve|docs [task|path|finding|surface]'
+argument-hint: 'plan|review|audit|improve|docs [task|path|finding|surface]'
 ---
 
 # Guardian
@@ -34,7 +34,7 @@ prose — human review, risk-tiered                                             
 
 Every mode sits on one axis — **DIAGNOSE** or **ACT** — stated once here; mode files point here and never restate it:
 
-- **DIAGNOSE** (`plan`, `review`, `pr`, `audit`, `docs review`, `docs instructions`) — read-only. Never mutates the repo **or the session**: no file writes, no memory or persistent records, and no internal bookkeeping in the output — unless the user explicitly asks. Surface only repo-relevant evidence and next actions.
+- **DIAGNOSE** (`plan`, `review`, `audit`, `docs review`, `docs instructions`) — read-only. Never mutates the repo **or the session**: no file writes, no memory or persistent records, and no internal bookkeeping in the output — unless the user explicitly asks. Surface only repo-relevant evidence and next actions.
 - **ACT** (`improve`, `docs improve`; `docs jsdoc` is an alias) — writes exactly one approved unit at a time: a *finding* for `improve`, a *surface* for `docs improve`. Invoking `improve <ref>` or `docs improve <surface>` **is** the approval for that unit — apply directly. Exception: the high-risk class (rule 7), a trade fix (rule 11), a new dependency, or a hook/CI change → show the proposed patch and stop for explicit confirmation.
 
 ## Core rules
@@ -60,11 +60,11 @@ Every mode sits on one axis — **DIAGNOSE** or **ACT** — stated once here; mo
 
 Arguments: `$ARGUMENTS`. Route by the first whitespace-delimited token:
 
-1. Token is a mode (`plan|review|pr|audit|improve|docs`) → run it; the remaining tokens are its argument.
+1. Token is a mode (`plan|review|audit|improve|docs`) → run it; the remaining tokens are its argument.
 2. No arguments: a git diff exists → `review`; none → ask for a mode.
 3. One unknown token (`help`, `status`, a likely typo) → print the mode table and ask.
 4. Unknown multi-word arguments that read as a task → run `plan` on them and state that assumption; if they don't read as a task, ask.
-5. `review`: an optional path narrows the diff. `pr`: takes no argument (note and ignore extra tokens).
+5. `review`: an optional path narrows the diff.
 6. `audit`: requires a bounded scope (path/package/domain) — ask if missing.
 7. `improve`: requires one finding reference — the durable key or an unambiguous suffix of it, or an in-session `G-NNN` alias — ask if missing.
 8. `docs`: the second token selects the submode **only when it is one of** `review|improve|instructions|jsdoc` (`jsdoc` = alias for `improve` targeting a JSDoc/TSDoc surface); otherwise the submode is `review` and that token begins the target surface. The surface (a file path) is required for `review`/`improve` — ask if missing; `instructions` takes none.
@@ -114,13 +114,12 @@ Behavioral invariants live in this file (always loaded); rationale and the porta
 | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
 | plan    | `reference/basis-form.md`, `reference/baseline.md`, `modes/plan.md`                                                                                   |
 | review  | `reference/basis-form.md`, `reference/baseline.md`, `reference/methodology.md`, `modes/review.md`                                                     |
-| pr      | `modes/pr.md`                                                                                                                                         |
 | audit   | `reference/basis-form.md`, `reference/baseline.md`, `reference/methodology.md`, `reference/enforcement.md`, `reference/bindings.md`, `modes/audit.md` |
 | improve | `reference/basis-form.md`, `reference/enforcement.md`, `modes/improve.md`                                                                             |
 | docs    | `reference/basis-form.md`, `reference/methodology.md`, `reference/baseline.md`, `reference/bindings.md`, `modes/docs.md`                              |
 
 Platform mechanics live in `reference/bindings.md` — the primary file to swap when porting to another coding agent.
 
-**Interactive menus** (Claude Code, interactive sessions only; the platform mechanic + how to detect a non-interactive run live in `reference/bindings.md`): a menu appears only as (a) the single **closing** next-step chooser, or (b) the rendering of a *stop-and-ask* Guardian already owes when the choice is a small enumerable set — never peppered through a run, never load-bearing. `AskUserQuestion` is not a mutation, so it is permitted even in DIAGNOSE modes. The **closing** chooser fires only when the next step is such a choice: ambiguous routing (the plausible modes), an oversized `audit` scope (the proposed sub-scopes), or a run with ≥1 actionable P0/P1 finding (`improve` the top few + "stop here"); an ambiguous `improve` reference is a case-(b) disambiguation. Cap at ~4 options, recommended first, a no-op always present. **Never** fire on a trivial/clean PASS, `plan`/`pr`, a *trade*/high-risk confirmation (the tool-approval flow already prompts — a menu would double-prompt), or a non-interactive run (`claude -p`, CI → emit the text next-step only). Selecting an option is **exactly** typing that `/guardian …` command — ACT safety is unchanged (a `dominant` fix applies; a *trade*/high-risk/new-dep/hook change still stops for confirmation).
+**Interactive menus** (Claude Code, interactive sessions only; the platform mechanic + how to detect a non-interactive run live in `reference/bindings.md`): a menu appears only as (a) the single **closing** next-step chooser, or (b) the rendering of a *stop-and-ask* Guardian already owes when the choice is a small enumerable set — never peppered through a run, never load-bearing. `AskUserQuestion` is not a mutation, so it is permitted even in DIAGNOSE modes. The **closing** chooser fires only when the next step is such a choice: ambiguous routing (the plausible modes), an oversized `audit` scope (the proposed sub-scopes), or a run with ≥1 actionable P0/P1 finding (`improve` the top few + "stop here"); an ambiguous `improve` reference is a case-(b) disambiguation. Cap at ~4 options, recommended first, a no-op always present. **Never** fire on a trivial/clean PASS, `plan`, a *trade*/high-risk confirmation (the tool-approval flow already prompts — a menu would double-prompt), or a non-interactive run (`claude -p`, CI → emit the text next-step only). Selecting an option is **exactly** typing that `/guardian …` command — ACT safety is unchanged (a `dominant` fix applies; a *trade*/high-risk/new-dep/hook change still stops for confirmation).
 
 End every run with one actionable next step: a correction prompt, a verification command, the first safe improvement, or a clear PASS.
