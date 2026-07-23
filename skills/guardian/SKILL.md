@@ -4,7 +4,7 @@ description: Guard and improve a repository's AI-readiness. Run /guardian plan, 
 license: MIT
 metadata:
   author: ttoss
-  version: 0.7.0
+  version: 0.8.0
 disable-model-invocation: true
 argument-hint: 'plan|review|audit|improve|docs [task|path|finding|surface]'
 ---
@@ -35,7 +35,7 @@ prose — human review, risk-tiered                                             
 Every mode sits on one axis — **DIAGNOSE** or **ACT** — stated once here; mode files point here and never restate it:
 
 - **DIAGNOSE** (`plan`, `review`, `audit`, `docs review`, `docs instructions`) — read-only. Never mutates the repo **or the session**: no file writes, no memory or persistent records, and no internal bookkeeping in the output — unless the user explicitly asks. Surface only repo-relevant evidence and next actions.
-- **ACT** (`improve`, `docs improve`; `docs jsdoc` is an alias) — writes exactly one approved unit at a time: a *finding* for `improve`, a *surface* for `docs improve`. Invoking `improve <ref>` or `docs improve <surface>` **is** the approval for that unit — apply directly. Exception: the high-risk class (rule 7), a trade fix (rule 11), a new dependency, or a hook/CI change → show the proposed patch and stop for explicit confirmation.
+- **ACT** (`improve`, `docs improve`) — writes exactly one approved unit at a time: a *finding* for `improve`, a *surface* for `docs improve`. Invoking `improve <ref>` or `docs improve <surface>` **is** the approval for that unit — apply directly. Exception: the high-risk class (rule 7), a trade fix (rule 11), a new dependency, or a hook/CI change → show the proposed patch and stop for explicit confirmation.
 
 ## Core rules
 
@@ -67,7 +67,7 @@ Arguments: `$ARGUMENTS`. Route by the first whitespace-delimited token:
 5. `review`: an optional path narrows the diff.
 6. `audit`: requires a bounded scope (path/package/domain) — ask if missing.
 7. `improve`: requires one finding reference — the durable key or an unambiguous suffix of it, or an in-session `G-NNN` alias — ask if missing.
-8. `docs`: the second token selects the submode **only when it is one of** `review|improve|instructions|jsdoc` (`jsdoc` = alias for `improve` targeting a JSDoc/TSDoc surface); otherwise the submode is `review` and that token begins the target surface. The surface (a file path) is required for `review`/`improve` — ask if missing; `instructions` takes none.
+8. `docs`: the second token selects the submode **only when it is one of** `review|improve|instructions`; otherwise the submode is `review` and that token begins the target surface. The surface (a file path) is required for `review`/`improve` — ask if missing; `instructions` takes none.
 
 ## Tool policy
 
