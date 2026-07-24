@@ -32,3 +32,5 @@ The syndrome→check mapping is the last column of the canonical crosswalk in `b
 - won't block legitimate future work.
 
 If any fails, keep it as guidance and record why — not every good guideline makes a good check. If enforcement needs a **new dependency** or a **hook/CI change**, stop and propose it (respect any "no new dependencies" rule).
+
+**Reasoning-time rules** — rules whose violation happens before any artifact exists (task framing, investigation order, when to ask) — have a different ceiling. Membership test: *what would the check inspect?* If the answer is the agent's thought process, the rule's top achievable rung is path-scoped context — promote it by precision, closest scope, and a minimal ✅/❌ example pair, never by mechanization. If the violation leaves an artifact trace (bad code, a missing test), it is **not** reasoning-time — codify; this class is a ceiling for rules no check can reach, never an excuse to skip the gate above.
