@@ -6,6 +6,17 @@ Steps: inspect the surfaces in scope; run the instruction-artifact syndromes on 
 
 Required/Optional changes entries use the SKILL finding format and **Output discipline** (SKILL) — instruction findings anchor as `path:heading:dimension:rule`.
 
+**Essential axes** (full review only — the positive spanning pass; the syndromes find defects in text that exists, this finds answers that don't exist): each recurring agent question below must have a declared answer in some surface **when the repo has a decision space on that axis**; an axis with no decision space behind it needs no answer — never manufacture one (Core rule 6). A missing required axis is a finding in the standard format, anchored at the surface that should answer it (e.g. `CLAUDE.md:verification-workflow:verification-loop:missing-axis`).
+
+| Axis (the agent's question) | Required when | Dimension |
+| --- | --- | --- |
+| how do I verify this change (focused check + order)? | tests/scripts exist | `verification-loop` |
+| where does new code go? | multiple packages/layers | `boundary-integrity` |
+| what is frozen/migrating (maintained, never extended)? | competing libs/patterns observed | `debt-containment` |
+| what must I never do autonomously? | high-risk domains present | `instruction-hygiene` |
+| where is the canonical registry/definition? | canonical docs/registries exist | `instruction-hygiene` |
+| what do I do when code and docs diverge? | any doc/spec surface exists | `instruction-hygiene` |
+
 Verdicts: a single-surface `review` and `improve` use the four ranked verdicts from `SKILL.md`. The full review always emits `DOCS_BACKLOG` — the instruction-surface mirror of `audit`'s `AUDIT_BACKLOG`: the verdict names the run's shape (an inventory, not a gate on one unit), not its severity; every P0 still surfaces in full under Required changes.
 
 For the full review, prepend `### Surfaces found / reviewed`: one line per surface from the Deep baseline list — disposition `reviewed | absent`, and for reviewed surfaces the enforced/prose-only status. A discovered surface missing from this section means unchecked — a defect in the run, not an allowed omission.
