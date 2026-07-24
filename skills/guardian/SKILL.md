@@ -4,7 +4,7 @@ description: Guard and improve a repository's AI-readiness. Run /guardian plan, 
 license: MIT
 metadata:
   author: ttoss
-  version: 0.8.0
+  version: 0.9.0
 disable-model-invocation: true
 argument-hint: 'plan|review|audit|improve|docs [task|path|finding|surface]'
 ---
@@ -34,7 +34,7 @@ prose — human review, risk-tiered                                             
 
 Every mode sits on one axis — **DIAGNOSE** or **ACT** — stated once here; mode files point here and never restate it:
 
-- **DIAGNOSE** (`plan`, `review`, `audit`, `docs review`, `docs instructions`) — read-only. Never mutates the repo **or the session**: no file writes, no memory or persistent records, and no internal bookkeeping in the output — unless the user explicitly asks. Surface only repo-relevant evidence and next actions.
+- **DIAGNOSE** (`plan`, `review`, `audit`, `docs review`) — read-only. Never mutates the repo **or the session**: no file writes, no memory or persistent records, and no internal bookkeeping in the output — unless the user explicitly asks. Surface only repo-relevant evidence and next actions.
 - **ACT** (`improve`, `docs improve`) — writes exactly one approved unit at a time: a *finding* for `improve`, a *surface* for `docs improve`. Invoking `improve <ref>` or `docs improve <surface>` **is** the approval for that unit — apply directly. Exception: the high-risk class (rule 7), a trade fix (rule 11), a new dependency, or a hook/CI change → show the proposed patch and stop for explicit confirmation.
 
 ## Core rules
@@ -54,7 +54,7 @@ Every mode sits on one axis — **DIAGNOSE** or **ACT** — stated once here; mo
 ## Scope control
 
 - **Trivial fast path** (`review` only): if the diff is typo-, comment-, formatting-, or docs-only, or a localized non-behavioral change, skip discovery (never the full diff read) and return `PASS (trivial: <class>; checked: not misleading, no contract/verification/ambiguity change)`. If any of those four checks fails — the diff is misleading, or changes a contract, verification, or ambiguity — or it touches an instruction surface, including skill files, the fast path is forfeited: run the normal baseline.
-- **Light vs Deep baseline**: `review` defaults to Light; the Deep triggers live in `reference/baseline.md`; `audit` and `docs instructions` always use Deep.
+- **Light vs Deep baseline**: `review` defaults to Light; the Deep triggers live in `reference/baseline.md`; `audit` and a full `docs review` (no surface) always use Deep.
 
 ## Argument parsing
 
@@ -67,7 +67,7 @@ Arguments: `$ARGUMENTS`. Route by the first whitespace-delimited token:
 5. `review`: an optional path narrows the diff.
 6. `audit`: requires a bounded scope (path/package/domain) — ask if missing.
 7. `improve`: requires one finding reference — the durable key or an unambiguous suffix of it, or an in-session `G-NNN` alias — ask if missing.
-8. `docs`: the second token selects the submode **only when it is one of** `review|improve|instructions`; otherwise the submode is `review` and that token begins the target surface. The surface (a file path) is required for `review`/`improve` — ask if missing; `instructions` takes none.
+8. `docs`: the second token selects the submode **only when it is one of** `review|improve`; otherwise the submode is `review` and that token begins the target surface. The surface (a file path) is optional for `review` — with one, diagnose that surface; without, run the **full review** of every instruction surface (`modes/docs.md`) — and required for `improve` (ask if missing).
 
 ## Tool policy
 
@@ -86,7 +86,7 @@ P3 BACKLOG        larger structural opportunity.
 
 Tie-break: a missing test is P1 — unless the untested behavior is in the high-risk class, then P0.
 
-Verdicts for diff/surface reviews (`plan` and `audit` define theirs in their mode files; `docs instructions` emits `DOCS_BACKLOG`, defined in `modes/docs.md`): `PASS` · `PASS_WITH_FIXES` (P1 exists) · `PASS_WITH_ACCEPTED_RISK` · `BLOCK` (unaccepted P0). When several apply, emit the most severe: `BLOCK` > `PASS_WITH_ACCEPTED_RISK` > `PASS_WITH_FIXES` > `PASS`. A human may accept a P0/P1 only explicitly; record who accepted, what, why, a follow-up/expiry, and any compensating control. Accepted risk is `PASS_WITH_ACCEPTED_RISK`, never `PASS`.
+Verdicts for diff/surface reviews (`plan` and `audit` define theirs in their mode files; a full `docs review` emits `DOCS_BACKLOG`, defined in `modes/docs.md`): `PASS` · `PASS_WITH_FIXES` (P1 exists) · `PASS_WITH_ACCEPTED_RISK` · `BLOCK` (unaccepted P0). When several apply, emit the most severe: `BLOCK` > `PASS_WITH_ACCEPTED_RISK` > `PASS_WITH_FIXES` > `PASS`. A human may accept a P0/P1 only explicitly; record who accepted, what, why, a follow-up/expiry, and any compensating control. Accepted risk is `PASS_WITH_ACCEPTED_RISK`, never `PASS`.
 
 Finding format — a scannable **headline** (one line, all axes) over an indented **detail tier** (read only when acting on that finding):
 
