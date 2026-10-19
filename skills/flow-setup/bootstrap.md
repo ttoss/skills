@@ -1,11 +1,9 @@
-# Bootstrap (`/flow-manager setup`)
+# Bootstrap
 
-The only mode that talks to the user. It creates what the loop needs in Flow and in the repo, once per project. Creating a commitment is the person's call ([GTF-A1, GTF-A4](https://flow.ttoss.dev/docs/agents/protocol.md#authority)): list every write, numbered, and wait for their answer.
+The Flow part of [`flow-setup`](SKILL.md) step 5. It creates what the loop needs in Flow, once per project. Creating a commitment is the person's call ([GTF-A1, GTF-A4](https://flow.ttoss.dev/docs/agents/protocol.md#authority)): list every write, numbered, and wait for their answer.
 
 1. **Project.** `list-projects`; ask which one, or offer `create-project`.
-2. **Parameters.** Ask for each row of [parameters.md](parameters.md) the repo does not already state. Read the repo's `CLAUDE.md`/`AGENTS.md` first and propose values found there.
+2. **Parameters.** Ask for each row of [parameters.md](../flow-manager/references/parameters.md) the repo does not already state, proposing the values found in step 4's project-parameter rows.
 3. **Standing decision.** Search for an existing one (`list-tasks` `kind: decision`, `query: "standing"`). If none, propose one `decision` task, closed `completed` with the user's verbatim answer as `basis: { said }`, titled `Standing: the delivery loop runs autonomously`, whose body is a target-pursuit standing rule saying what [GTF-T1](https://flow.ttoss.dev/docs/agents/protocol.md#pursue-a-target) asks for: the **allowed acts** (take, move, close, merge, release, bump, test in production, start and archive sessions, write follow-ups), the **closing evidence** (verified on the production target, with the real calls as `outcome`), the **permitted choices** (which ready task to start next, in `get-next` order — GTF-E1 leaves that choice to the person unless delegated — and anything the task, a rule or this decision already settles) and the **permitted tidying** (archive finished sessions, restart merged branches, re-point release blockers). The decision holds this text itself, so its authority does not depend on this skill's version (GTF-A6). Everything else stays with the user: product intent, the human-reserved decisions, security/auth/billing/data-loss/migration/public-contract choices.
 4. **Release batch.** With an upstream: one open `Release <upstream> (next)` task (`active`), basis the standing decision.
-5. **Write the parameters** to `.claude/flow-manager.md` and tell the user to commit it.
-6. **Check the prerequisites** listed in [SKILL.md](../SKILL.md#prerequisites-outside-the-repo) and report each one.
-7. **Start it:** suggest `/loop 10m /flow-manager`, or a recurring routine running `/flow-manager <project id>` in a fresh session for a loop that outlives this session.
+5. **Write the parameters** to `.claude/flow-manager.md`, in the PR of step 6.

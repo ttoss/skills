@@ -1,6 +1,6 @@
 # Loop rules
 
-The rules the manager applies and every child follows, from [ttoss/ttoss#1336](https://github.com/ttoss/ttoss/issues/1336), battle-tested in naturali and soat. They extend [Get Things Flowing](https://flow.ttoss.dev/docs/agents/protocol.md) (GTF) and never restate it: each rule cites the GTF rules it applies and says only what the loop adds. Read the cited ids in the protocol; when GTF changes, the loop follows. Anything not covered here falls back to GTF.
+The rules the manager applies and every child follows, from [ttoss/ttoss#1336](https://github.com/ttoss/ttoss/issues/1336), battle-tested in naturali and soat. They extend [Get Things Flowing](https://flow.ttoss.dev/docs/agents/protocol.md) (GTF) and never restate it: each rule cites the GTF rules it applies and says only what the loop adds. Read the cited ids in the protocol; when GTF changes, the loop follows. Anything not covered here falls back to GTF. A project's own rules come after these and only fill what both leave open ([precedence](../../flow-setup/SKILL.md#precedence)).
 
 | # | Loop rule | GTF it applies | What the loop adds |
 | --- | --- | --- | --- |

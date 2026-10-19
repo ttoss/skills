@@ -1,6 +1,6 @@
 # Project parameters
 
-The manager reads these from the consuming repo, first match wins: the `/flow-manager <project id>` argument (project id only), `.claude/flow-manager.md`, or a `## Flow manager` section of `CLAUDE.md` / `AGENTS.md`. `/flow-manager setup` writes the file for you.
+The manager reads these from the consuming repo, first match wins: the `/flow-manager <project id>` argument (project id only), `.claude/flow-manager.md`, or a `## Flow manager` section of `CLAUDE.md` / `AGENTS.md`. `/flow-setup` writes the file for you. Parameters are the project level of the [precedence](../../flow-setup/SKILL.md#precedence): they fill what GTF and the skills leave open and never override them.
 
 ```markdown
 # Flow manager
