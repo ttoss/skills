@@ -1,7 +1,7 @@
 ---
 name: flow-manager
-description: Manager tick for the autonomous delivery loop driven by Flow (Terezinha Flow task graph). Each run reads the project's Flow graph, advances what the graph says is next (merge done PRs, cut and bump releases, test releases in production, clear finished waits), delegates every ready task to its own child session, archives finished children, writes every change back to Flow and ends the turn. Holds no state between runs, so it is built to be repeated with `/loop 10m /flow-manager`; `--max-sessions N` caps how many child sessions run at once. Use when the user says /flow-manager, "flow manager", "manage the flow", "run the delivery loop", or `/flow-manager setup` to bootstrap a project.
-argument-hint: "[setup] [project-id] [--max-sessions N]"
+description: Manager tick for the autonomous delivery loop driven by Flow (Terezinha Flow task graph). Each run reads the project's Flow graph, advances what the graph says is next (merge done PRs, cut and bump releases, test releases in production, clear finished waits), delegates every ready task to its own child session, archives finished children, writes every change back to Flow and ends the turn. Holds no state between runs, so it is built to be repeated with `/loop 10m /flow-manager`; `--max-sessions N` caps how many child sessions run at once and `--voice terse|normal` sets how much prose they write (terse by default). Use when the user says /flow-manager, "flow manager", "manage the flow", "run the delivery loop", or `/flow-manager setup` to bootstrap a project.
+argument-hint: "[setup] [project-id] [--max-sessions N] [--voice terse|normal]"
 ---
 
 # Flow manager
@@ -36,6 +36,17 @@ The cap is the first of: `--max-sessions N` on the command, the `Max sessions` [
 
 At the cap, no new child starts; nothing is interrupted or archived early to make room. A slot frees only when section 2 archives a finished child. Lowering the cap mid-loop therefore takes effect as children finish. The tick interval is the other cost knob: each tick is a manager turn, so a longer interval and a lower cap both cut spend.
 
+## Voice
+
+Terse by default; normal by choice:
+
+```text
+/loop 10m /flow-manager
+/loop 10m /flow-manager --voice normal
+```
+
+The voice is the first of: `--voice` on the command, the `Voice` [project parameter](references/parameters.md), or `terse`. Terse follows the [voice rules](references/voice.md): the manager applies them to its own ticks and pastes them into every child prompt. They shorten prose only — code, ids, errors, quotes, outcomes, decisions for a person and anything published stay exact and complete. A new voice reaches children started after the change; running children keep theirs.
+
 ## Hard rules of a tick
 
 - **Never block.** No `AskUserQuestion`, no `sleep`, no waiting on CI or a deploy inside a tick. Anything that needs a person becomes a Flow `decision` (`waiting`, `external` wait on the person) that `blocks` only the affected task; anything that needs time becomes a `waiting` task with `wait.until`. The next tick picks it up.
@@ -47,7 +58,7 @@ At the cap, no new child starts; nothing is interrupted or archived early to mak
 
 ## 0. Preflight
 
-1. Parse the arguments (`setup`, a `proj_...` id, `--max-sessions N`) and load the [project parameters](references/parameters.md): the project id from the argument, else the consuming repo's `.claude/flow-manager.md`, else a `## Flow manager` section of its `CLAUDE.md`/`AGENTS.md`. Required: Flow project id and standing-decision task id. Missing → print what is missing, point to `/flow-manager setup`, end the tick.
+1. Parse the arguments (`setup`, a `proj_...` id, `--max-sessions N`, `--voice terse|normal`) and load the [project parameters](references/parameters.md): the project id from the argument, else the consuming repo's `.claude/flow-manager.md`, else a `## Flow manager` section of its `CLAUDE.md`/`AGENTS.md`. Required: Flow project id and standing-decision task id. Missing → print what is missing, point to `/flow-manager setup`, end the tick.
 2. Check the tools exist (load deferred ones with `ToolSearch`): Flow (`get-next`, `get-task`, `list-tasks`, `upsert-tasks`, `update-tasks`), GitHub (PR read, merge), and sessions (`create_session`, `get_session`, `archive_session`, `send_message` from claude-code-remote). Without session tools, fall back to background `Agent` calls with `isolation: "worktree"` and say once per session that children will not survive this session.
 3. `get-task` the standing decision. If it is closed as cancelled/superseded or its body no longer authorises the loop, stop: report it and end the tick. The loop's authority is that task, not this skill.
 
@@ -91,7 +102,7 @@ For each task:
 
 1. `get-task` it. Skip it if somebody else holds it, or if it is a product decision or a human-reserved choice — then write a `decision` (`waiting`, `external` on the user) that `blocks` it instead.
 2. Take it: `update-tasks` `assignee: "me"`, `if_unmodified_since` its `updated_at`, basis the standing decision.
-3. `create_session` with every repo the task touches, `permission_mode` inherited (never `plan`), and the prompt from [child-prompt.md](references/child-prompt.md) filled in.
+3. `create_session` with every repo the task touches, `permission_mode` inherited (never `plan`), and the prompt from [child-prompt.md](references/child-prompt.md) filled in, with the [voice](#voice) block when the voice is terse.
 4. Write the session URL as a `context` reference on the task — immediately, in the same tick. A child that is not in Flow does not exist for the next manager.
 
 ## 5. Report and end
