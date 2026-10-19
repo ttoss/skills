@@ -1,14 +1,14 @@
 ---
 name: flow-manager
-description: Manager tick for the autonomous delivery loop driven by Flow (Terezinha Flow task graph) and built on the Get Things Flowing (GTF) method. Each run reads the project's Flow graph, advances what the graph says is next (merge done PRs, cut and bump releases, test releases in production, clear finished waits), delegates every ready task to its own child session, archives finished children, writes every change back to Flow and ends the turn. Holds no state between runs, so it is built to be repeated with `/loop 10m /flow-manager`; `--max-sessions N` caps how many child sessions run at once and `--voice terse|normal` sets how much prose they write (terse by default); a Flow task id, `tag:<name>` or a free-text description focuses the manager on that part of the graph. Use when the user says /flow-manager, "flow manager", "manage the flow", "run the delivery loop", or `/flow-manager setup` to bootstrap a project.
-argument-hint: "[setup] [project-id] [task-id | tag:<name> | description] [--max-sessions N] [--voice terse|normal]"
+description: Manager tick for the autonomous delivery loop driven by Flow (Terezinha Flow task graph) and built on the Get Things Flowing (GTF) method. Each run reads the project's Flow graph, advances what the graph says is next (merge done PRs, cut and bump releases, test releases in production, clear finished waits), delegates every ready task to its own child session, archives finished children, writes every change back to Flow and ends the turn. Holds no state between runs, so it is built to be repeated with `/loop 10m /flow-manager`; `--max-sessions N` caps how many child sessions run at once and `--voice terse|normal` sets how much prose they write (terse by default); a Flow task id, `tag:<name>` or a free-text description focuses the manager on that part of the graph. Use when the user says /flow-manager, "flow manager", "manage the flow", "run the delivery loop" Set a project up with `/flow-setup` first.
+argument-hint: "[project-id] [task-id | tag:<name> | description] [--max-sessions N] [--voice terse|normal]"
 ---
 
 # Flow manager
 
 **This loop is built on [Get Things Flowing](https://flow.ttoss.dev/docs/agents/protocol.md) (GTF), Flow's method for agents.** The loop is GTF's target pursuit (GTF-T1 to GTF-T6) under the project's standing decision: the manager reads the graph and divides the work (GTF-T6), each child pursues one task. GTF decides who may change what, how a session reads and writes the graph, and when work is done; this skill only adds what GTF leaves to a project — cadence, child sessions, release batching and production validation.
 
-Rule ids such as `GTF-T1` are cited, not copied: read them in the protocol, which the Flow MCP also serves as a resource. Read it before the first tick of a session if it is not in context, so a change to the method reaches the loop without a change here. Where this skill and GTF disagree, GTF wins: follow it and file the conflict with [`flow-friction`](../flow-friction/SKILL.md). This skill is procedure, not authority (GTF-A6): what the loop may do is what the standing decision says.
+Rule ids such as `GTF-T1` are cited, not copied: read them in the protocol, which the Flow MCP also serves as a resource. Read it before the first tick of a session if it is not in context, so a change to the method reaches the loop without a change here. **Precedence: GTF first, then the ttoss skills, then the project** ([flow-setup](../flow-setup/SKILL.md#precedence)). A project rule or parameter only fills what GTF and this skill leave open; one that contradicts them is not followed — follow the higher level, report it, and point to `/flow-setup audit`. Where this skill and GTF disagree, GTF wins: follow it and file the conflict with [`flow-friction`](../flow-friction/SKILL.md). This skill is procedure, not authority (GTF-A6): what the loop may do is what the standing decision says.
 
 You are the **manager** of a project's delivery loop. You do not implement anything. You read the Flow graph, apply the loop's next steps, hand every piece of work to a child session, and write the result back to Flow. Then you stop.
 
@@ -24,7 +24,7 @@ flowchart LR
   F -. next /loop firing .-> A
 ```
 
-`/flow-manager setup` runs [bootstrap](references/bootstrap.md) instead of a tick. It is the only mode that may ask the user questions.
+Setting a project up — installing the skills, cleaning its rules, creating the standing decision — is [`/flow-setup`](../flow-setup/SKILL.md), which may ask the user questions; a tick never does.
 
 ## Session limit
 
@@ -82,7 +82,7 @@ The focus narrows only what **starts a child**: the ready set, cleared waits tha
 
 ## 0. Preflight
 
-1. Parse the arguments (`setup`, a `proj_...` id, a [focus](#focus) — `task_...`, `tag:<name>` or the remaining text —, `--max-sessions N`, `--voice terse|normal`) and load the [project parameters](references/parameters.md): the project id from the argument, else the consuming repo's `.claude/flow-manager.md`, else a `## Flow manager` section of its `CLAUDE.md`/`AGENTS.md`. Required: Flow project id and standing-decision task id. Missing → print what is missing, point to `/flow-manager setup`, end the tick.
+1. Parse the arguments (a `proj_...` id, a [focus](#focus) — `task_...`, `tag:<name>` or the remaining text —, `--max-sessions N`, `--voice terse|normal`) and load the [project parameters](references/parameters.md): the project id from the argument, else the consuming repo's `.claude/flow-manager.md`, else a `## Flow manager` section of its `CLAUDE.md`/`AGENTS.md`. Required: Flow project id and standing-decision task id. Missing → print what is missing, point to `/flow-setup`, end the tick.
 2. Check the tools exist (load deferred ones with `ToolSearch`): Flow (`get-next`, `get-task`, `list-tasks`, `upsert-tasks`, `update-tasks`), GitHub (PR read, merge), and sessions (`create_session`, `get_session`, `archive_session`, `send_message` from claude-code-remote). Without session tools, fall back to background `Agent` calls with `isolation: "worktree"` and say once per session that children will not survive this session.
 3. `get-task` the standing decision. If it is closed as cancelled/superseded or its body no longer authorises the loop, stop: report it and end the tick. The loop's authority is that task, not this skill.
 
