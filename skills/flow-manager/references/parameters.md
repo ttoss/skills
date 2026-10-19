@@ -24,7 +24,7 @@ Each one answers a question the loop asks but cannot answer for every project. L
 | Verification target | Where and with what credential the closing evidence is checked (API, database, logs), and which calls are read-only | none: verification that needs one becomes a `decision` waiting on the user |
 | Human-reserved decisions | Which choices always go to a person as a `decision` that `blocks` the task (GTF-T3)? | product intent, security, auth, billing, data loss, migrations, public contracts |
 | Decision gate | How a child tests an open choice before raising it (GTF-T3) | none: every open choice the task and the standing decision leave unanswered is raised |
-| Findings rule | What a child does with something it notices outside its task | GTF-C1: capture it; a prerequisite `blocks` the task (GTF-T4) |
+| Findings rule | What a child does with something it notices outside its task | GTF-C1: capture it; a prerequisite `blocks` the task (GTF-T4). **No inbox** — `ingest-capture` answers `not_found` for a project-restricted credential: write it as an `incubated` task `derived_from` the task at hand, never `blocks`, source and words verbatim in the body, basis the standing decision (GTF-C4, GTF-L3), named in the PR body or tick report |
 
 ## Tuning
 
