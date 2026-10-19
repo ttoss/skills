@@ -103,9 +103,10 @@ For each open task that cites a session URL:
 | working / blocked | any | leave it |
 | idle, `completed`/`review_ready` | task closed, or its PR merged with the next step written in Flow | `archive_session` |
 | idle | task still `active`, no PR, nothing written | `send_message` asking it to write its state to Flow or continue; on the second tick with no change, report it |
+| idle | task held by an open `decision` or a wait on a person, its state written | `archive_session`; the decision goes to the user in section 5 |
 | `failed`, or archived/missing | task open | release the task (`assignee: null`, body note naming the dead session, basis standing decision) so section 4 re-delegates it |
 
-A closed task whose session is still alive: archive the session. Never archive a session that cites no closed task and no merged PR.
+A closed task whose session is still alive: archive the session. Never archive a session whose task is not closed, has no merged PR and is not held by a decision or a person.
 
 ## 3. Advance the loop
 
@@ -131,7 +132,9 @@ For each task:
 
 ## 5. Report and end
 
-Write back what the tick left (GTF-S3), then end the turn with at most five lines: what moved (each task by its Flow `url`), what is waiting on the user, what failed, and anything Flow reported (GTF-F2). Always state the session count against the cap (`sessions 2/2`) and the focus, if any. If nothing changed, one line: `flow-manager: no change (sessions N/cap, M waiting)`. Do not schedule anything yourself — `/loop` fires the next tick. If the loop is self-paced (`/loop /flow-manager` with no interval), pick the next delay from what is in flight: a deploy or CI about to finish → 5–10 min; only reviews or people → 30 min or more.
+Write back what the tick left (GTF-S3), then end the turn with at most five lines: what moved (each task by its Flow `url`), what is waiting on the user, what failed, and anything Flow reported (GTF-F2).
+
+Decisions are the manager's to raise, never a child's ([loop rule 14](references/loop-rules.md)). Read the open decisions waiting on the user (`get-next` `slice=waiting_on_me`, `kind: [decision]`) and put each to them by `url`, in full sentences: the question, the options and the recommendation. All of them on the first tick of a session, afterwards only those new since the last tick; the rest as a count. These lines do not count against the five. Always state the session count against the cap (`sessions 2/2`) and the focus, if any. If nothing changed, one line: `flow-manager: no change (sessions N/cap, M waiting)`. Do not schedule anything yourself — `/loop` fires the next tick. If the loop is self-paced (`/loop /flow-manager` with no interval), pick the next delay from what is in flight: a deploy or CI about to finish → 5–10 min; only reviews or people → 30 min or more.
 
 ## Prerequisites outside the repo
 
