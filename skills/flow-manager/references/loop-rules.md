@@ -11,7 +11,7 @@ The rules the manager applies and every child follows, from [ttoss/ttoss#1336](h
 7. **Every wait lives in Flow.** A task held by CI, a deploy, a pipeline or a review is `waiting` (`scheduled` for a pipeline, `external` for a person), with its PR as an `implements` reference and the next step in its body. Closing a session loses nothing.
 8. **One manager, which implements nothing.** The manager merges, releases, starts and archives sessions; every ready task gets its own child session, which runs the loop to the task's close. A fix the manager finds needed becomes a task for a child.
 9. **The manager holds no state.** A delegated task cites its child session URL as a `context` reference; a check-in is the task's wait `until`; what the user decided in chat is a `basis: { said }`; a new manager starts from `get-next` and its `counts`.
-10. **Parallel by default; validation wins a slot.** Advance every cleared wait before starting new work. Under the parallelism limit, a free slot goes to production validation first.
+10. **Parallel by default; validation wins a slot.** Advance every cleared wait before starting new work. Under the session limit (`--max-sessions`), a free slot goes to production validation first.
 11. **Sessions close as they finish.** A session whose part is done is archived by its spawner, or by itself when nothing spawned it.
 12. **Branches.** A merged PR frees its branch: restart it from the default branch for the next task.
 13. **Bugs and findings** become Flow tasks at once, without asking (search first, add to a match), with the evidence (`file:line`, request, log) in the body.
