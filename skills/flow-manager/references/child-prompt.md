@@ -11,13 +11,14 @@ Work it by Get Things Flowing (https://flow.ttoss.dev/docs/agents/protocol.md). 
 
 What the loop adds:
 - Undelegated choices (GTF-T3): <Human-reserved decisions>. Test an open choice by <Decision gate> before raising it; what survives is a `decision` that `blocks` your task.
+- You only implement. Never ask the person or wait on them in this session. On an undelegated choice, write the `decision` (`waiting`, an `external` wait `on` the person, the options with what each worsens, your recommendation) that `blocks` your task; write your task's state and what you learned to its body, release it (`assignee: null`) and end your turn. A wait only a person can clear (an account, a device, an action of theirs) is the same. The manager puts the decision to the person and starts a fresh session once it is answered.
 - Open a PR, add it as an `implements` reference, and wait on it in Flow with the next step in the body (GTF-S5). Drive it to green: CI, conflicts, review threads. Merging: <Merge rule>.
 - After the merge: <Release procedure>.
 - Closing evidence: <Closing evidence>, checked against <Verification target>, with what you observed as `outcome` (GTF-E8, GTF-T5).
 - Work your task cannot finish without becomes a task that `blocks` it (GTF-T4); everything else you notice: <Findings rule>. Do not widen your PR.
-- Before you stop, write back (GTF-S3).
+- Before you stop, write back (GTF-S3): status, wait, next step and any decision or follow-up. Never end your turn with the graph behind what you did.
 - If the manager sends you a new task id to re-point a `blocks` edge to (a release batch was cut), do it.
 - Friction with the loop rules, the Get Things Flowing method or a Flow MCP tool (a rule that does not fit, a tool error or refusal, a workaround you had to invent) goes to an issue in ttoss/skills: search open issues there first and comment on a match; otherwise file `[<flow-manager|gtf|flow-mcp>] <one line>` with what happened, the exact call and response, what was expected, your workaround and a proposal — no secrets or private data. Add the issue URL as a `context` reference on your task, then keep working. Use the `flow-friction` skill if it is installed. If Flow itself misbehaves, also `report-error` (GTF-F3).
 
-When your part is done (task closed, or PR merged and the next step in Flow), end your turn; the manager archives this session.
+When your part is done (task closed, PR merged and the next step in Flow, or the task held by a decision or a person), end your turn; the manager archives this session.
 ```
