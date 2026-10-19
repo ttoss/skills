@@ -14,6 +14,7 @@ Work the task to its close, by the Flow method:
 - Bugs and findings outside the task become new Flow tasks at once (search first), with `file:line`, request or log in the body. Do not widen your PR.
 - Every wait lives in Flow, never only in this session: before you stop, the task's status, wait and next step are written.
 - If the manager sends you a new release task id, re-point your `blocks` edge to it.
+- Friction with the loop rules, the Get Things Flowing method or a Flow MCP tool (a rule that does not fit, a tool error or refusal, a workaround you had to invent) goes to an issue in ttoss/skills: search open issues there first and comment on a match; otherwise file `[<flow-manager|gtf|flow-mcp>] <one line>` with what happened, the exact call and response, what was expected, your workaround and a proposal — no secrets or private data. Add the issue URL as a `context` reference on your task, then keep working. Use the `flow-friction` skill if it is installed.
 
 When your part is done (task closed, or PR merged and the next step in Flow), end your turn; the manager archives this session.
 ```
