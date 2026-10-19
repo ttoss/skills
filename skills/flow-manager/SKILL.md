@@ -52,7 +52,7 @@ The voice is the first of: `--voice` on the command, the `Voice` [project parame
 By default the manager works the whole project. Name a part of the graph to spend its sessions there only:
 
 ```text
-/loop 10m /flow-manager task_v61r7cn20q
+/loop 10m /flow-manager task_8k2m4p6q9r
 /loop 10m /flow-manager tag:billing
 /loop 10m /flow-manager "finish the webhook retries"
 ```
