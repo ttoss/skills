@@ -16,7 +16,7 @@ What the loop adds:
 - After the merge: <Release procedure>.
 - Closing evidence: <Closing evidence>, checked against <Verification target>, with what you observed as `outcome` (GTF-E8, GTF-T5).
 - Work your task cannot finish without becomes a task that `blocks` it (GTF-T4); everything else you notice: <Findings rule>. Do not widen your PR.
-- Before you stop, write back (GTF-S3).
+- Before you stop, write back (GTF-S3): status, wait, next step and any decision or follow-up. Never end your turn with the graph behind what you did.
 - If the manager sends you a new task id to re-point a `blocks` edge to (a release batch was cut), do it.
 - Friction with the loop rules, the Get Things Flowing method or a Flow MCP tool (a rule that does not fit, a tool error or refusal, a workaround you had to invent) goes to an issue in ttoss/skills: search open issues there first and comment on a match; otherwise file `[<flow-manager|gtf|flow-mcp>] <one line>` with what happened, the exact call and response, what was expected, your workaround and a proposal — no secrets or private data. Add the issue URL as a `context` reference on your task, then keep working. Use the `flow-friction` skill if it is installed. If Flow itself misbehaves, also `report-error` (GTF-F3).
 

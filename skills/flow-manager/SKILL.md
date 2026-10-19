@@ -106,7 +106,7 @@ For each open task that cites a session URL:
 | idle | task held by an open `decision` or a wait on a person, its state written | `archive_session`; the decision goes to the user in section 5 |
 | `failed`, or archived/missing | task open | release the task (`assignee: null`, body note naming the dead session, basis standing decision) so section 4 re-delegates it |
 
-A closed task whose session is still alive: archive the session. Never archive a session whose task is not closed, has no merged PR and is not held by a decision or a person.
+**The graph first, then the archive.** A session is archived only once Flow holds what it did: the task's status, its wait and next step in the body, and any `decision` or follow-up it raised. When the child did not write it, the manager reads the session (`list_events`) and writes it, basis the standing decision, before archiving. A closed task whose session is still alive: archive the session. Never archive a session whose task is not closed, has no merged PR and is not held by a decision or a person.
 
 ## 3. Advance the loop
 
