@@ -1,6 +1,10 @@
 # ttoss skills
 
-Agent skills shared across ttoss projects. The Flow skills are built on [Get Things Flowing](https://flow.ttoss.dev/docs/agents/protocol.md) (GTF), the method Flow defines for agents. The loop is generic: how a project merges, releases and proves work done are **extension points** each project answers in its own parameters, which `flow-setup` defines with the user. GTF always wins; where a project answers an extension point, its answer is followed; the skills supply the cycle and a default for every point left empty. Each one lives in `skills/<name>/SKILL.md`; install it with the [`skills` CLI](https://github.com/vercel-labs/skills) (`npx skills add ttoss/skills`), which records it in the consuming repo's `skills-lock.json`.
+Agent skills shared across ttoss projects. The Flow skills are built on [Get Things Flowing](https://flow.ttoss.dev/docs/agents/protocol.md) (GTF), the method Flow defines for agents.
+
+**Rule of thumb:** GTF is a general method, for anyone in any profession; these skills are for **product development** — code, PRs, CI, review, releases, deploys; a project is one product. A rule true of any work belongs in GTF, one true of product development in general belongs here, and one true of a single product is that project's parameters.
+
+The loop is generic across products: how a project merges, releases and proves work done are **extension points** each project answers in its own parameters, which `flow-setup` defines with the user. GTF always wins; where a project answers an extension point, its answer is followed; the skills supply the cycle and a default for every point left empty. Each one lives in `skills/<name>/SKILL.md`; install it with the [`skills` CLI](https://github.com/vercel-labs/skills) (`npx skills add ttoss/skills`), which records it in the consuming repo's `skills-lock.json`.
 
 | Skill | What it does |
 | --- | --- |

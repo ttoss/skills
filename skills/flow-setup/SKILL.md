@@ -12,11 +12,13 @@ The loop is generic on purpose. Everything that differs between projects — whe
 
 ## Precedence
 
+Rule of thumb: GTF is a general method for any work, in any profession; the ttoss skills are for product development; a project is one product. A rule belongs at the most general level where it holds in every case.
+
 Every rule an agent follows in a Flow project comes from one of three sources:
 
 1. **[Get Things Flowing](https://flow.ttoss.dev/docs/agents/protocol.md)** — the method. Always wins; cited by rule id (`GTF-E8`), never restated.
-2. **The project** — its parameters and the rules they point to. Where the project defines an extension point, its answer is followed.
-3. **The ttoss skills** — the loop's cycle, plus a default for every extension point the project leaves empty.
+2. **The project** — one product: its parameters and the rules they point to. Where the project defines an extension point, its answer is followed.
+3. **The ttoss skills** — what holds for product development in general: the loop's cycle (tasks delivered through PRs, CI, review and merge), plus a default for every extension point the project leaves empty.
 
 A project rule that only restates GTF or a skill is removed: one source of truth. A project rule that contradicts a skill **outside** an extension point is kept and followed when the user confirms it, and filed through [`flow-friction`](../flow-friction/SKILL.md) as the extension point the skill lacks. A project rule never overrides GTF.
 
@@ -37,6 +39,7 @@ A project rule that only restates GTF or a skill is removed: one source of truth
    | The rule… | Action |
    | --- | --- |
    | restates GTF | delete it; where readers need the pointer, leave the GTF id |
+| holds for product development in general, but neither GTF nor a skill says it | keep it, and propose it to the skills with `flow-friction` |
    | restates a ttoss skill | delete it; where readers need the pointer, name the skill |
    | contradicts GTF | delete it, after showing the user the GTF rule it breaks |
    | contradicts a skill outside an extension point | ask; kept → file it with `flow-friction` and link the issue in the PR |

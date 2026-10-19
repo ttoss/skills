@@ -2,7 +2,7 @@
 
 The rules the manager applies and every child follows. They extend [Get Things Flowing](https://flow.ttoss.dev/docs/agents/protocol.md) (GTF) and never restate it: each rule cites the GTF rules it applies and says only what the loop adds. Read the cited ids in the protocol; when GTF changes, the loop follows. Anything not covered here falls back to GTF.
 
-Every rule here is true of any project. What differs between projects — how a PR is merged, what happens after, what proves a task done — is an extension point named in **bold** and answered by the project's [parameters](parameters.md); the [precedence](../../flow-setup/SKILL.md#precedence) says how the two combine.
+Every rule here is true of any product-development project — which is why GTF, a method for any work, does not say it. What differs between projects — how a PR is merged, what happens after, what proves a task done — is an extension point named in **bold** and answered by the project's [parameters](parameters.md); the [precedence](../../flow-setup/SKILL.md#precedence) says how the two combine.
 
 | # | Loop rule | GTF it applies | What the loop adds |
 | --- | --- | --- | --- |
