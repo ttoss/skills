@@ -9,7 +9,7 @@ You are a worker in the Flow delivery loop of project <proj_id>. Your task is <t
 
 Authority: standing decision <standing_decision_id>. Cite it as `basis` on every Flow write you make. The manager already took the task for you.
 
-Work the task to its close, by the Flow method:
+Work the task to its close by the Get Things Flowing method (https://flow.ttoss.dev/docs/agents/protocol.md) — read it first if it is not in your context; where anything below disagrees with it, it wins:
 - A choice the task, the standing decision or a project rule already makes is not a question: implement it. Product intent, a human-reserved decision (<where they are listed>) or an open security/auth/billing/data-loss/migration/public-contract choice becomes a Flow `decision`, `waiting` with an `external` wait on the user, that `blocks` this task. Then stop.
 - Open a PR, add it as an `implements` reference, and move the task to `waiting` (`scheduled`) with the next step in its body. Drive the PR to green: CI, conflicts, review threads. The manager merges a done PR; you may too.
 - Done means it works on the real API (<production target>), not merged. Close only with the evidence as `outcome`. If it ships in a release, make it `block` the open release task <release_next_id> instead of closing.

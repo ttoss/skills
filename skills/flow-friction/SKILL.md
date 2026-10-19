@@ -6,7 +6,7 @@ argument-hint: "[what happened]"
 
 # Flow friction
 
-Friction is whatever made the loop slower, wrong or impossible **because of the tooling or the method**, not because of the project. It goes to [ttoss/skills](https://github.com/ttoss/skills/issues) so the rules and tools get fixed in one place.
+The loop is built on [Get Things Flowing](https://flow.ttoss.dev/docs/agents/protocol.md) (GTF); cite its rule ids from there. Friction is whatever made the loop slower, wrong or impossible **because of the tooling or the method**, not because of the project. It goes to [ttoss/skills](https://github.com/ttoss/skills/issues) so the rules and tools get fixed in one place.
 
 | Friction (file it) | Not friction (do something else) |
 | --- | --- |

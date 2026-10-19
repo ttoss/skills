@@ -1,6 +1,6 @@
 # ttoss skills
 
-Agent skills shared across ttoss projects. Each one lives in `skills/<name>/SKILL.md`; install it with the [`skills` CLI](https://github.com/vercel-labs/skills) (`npx skills add ttoss/skills`), which records it in the consuming repo's `skills-lock.json`.
+Agent skills shared across ttoss projects. The Flow skills are built on [Get Things Flowing](https://flow.ttoss.dev/docs/agents/protocol.md) (GTF), the method Flow defines for agents: they add only what GTF leaves to a project, and GTF wins where they disagree. Each one lives in `skills/<name>/SKILL.md`; install it with the [`skills` CLI](https://github.com/vercel-labs/skills) (`npx skills add ttoss/skills`), which records it in the consuming repo's `skills-lock.json`.
 
 | Skill | What it does |
 | --- | --- |

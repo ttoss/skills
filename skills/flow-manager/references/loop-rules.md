@@ -2,6 +2,8 @@
 
 The rules the manager applies and every child follows, from [ttoss/ttoss#1336](https://github.com/ttoss/ttoss/issues/1336). Battle-tested in naturali and soat.
 
+They extend [Get Things Flowing](https://flow.ttoss.dev/docs/agents/protocol.md) and never replace it. The loop as a whole is GTF's target pursuit under a standing rule (GTF-T): the standing decision is that rule. Done means verified (rule 4) and every wait lives in the graph (rule 7) are GTF's own engagement and session rules (GTF-E, GTF-S), applied to releases and deploys. Anything these rules do not cover falls back to GTF.
+
 1. **Autonomy.** A clear task that is not a product decision is completed without the user. Product intent, a decision the project reserves to a human, or an open high-risk choice (security, auth, billing, data loss, migrations, public contracts) becomes a Flow `decision` waiting on the user that `blocks` only that task; other work continues.
 2. **Open questions only.** A choice already made by the task, a standing decision or a rule is not an open question: implement it. Anything else runs a Pareto / long-term gate (the `guardian` skill, when installed) before it is forwarded to the user.
 3. **Standing decision as basis.** Every Flow write the loop makes cites the project's standing decision as `basis`.
