@@ -1,7 +1,7 @@
 ---
 name: flow-manager
-description: Manager tick for the autonomous delivery loop driven by Flow (Terezinha Flow task graph). Each run reads the project's Flow graph, advances what the graph says is next (merge done PRs, cut and bump releases, test releases in production, clear finished waits), delegates every ready task to its own child session, archives finished children, writes every change back to Flow and ends the turn. Holds no state between runs, so it is built to be repeated with `/loop 10m /flow-manager`. Use when the user says /flow-manager, "flow manager", "manage the flow", "run the delivery loop", or `/flow-manager setup` to bootstrap a project.
-argument-hint: "[setup | project-id]"
+description: Manager tick for the autonomous delivery loop driven by Flow (Terezinha Flow task graph). Each run reads the project's Flow graph, advances what the graph says is next (merge done PRs, cut and bump releases, test releases in production, clear finished waits), delegates every ready task to its own child session, archives finished children, writes every change back to Flow and ends the turn. Holds no state between runs, so it is built to be repeated with `/loop 10m /flow-manager`; `--max-sessions N` caps how many child sessions run at once. Use when the user says /flow-manager, "flow manager", "manage the flow", "run the delivery loop", or `/flow-manager setup` to bootstrap a project.
+argument-hint: "[setup] [project-id] [--max-sessions N]"
 ---
 
 # Flow manager
@@ -22,6 +22,20 @@ flowchart LR
 
 `/flow-manager setup` runs [bootstrap](references/bootstrap.md) instead of a tick. It is the only mode that may ask the user questions.
 
+## Session limit
+
+Child sessions are where the tokens go, so their number is capped and the cap is explicit:
+
+```text
+/loop 10m /flow-manager --max-sessions 2
+/loop 10m /flow-manager proj_vx1h3xshaq --max-sessions 1
+/loop 30m /flow-manager --max-sessions 0
+```
+
+The cap is the first of: `--max-sessions N` on the command, the `Max sessions` [project parameter](references/parameters.md), or **2**. It counts every child that is not archived, idle ones included — an idle child subscribed to its PR wakes, and spends, on every CI result and review. `0` makes a manager-only tick: it still merges, archives, moves waits and writes to Flow, but starts no session.
+
+At the cap, no new child starts; nothing is interrupted or archived early to make room. A slot frees only when section 2 archives a finished child. Lowering the cap mid-loop therefore takes effect as children finish. The tick interval is the other cost knob: each tick is a manager turn, so a longer interval and a lower cap both cut spend.
+
 ## Hard rules of a tick
 
 - **Never block.** No `AskUserQuestion`, no `sleep`, no waiting on CI or a deploy inside a tick. Anything that needs a person becomes a Flow `decision` (`waiting`, `external` wait on the person) that `blocks` only the affected task; anything that needs time becomes a `waiting` task with `wait.until`. The next tick picks it up.
@@ -33,7 +47,7 @@ flowchart LR
 
 ## 0. Preflight
 
-1. Load the [project parameters](references/parameters.md): from the argument (`/flow-manager proj_...`), else the consuming repo's `.claude/flow-manager.md`, else a `## Flow manager` section of its `CLAUDE.md`/`AGENTS.md`. Required: Flow project id and standing-decision task id. Missing → print what is missing, point to `/flow-manager setup`, end the tick.
+1. Parse the arguments (`setup`, a `proj_...` id, `--max-sessions N`) and load the [project parameters](references/parameters.md): the project id from the argument, else the consuming repo's `.claude/flow-manager.md`, else a `## Flow manager` section of its `CLAUDE.md`/`AGENTS.md`. Required: Flow project id and standing-decision task id. Missing → print what is missing, point to `/flow-manager setup`, end the tick.
 2. Check the tools exist (load deferred ones with `ToolSearch`): Flow (`get-next`, `get-task`, `list-tasks`, `upsert-tasks`, `update-tasks`), GitHub (PR read, merge), and sessions (`create_session`, `get_session`, `archive_session`, `send_message` from claude-code-remote). Without session tools, fall back to background `Agent` calls with `isolation: "worktree"` and say once per session that children will not survive this session.
 3. `get-task` the standing decision. If it is closed as cancelled/superseded or its body no longer authorises the loop, stop: report it and end the tick. The loop's authority is that task, not this skill.
 
@@ -71,7 +85,7 @@ Take the **first open step** below for every item it applies to, then the next s
 
 ## 4. Delegate ready work
 
-Slots = the project's parallelism limit (default 3) minus children working. Fill them in this order: production validation, then the section 3 steps that need a child (release, bump, CI/conflict fixes), then `get-next` (`limit` = free slots).
+Free slots = the [session limit](#session-limit) minus the children not yet archived (after section 2). No free slot → skip this section. Fill them in this order: production validation, then the section 3 steps that need a child (release, bump, CI/conflict fixes), then `get-next` (`limit` = free slots).
 
 For each task:
 
@@ -82,7 +96,7 @@ For each task:
 
 ## 5. Report and end
 
-End the turn with at most five lines: what moved (each task by its Flow `url`), what is waiting on the user, what failed. If nothing changed, one line: `flow-manager: no change (N in flight, M waiting)`. Do not schedule anything yourself — `/loop` fires the next tick. If the loop is self-paced (`/loop /flow-manager` with no interval), pick the next delay from what is in flight: a deploy or CI about to finish → 5–10 min; only reviews or people → 30 min or more.
+End the turn with at most five lines: what moved (each task by its Flow `url`), what is waiting on the user, what failed. Always state the session count against the cap (`sessions 2/2`). If nothing changed, one line: `flow-manager: no change (sessions N/cap, M waiting)`. Do not schedule anything yourself — `/loop` fires the next tick. If the loop is self-paced (`/loop /flow-manager` with no interval), pick the next delay from what is in flight: a deploy or CI about to finish → 5–10 min; only reviews or people → 30 min or more.
 
 ## Prerequisites outside the repo
 

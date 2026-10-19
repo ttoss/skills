@@ -13,7 +13,7 @@ The manager reads these from the consuming repo, first match wins: the `/flow-ma
 | Release procedure | `ttoss/soat` `.claude/rules/release.md` |
 | Production target | `https://api.naturali.ai`, Sandbox project, token in `NATURALI_TOKEN` |
 | Human-reserved decisions | `CLAUDE.md` § Standing decisions |
-| Parallelism limit | 3 |
+| Max sessions | 2 |
 ```
 
-Only the first two rows are required. A single-repo project lists one repo and no release procedure, and skips loop steps 2–3. Without a production target, "done" falls back to merged plus the repo's own verification, and the manager says so in its first report.
+Only the first two rows are required. `Max sessions` is the default cap on live child sessions; `--max-sessions N` on the command overrides it. A single-repo project lists one repo and no release procedure, and skips loop steps 2–3. Without a production target, "done" falls back to merged plus the repo's own verification, and the manager says so in its first report.
