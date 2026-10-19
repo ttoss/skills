@@ -6,7 +6,7 @@ argument-hint: "[audit] [owner/repo]"
 
 # Flow setup
 
-Prepares a repository for [`flow-manager`](../flow-manager/SKILL.md), once, and audits it again whenever GTF, the skills or the project's way of delivering change. It is interactive: it asks the user questions, and it never writes to Flow or to the default branch without their answer.
+Prepares a repository for [`flow-manager`](../flow-manager/SKILL.md), once, and audits it again whenever GTF, the skills or the project's way of delivering change. It is interactive: it asks the user questions, and it never writes to Flow or to the default branch without their answer. It writes in the [terse voice](../flow-manager/references/voice.md) unless the project's `Voice` parameter is `normal`; its questions to the user and the PR body stay in full sentences, as the voice rules require.
 
 The loop is generic on purpose. Everything that differs between projects — when a PR merges, what happens after it, what proves a task done — is an **extension point** the project answers in its [parameters](../flow-manager/references/parameters.md). Defining those answers with the user is most of this skill.
 

@@ -1,8 +1,8 @@
 # Voice
 
-`--voice terse` (the default) or `--voice normal`. Terse cuts the prose an agent writes for itself and its user, where most child-session tokens go; it never touches what the work needs exact or what other people read later. `normal` drops the block below and leaves each session to its usual style. The idea comes from [caveman](https://github.com/JuliusBrussee/caveman); the rules are this loop's own.
+`--voice terse` (the default) or `--voice normal`. **Terse is the default of every ttoss Flow skill** — `flow-manager`, its children, `flow-setup` and `flow-friction` — because these skills must spend as few tokens as possible. Terse cuts the prose an agent writes for itself and its user, where most session tokens go; it never touches what the work needs exact or what other people read later. `normal` drops the block below and leaves each session to its usual style. The idea comes from [caveman](https://github.com/JuliusBrussee/caveman); the rules are this loop's own.
 
-The manager follows the block in its own ticks and pastes it verbatim into each child prompt, because a child repo may not have this skill installed.
+Each skill follows the block in its own turns unless the project's `Voice` parameter is `normal`; the manager also pastes it verbatim into each child prompt, because a child repo may not have this skill installed.
 
 ```text
 Voice: terse. Write as few words as carry the meaning.
