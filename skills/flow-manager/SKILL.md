@@ -45,6 +45,16 @@ Two more knobs, measured on a real loop (a `/loop 30m` manager session reached a
 - **The manager's own context.** Under `/loop` every tick re-reads every earlier tick, and after an idle gap longer than the prompt cache's lifetime (one hour) the whole context is written again before any work. A tick needs nothing from earlier ticks — Flow is the memory — so prefer a recurring routine that starts a **fresh session per tick** ([prerequisites](#prerequisites-outside-the-repo)); under `/loop`, `/compact` the session when it grows.
 - **The child model.** A child runs on the `Child model` [parameter](references/parameters.md); verification and other read-only work runs on `Verification model`. Default: a mid-tier model (Sonnet) for verification, the manager's own model for code.
 
+Every session the loop starts is a Flow **agent run** ([agent runs](#agent-runs)), so these knobs are measured rather than guessed: `list-agent-runs` with `group_by=model` compares models, `task`/`tag`/`upstream_of` gives the cost of a task, a tag or a milestone, `parent` gives a whole loop, and `since`/`until` either side of a prompt change shows what the change saved.
+
+## Agent runs
+
+An agent run is one agent session recorded in Flow: its URL, the tasks it `works_on`, its `parent` run, `agent`, `model`, `prompt_size` and, once it ends, its `status` and `usage` (`cost_usd`, token counts, `peak_context`). `upsert-agent-run` is keyed by the session URL, so recording a session at its start and again at its end is the same call; omitted fields are kept.
+
+- **The manager’s own agent run.** In preflight, `upsert-agent-run` this session (`url` from `get_session` with no id, `agent: flow-manager`, `model`); in section 5, record it again with the `usage` the same read reports. A fresh session per tick makes each tick one run.
+- **A child’s agent run.** Written when the child starts (section 4) and closed when it is archived (section 2).
+- **Without `upsert-agent-run`** (a Flow deployment that predates agent runs), fall back to a `context` reference on the task holding the session URL, with the cost in its title once known, in this fixed format so the series can be migrated: `flow-manager child session · $8.40 · opus · 368k · 25.1M` (cost, model, peak context, cache-read tokens).
+
 ## Voice
 
 Terse by default; normal by choice:
@@ -88,8 +98,9 @@ The focus narrows only what **starts a child**: the ready set, cleared waits tha
 ## 0. Preflight
 
 1. Parse the arguments (a `proj_...` id, a [focus](#focus) — `task_...`, `tag:<name>` or the remaining text —, `--max-sessions N`, `--voice terse|normal`) and load the [project parameters](references/parameters.md): the project id from the argument, else the consuming repo's `.claude/flow-manager.md`, else a `## Flow manager` section of its `CLAUDE.md`/`AGENTS.md`. Required: Flow project id and standing-decision task id. Missing → print what is missing, point to `/flow-setup`, end the tick.
-2. Check the tools exist (load deferred ones with `ToolSearch`): Flow (`get-next`, `get-task`, `list-tasks`, `upsert-tasks`, `update-tasks`), GitHub (PR read, merge), and sessions (`create_session`, `get_session`, `archive_session`, `send_message` from claude-code-remote). Without session tools, fall back to background `Agent` calls with `isolation: "worktree"` and say once per session that children will not survive this session.
+2. Check the tools exist (load deferred ones with `ToolSearch`): Flow (`get-next`, `get-task`, `list-tasks`, `upsert-tasks`, `update-tasks`, and `upsert-agent-run`/`list-agent-runs` when the deployment has them — see [agent runs](#agent-runs)), GitHub (PR read, merge), and sessions (`create_session`, `get_session`, `archive_session`, `send_message` from claude-code-remote). Without session tools, fall back to background `Agent` calls with `isolation: "worktree"` and say once per session that children will not survive this session.
 3. `get-task` the standing decision. If it is closed as cancelled/superseded or its body no longer authorises the loop, stop: report it and end the tick. The loop's authority is that task, not this skill.
+4. Record the manager's own [agent run](#agent-runs).
 
 ## 1. Read the graph
 
@@ -99,9 +110,9 @@ The focus narrows only what **starts a child**: the ready set, cleared waits tha
 
 ## 2. Reconcile children
 
-The child map is rebuilt from Flow on every tick, never remembered (GTF-S4): a delegated task carries its child session URL as a `context` reference (`https://claude.ai/code/session_...`).
+The child map is rebuilt from Flow on every tick, never remembered (GTF-S4): `list-agent-runs` with `project` and `status: [running]` answers every child not yet closed, each with its session `url` and the tasks it `works_on`. Without agent runs, a delegated task carries its child session URL as a `context` reference (`https://claude.ai/code/session_...`). `list-agent-runs` with `lingering=true` also names the agent runs still open after every task they worked on closed — sessions to archive.
 
-For each open task that cites a session URL:
+For each child agent run (or each open task that cites a session URL):
 
 | Child state (`get_session`) | Task state | Action |
 | --- | --- | --- |
@@ -111,7 +122,7 @@ For each open task that cites a session URL:
 | idle | task held by an open `decision` or a wait on a person, its state written | `archive_session`; the decision goes to the user in section 5 |
 | `failed`, or archived/missing | task open | release the task (`assignee: null`, body note naming the dead session, basis standing decision) so section 4 re-delegates it |
 
-**The graph first, then the archive.** A session is archived only once Flow holds what it did: the task's status, its wait and next step in the body, and any `decision` or follow-up it raised. When the child did not write it, the manager reads the session (`list_events`) and writes it, basis the standing decision, before archiving. Before archiving, file any friction the child names in its last message (`flow-friction`, search first). A closed task whose session is still alive: archive the session. Never archive a session whose task is not closed, has no merged PR and is not held by a decision or a person.
+**The graph first, then the archive.** A session is archived only once Flow holds what it did: the task's status, its wait and next step in the body, and any `decision` or follow-up it raised. When the child did not write it, the manager reads the session (`list_events`) and writes it, basis the standing decision, before archiving. Before archiving, file any friction the child names in its last message (`flow-friction`, search first). A closed task whose session is still alive: archive the session. **Close the agent run with the archive**: read the session's cost from the same `get_session` and `upsert-agent-run` its `url` with `status` (`completed`, `failed` or `archived`), `usage` and the PRs it made as `produced`; without agent runs, write the cost into the `context` reference's title in the [interim format](#agent-runs). Never archive a session whose task is not closed, has no merged PR and is not held by a decision or a person.
 
 ## 3. Advance the loop
 
@@ -133,11 +144,11 @@ For each task:
 2. **Size test.** Does the brief ask for more than one independent delivery (code + guard, backend + screen, migration + use, more than one repo)? Then do not delegate it whole: create child tasks, each with its own acceptance, `blocks` edges in the order they must ship, the original as the target they block (GTF-T4), basis the standing decision (splitting changes neither scope nor decisions). Delegate only the first wave. The `Task size` parameter, when set, says what counts as independent there.
 3. Take it (GTF-E7, GTF-E5), basis the standing decision.
 4. `create_session` with every repo the task touches, `permission_mode` inherited (never `plan`), `model` from the [child model](#session-limit) (`Verification model` when the task is closing evidence or another read-only check), and the prompt from [child-prompt.md](references/child-prompt.md) filled in, with the [voice](#voice) block when the voice is terse. The prompt is deliberately short — the child re-reads it on every turn; anything a child rarely needs stays with the manager.
-5. Write the session URL as a `context` reference on the task — immediately, in the same tick. A child that is not in Flow does not exist for the next manager.
+5. Record the child's [agent run](#agent-runs) — immediately, in the same tick: `upsert-agent-run` with the session `url`, `project`, `works_on: [<task>]`, `parent` (the manager's own session URL), `agent: flow-manager child`, `model` and `prompt_size` (bytes of the prompt sent). The agent run replaces the `context` reference with the session URL; without agent runs, write that reference instead. A child that is not in Flow does not exist for the next manager.
 
 ## 5. Report and end
 
-Write back what the tick left (GTF-S3), then end the turn with at most five lines: what moved (each task by its Flow `url`), what is waiting on the user, what failed, and anything Flow reported (GTF-F2).
+Write back what the tick left (GTF-S3) and close the manager's own [agent run](#agent-runs) with its `usage`, then end the turn with at most five lines: what moved (each task by its Flow `url`), what is waiting on the user, what failed, and anything Flow reported (GTF-F2).
 
 Decisions are the manager's to raise, never a child's ([loop rule 13](references/loop-rules.md)). Read the open decisions waiting on the user (`get-next` `slice=waiting_on_me`, `kind: [decision]`) and put each to them by `url`, in full sentences: the question, the options and the recommendation. All of them on the first tick of a session, afterwards only those new since the last tick; the rest as a count. These lines do not count against the five. Always state the session count against the cap (`sessions 2/2`) and the focus, if any. If nothing changed, one line: `flow-manager: no change (sessions N/cap, M waiting)`. Do not schedule anything yourself — `/loop` fires the next tick. If the loop is self-paced (`/loop /flow-manager` with no interval), pick the next delay from what is in flight: a deploy or CI about to finish → 5–10 min; only reviews or people → 30 min or more.
 
