@@ -49,11 +49,12 @@ Every session the loop starts is a Flow **agent run** ([agent runs](#agent-runs)
 
 ## Agent runs
 
-An agent run is one agent session recorded in Flow: its URL, the tasks it `works_on`, its `parent` run, `agent`, `model`, `prompt_size` and, once it ends, its `status` and `usage` (`cost_usd`, token counts, `peak_context`). `upsert-agent-run` is keyed by the session URL, so recording a session at its start and again at its end is the same call; omitted fields are kept.
+`upsert-agent-run` and `list-agent-runs` describe what the tools do. What is the loop's:
 
-- **The manager’s own agent run.** In preflight, `upsert-agent-run` this session (`url` from `get_session` with no id, `agent: flow-manager`, `model`); in section 5, record it again with the `usage` the same read reports. A fresh session per tick makes each tick one run.
-- **A child’s agent run.** Written when the child starts (section 4) and closed when it is archived (section 2).
-- **Without `upsert-agent-run`** (a Flow deployment that predates agent runs), fall back to a `context` reference on the task holding the session URL, with the cost in its title once known, in this fixed format so the series can be migrated: `flow-manager child session · $8.40 · opus · 368k · 25.1M` (cost, model, peak context, cache-read tokens).
+- **The manager** creates the child's run when it starts the child (section 4): `works_on`, `parent`, `agent: flow-manager child`, `prompt_size`.
+- **The child** updates `usage` and `status` of its own run and leaves `agent` as the manager wrote it.
+- **On archive** (section 2) the manager closes only runs still open (`list-agent-runs` with `lingering=true`), which covers a child that could not close its own.
+- **The manager's own run**: one `upsert-agent-run` in preflight, closed in section 5.
 
 ## Voice
 
@@ -98,7 +99,7 @@ The focus narrows only what **starts a child**: the ready set, cleared waits tha
 ## 0. Preflight
 
 1. Parse the arguments (a `proj_...` id, a [focus](#focus) — `task_...`, `tag:<name>` or the remaining text —, `--max-sessions N`, `--voice terse|normal`) and load the [project parameters](references/parameters.md): the project id from the argument, else the consuming repo's `.claude/flow-manager.md`, else a `## Flow manager` section of its `CLAUDE.md`/`AGENTS.md`. Required: Flow project id and standing-decision task id. Missing → print what is missing, point to `/flow-setup`, end the tick.
-2. Check the tools exist (load deferred ones with `ToolSearch`): Flow (`get-next`, `get-task`, `list-tasks`, `upsert-tasks`, `update-tasks`, and `upsert-agent-run`/`list-agent-runs` when the deployment has them — see [agent runs](#agent-runs)), GitHub (PR read, merge), and sessions (`create_session`, `get_session`, `archive_session`, `send_message` from claude-code-remote). Without session tools, fall back to background `Agent` calls with `isolation: "worktree"` and say once per session that children will not survive this session.
+2. Check the tools exist (load deferred ones with `ToolSearch`): Flow (`get-next`, `get-task`, `list-tasks`, `upsert-tasks`, `update-tasks`, `upsert-agent-run`, `list-agent-runs`), GitHub (PR read, merge), and sessions (`create_session`, `get_session`, `archive_session`, `send_message` from claude-code-remote). Without session tools, fall back to background `Agent` calls with `isolation: "worktree"` and say once per session that children will not survive this session.
 3. `get-task` the standing decision. If it is closed as cancelled/superseded or its body no longer authorises the loop, stop: report it and end the tick. The loop's authority is that task, not this skill.
 4. Record the manager's own [agent run](#agent-runs).
 
@@ -110,9 +111,9 @@ The focus narrows only what **starts a child**: the ready set, cleared waits tha
 
 ## 2. Reconcile children
 
-The child map is rebuilt from Flow on every tick, never remembered (GTF-S4): `list-agent-runs` with `project` and `status: [running]` answers every child not yet closed, each with its session `url` and the tasks it `works_on`. Without agent runs, a delegated task carries its child session URL as a `context` reference (`https://claude.ai/code/session_...`). `list-agent-runs` with `lingering=true` also names the agent runs still open after every task they worked on closed — sessions to archive.
+The child map is rebuilt from Flow on every tick, never remembered (GTF-S4): `list-agent-runs` with `project` and `status: [running]` answers every child not yet closed, each with its session `url` and the tasks it `works_on`. `list-agent-runs` with `lingering=true` also names the agent runs still open after every task they worked on closed — sessions to archive.
 
-For each child agent run (or each open task that cites a session URL):
+For each child agent run:
 
 | Child state (`get_session`) | Task state | Action |
 | --- | --- | --- |
@@ -122,7 +123,7 @@ For each child agent run (or each open task that cites a session URL):
 | idle | task held by an open `decision` or a wait on a person, its state written | `archive_session`; the decision goes to the user in section 5 |
 | `failed`, or archived/missing | task open | release the task (`assignee: null`, body note naming the dead session, basis standing decision) so section 4 re-delegates it |
 
-**The graph first, then the archive.** A session is archived only once Flow holds what it did: the task's status, its wait and next step in the body, and any `decision` or follow-up it raised. When the child did not write it, the manager reads the session (`list_events`) and writes it, basis the standing decision, before archiving. Before archiving, file any friction the child names in its last message (`flow-friction`, search first). A closed task whose session is still alive: archive the session. **Close the agent run with the archive**: read the session's cost from the same `get_session` and `upsert-agent-run` its `url` with `status` (`completed`, `failed` or `archived`), `usage` and the PRs it made as `produced`; without agent runs, write the cost into the `context` reference's title in the [interim format](#agent-runs). Never archive a session whose task is not closed, has no merged PR and is not held by a decision or a person.
+**The graph first, then the archive.** A session is archived only once Flow holds what it did: the task's status, its wait and next step in the body, and any `decision` or follow-up it raised. When the child did not write it, the manager reads the session (`list_events`) and writes it, basis the standing decision, before archiving. Before archiving, file any friction the child names in its last message (`flow-friction`, search first). A closed task whose session is still alive: archive the session. **Close the agent run with the archive** if the child left it `running`: `status`, `usage` from the same `get_session`, the PRs as `produced`. Never archive a session whose task is not closed, has no merged PR and is not held by a decision or a person.
 
 ## 3. Advance the loop
 
@@ -144,7 +145,7 @@ For each task:
 2. **Size test.** Does the brief ask for more than one independent delivery (code + guard, backend + screen, migration + use, more than one repo)? Then do not delegate it whole: create child tasks, each with its own acceptance, `blocks` edges in the order they must ship, the original as the target they block (GTF-T4), basis the standing decision (splitting changes neither scope nor decisions). Delegate only the first wave. The `Task size` parameter, when set, says what counts as independent there.
 3. Take it (GTF-E7, GTF-E5), basis the standing decision.
 4. `create_session` with every repo the task touches, `permission_mode` inherited (never `plan`), `model` from the [child model](#session-limit) (`Verification model` when the task is closing evidence or another read-only check), and the prompt from [child-prompt.md](references/child-prompt.md) filled in, with the [voice](#voice) block when the voice is terse. The prompt is deliberately short — the child re-reads it on every turn; anything a child rarely needs stays with the manager.
-5. Record the child's [agent run](#agent-runs) — immediately, in the same tick: `upsert-agent-run` with the session `url`, `project`, `works_on: [<task>]`, `parent` (the manager's own session URL), `agent: flow-manager child`, `model` and `prompt_size` (bytes of the prompt sent). The agent run replaces the `context` reference with the session URL; without agent runs, write that reference instead. A child that is not in Flow does not exist for the next manager.
+5. Record the child's [agent run](#agent-runs) — immediately, in the same tick: `upsert-agent-run` with the session `url`, `project`, `works_on: [<task>]`, `parent` (the manager's own session URL), `agent: flow-manager child`, `model` and `prompt_size` (bytes of the prompt sent). A child that is not in Flow does not exist for the next manager.
 
 ## 5. Report and end
 
