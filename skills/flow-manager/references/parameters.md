@@ -31,7 +31,7 @@ Each one answers a question the loop asks but cannot answer for every project. L
 
 | Parameter | Default | Overridden by |
 | --- | --- | --- |
-| Max sessions | 2 | `--max-sessions N` |
+| Max sessions | 2, per manager: each manager counts only the children it started | `--max-sessions N` |
 | Voice | `terse` | `--voice terse\|normal` |
 | Child model | the manager's own model | — |
 | Verification model | a mid-tier model (Sonnet): closing evidence and read-only checks are reads and a templated write-back | — |
