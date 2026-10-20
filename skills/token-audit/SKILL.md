@@ -1,0 +1,46 @@
+---
+name: token-audit
+description: Find where Claude Code agent sessions in a project waste tokens, from measurements, not guesses — the instruction corpus every session loads, path-scoped rules that stack in busy packages, real session usage (cost, context growth, cache rewrites, PR wake-ups), the model each routine runs on, and tool payloads that bloat context. Produces a ranked report with fixes. Use when the user says /token-audit, "where are we wasting tokens", "make our agents cheaper", or session costs look high.
+argument-hint: "[repo path] [--sessions N] [--no-sessions]"
+---
+
+# Token audit
+
+What an agent session costs is **its context, re-read on every API call**, priced mostly as cache reads and cache writes; output is usually under 5%. So the audit looks for what makes a context big, what keeps it growing, and what makes the cache be written again — and ranks by **measured** spend, never by file size alone. The instruction files are the easiest lever and rarely the biggest: on the project this skill was built from, they were ~20k tokens per session, while one long-lived manager session cost $42 in 20 hours.
+
+Report in the [terse voice](../flow-manager/references/voice.md) unless the project's `Voice` is `normal`. This skill reads and proposes; it changes nothing (a routine's model, a rule, a skill) without the user's word, and when the project's rules restrict how instruction files change (one rule per PR, demote-don't-delete), the fixes it proposes follow them.
+
+## Keep the audit itself cheap
+
+It is easy to spend more auditing than the audit saves. Delegate every wide read — a session transcript, a long listing, a tool-result dump — to a subagent that returns numbers and a short finding, and keep raw output out of this session's context. Load tool schemas by name (`ToolSearch` `select:`). Run the steps below in parallel subagents where they are independent (1, 3 and 5 are).
+
+## 1. Instruction corpus
+
+Run `python3 scripts/measure_instructions.py <repo>` (stdlib only; `--json` for raw data) in each repo the sessions work in. It reports what always loads (root `CLAUDE.md` and its `@`-imports, `.claude/rules` without `paths`, skill descriptions), what each package area adds once a file there is read (path-scoped rules plus nested `CLAUDE.md`), the largest scoped files, and globs matching nothing.
+
+Then read the top always-loaded files and the rules that stack in the busiest areas, and classify their content by **when it must be known** — the sinks are in [sinks.md](references/sinks.md) §1. A rule that governs a decision made before any file is opened stays always-loaded; everything else is a candidate to scope or demote. Never propose tightening a glob only to save tokens: under-matching fails silently.
+
+## 2. Real session usage
+
+Skip with `--no-sessions`, or when the session tools (`list_sessions`, `list_events`, `list_triggers` from claude-code-remote) are absent — say so in the report.
+
+1. `list_triggers`: every routine with its model, schedule and `last_run.session_id`.
+2. `list_sessions` (`mine: true`, `limit` from `--sessions`, default 50). Classify each: routine run, loop/manager parent, delegated child, interactive. Note which belong to other projects.
+3. For each routine's last run and a sample of 6–10 sessions across classes, in a subagent: `list_events` with `kinds: ["result"]`, paging back a few pages; the latest result's `modelUsage` is cumulative — input, cache read, cache write, output, cost, turns. For the 2–3 most expensive, read the first ~100 events for the baseline context (first call's input + cache tokens), context growth per call, the largest tool results, and cache writes after idle gaps.
+4. Write the raw numbers to a scratch file and cite it.
+
+## 3. Match the model to the work
+
+For each routine and each class of child session: what did it actually do (reads and a templated write-back, or code)? Mid-tier models fit reads, triage, digests and verification; keep the top tier where the session writes code or judges a hard trade. Compare against a routine of similar size already on the cheaper model, with its measured cost.
+
+## 4. Long-lived and woken sessions
+
+From step 2: sessions whose context passed ~300k, `/loop` parents, sessions woken repeatedly by PR events or check-ins with nothing to do, and cache writes of the whole context after an idle gap longer than the cache lifetime. These are usually the largest line items; the fixes are in [sinks.md](references/sinks.md) §2.
+
+## 5. Tool surfaces the project owns
+
+When the repo ships an MCP server or tools the sessions themselves call, measure its serialized tool list (name, description, JSON schema per tool), the largest tools, repeated parameter descriptions, server `instructions` over what clients keep (Claude Code truncates at 4,096 characters), and list endpoints with no default limit. Report what agent sessions pay; anything that changes a product contract is the user's call.
+
+## 6. Report
+
+One ranked list, largest measured saving first. Each item: the sink, the evidence (session id, file and bytes, or tool and size), the fix, the estimated saving with its arithmetic, and who decides (config the user owns, a PR, an upstream skill). Separate **apply now** (config, a routine's model) from **PRs to open** and from **needs a decision**. Anything found on the way that is not about tokens (a security or privacy gap) goes at the top, flagged, never buried.
