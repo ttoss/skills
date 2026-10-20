@@ -1,6 +1,6 @@
 ---
 name: flow-manager
-description: Manager tick for the autonomous delivery loop driven by Flow (Terezinha Flow task graph) and built on the Get Things Flowing (GTF) method. Each run reads the project's Flow graph, advances what the graph says is next (merge done PRs by the project's merge rule, run its release procedure, verify by its closing evidence, clear finished waits), delegates every ready task to its own child session, archives finished children, writes every change back to Flow and ends the turn. Holds no state between runs, so it is built to be repeated with `/loop 10m /flow-manager`; `--max-sessions N` caps how many child sessions run at once and `--voice terse|normal` sets how much prose they write (terse by default); a Flow task id, `tag:<name>` or a free-text description focuses the manager on that part of the graph. Use when the user says /flow-manager, "flow manager", "manage the flow", "run the delivery loop". Set a project up with `/flow-setup` first.
+description: Manager tick for the autonomous delivery loop driven by Flow (Terezinha Flow task graph) and built on the Get Things Flowing (GTF) method. Each run reads the project's Flow graph, advances what the graph says is next (merge done PRs by the project's merge rule, run its release procedure, verify by its closing evidence, clear finished waits), delegates every ready task to its own child session, archives finished children, writes every change back to Flow and ends the turn. Holds no state between runs, so it is built to be repeated with `/loop 10m /flow-manager`; `--max-sessions N` caps how many child sessions each manager has running at once and `--voice terse|normal` sets how much prose they write (terse by default); a Flow task id, `tag:<name>` or a free-text description focuses the manager on that part of the graph. Use when the user says /flow-manager, "flow manager", "manage the flow", "run the delivery loop". Set a project up with `/flow-setup` first.
 argument-hint: "[project-id] [task-id | tag:<name> | description] [--max-sessions N] [--voice terse|normal]"
 ---
 
@@ -37,6 +37,8 @@ Child sessions are where the tokens go, so their number is capped and the cap is
 ```
 
 The cap is the first of: `--max-sessions N` on the command, the `Max sessions` [project parameter](references/parameters.md), or **2**. It counts every child that is not archived, idle ones included — an idle child subscribed to its PR wakes, and spends, on every CI result and review. `0` makes a manager-only tick: it still merges, archives, moves waits and writes to Flow, but starts no session.
+
+**The cap belongs to each manager, never to the project.** A manager counts only the children **it started** — the agent runs whose `parent` is its own session URL (`list-agent-runs` with `project` and `parent`) — and ignores every other running child, whoever started it. Two managers on one project (two `/loop`s, two foci, a manager per repo) each get the full cap: with `--max-sessions 2`, manager A running two children does not stop manager B from starting its own two. A manager that reads the project's running agent runs and finds the cap "already used" by another manager's children has counted wrong; the project's total is the sum of the managers' caps, not one shared pool.
 
 At the cap, no new child starts; nothing is interrupted or archived early to make room. A slot frees only when section 2 archives a finished child. Lowering the cap mid-loop therefore takes effect as children finish. The tick interval is the other cost knob: each tick is a manager turn, so a longer interval and a lower cap both cut spend.
 
@@ -137,7 +139,7 @@ Take the **first open step** below for every item it applies to, then the next s
 
 ## 4. Delegate ready work
 
-Free slots = the [session limit](#session-limit) minus the children not yet archived (after section 2). No free slot → skip this section. Only tasks inside the [focus](#focus) qualify, when there is one. Fill them in this order: verification due, then the section 3 steps that need a child (release procedure steps, CI/conflict fixes), then `get-next` (`limit` = free slots; GTF-E1) — or, with a task focus, the next wave of `get-order` `upstream_of` (GTF-T6).
+Free slots = the [session limit](#session-limit) minus the children **this manager started** that are not yet archived (after section 2) — the other managers' children never count against it. No free slot → skip this section. Only tasks inside the [focus](#focus) qualify, when there is one. Fill them in this order: verification due, then the section 3 steps that need a child (release procedure steps, CI/conflict fixes), then `get-next` (`limit` = free slots; GTF-E1) — or, with a task focus, the next wave of `get-order` `upstream_of` (GTF-T6).
 
 For each task:
 
