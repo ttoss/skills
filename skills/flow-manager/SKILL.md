@@ -130,9 +130,10 @@ Free slots = the [session limit](#session-limit) minus the children not yet arch
 For each task:
 
 1. `get-task` it (GTF-E2). Skip it if somebody else holds it, or if it already cites a live child session — agents of one person share the assignee (GTF-T6), so the session reference is what marks it delegated. A choice it needs that the standing decision does not delegate → a `decision` that `blocks` it (GTF-T3).
-2. Take it (GTF-E7, GTF-E5), basis the standing decision.
-3. `create_session` with every repo the task touches, `permission_mode` inherited (never `plan`), `model` from the [child model](#session-limit) (`Verification model` when the task is closing evidence or another read-only check), and the prompt from [child-prompt.md](references/child-prompt.md) filled in, with the [voice](#voice) block when the voice is terse. The prompt is deliberately short — the child re-reads it on every turn; anything a child rarely needs stays with the manager.
-4. Write the session URL as a `context` reference on the task — immediately, in the same tick. A child that is not in Flow does not exist for the next manager.
+2. **Size test.** Does the brief ask for more than one independent delivery (code + guard, backend + screen, migration + use, more than one repo)? Then do not delegate it whole: create child tasks, each with its own acceptance, `blocks` edges in the order they must ship, the original as the target they block (GTF-T4), basis the standing decision (splitting changes neither scope nor decisions). Delegate only the first wave. The `Task size` parameter, when set, says what counts as independent there.
+3. Take it (GTF-E7, GTF-E5), basis the standing decision.
+4. `create_session` with every repo the task touches, `permission_mode` inherited (never `plan`), `model` from the [child model](#session-limit) (`Verification model` when the task is closing evidence or another read-only check), and the prompt from [child-prompt.md](references/child-prompt.md) filled in, with the [voice](#voice) block when the voice is terse. The prompt is deliberately short — the child re-reads it on every turn; anything a child rarely needs stays with the manager.
+5. Write the session URL as a `context` reference on the task — immediately, in the same tick. A child that is not in Flow does not exist for the next manager.
 
 ## 5. Report and end
 
