@@ -20,21 +20,22 @@ Each one answers a question the loop asks but cannot answer for every project. L
 | Parameter | The loop asks | Default when empty |
 | --- | --- | --- |
 | Merge rule | When may a done PR be merged, and by whom? | CI green on the head, no conflict, no unresolved blocking review thread |
+| Local checks | What the CI runs that a child can run before it pushes — lint, types, tests, a build, a preview deploy, a live check — so its PR goes up green | the repo's own fast checks: lint, typecheck and the tests of what changed |
 | Release procedure | After a merge, what turns delivered work into work in effect — publish, deploy, bump a consumer, wait for a restart? Which steps does the loop run, which are automatic, which are a person's? | none: merged is in effect once CI deploys it, and nothing is batched |
 | Closing evidence | What proves a task done, when is it checked, and who runs the check? | the standing decision's closing evidence; if silent, merged plus the repo's own verification. The loop runs the checks that come due (GTF-E8) unless this names another reader of them |
 | Verification target | Where and with what credential the closing evidence is checked (API, database, logs), and which calls are read-only | none: a check that needs one becomes a `decision` waiting on the user |
 | Human-reserved decisions | Which choices always go to a person as a `decision` that `blocks` the task (GTF-T3)? | product intent, security, auth, billing, data loss, migrations, public contracts |
 | Decision gate | How a child tests an open choice before raising it (GTF-T3) | none: every open choice the task and the standing decision leave unanswered is raised |
-| Task size | What counts as an independent delivery that the manager splits before delegating (section 4, step 2)? | a brief asking for more than one delivery that can ship alone (code + guard, backend + screen, migration + use, more than one repo) |
+| Task size | What counts as an independent delivery that the manager splits before delegating (section 4, step 3)? | a brief asking for more than one delivery that can ship alone (code + guard, backend + screen, migration + use, more than one repo) |
 | Findings rule | What a child does with something it notices outside its task | GTF-C1: capture it; a prerequisite `blocks` the task (GTF-T4). **No inbox** — `ingest-capture` answers `not_found` for a project-restricted credential: write it as an `incubated` task `derived_from` the task at hand, never `blocks`, source and words verbatim in the body, basis the standing decision (GTF-C4, GTF-L3), named in the PR body or tick report |
 
 ## Tuning
 
 | Parameter | Default | Overridden by |
 | --- | --- | --- |
-| Max runs | 2, per manager: the running children of the manager's name (`--manager`, default `flow-manager`) | `--max-runs N` (alias `--max-sessions`) |
+| Max runs | 2: the project's running children, whichever manager started them | `--max-runs N` (alias `--max-sessions`) |
 | Voice | `terse` | `--voice terse\|normal` |
-| Child handoff | `close`: the child pursues its task to its close. Any other value names the point where it stops, writes its state, its next step and what the merge leaves (the closing evidence, or the check GTF-E8 needs), and ends, each later need of its PR going to a fresh child — e.g. `review`: PR ready and review requested by the `Merge rule`. A runtime whose children end with the tick needs a point reachable without waiting on a reviewer | — |
+| Child handoff | `close`: the child pursues its task to its close. Any other value names the point where it stops, writes its state, its next step and what the merge leaves (the closing evidence, or the check GTF-E8 needs), and ends, each later need of its PR going to a fresh child — e.g. `push`: the PR is up after the `Local checks` pass, its CI and review left to the manager; `review`: PR ready and review requested by the `Merge rule`. A runtime whose children end with the tick needs a point reachable without waiting on a reviewer | — |
 | Child model | the manager's own model | — |
 | Verification model | a mid-tier model: checks are reads and a templated write-back | — |
 
@@ -50,6 +51,7 @@ Each one answers a question the loop asks but cannot answer for every project. L
 | Repos | `acme/api`, `acme/web` |
 | Runtime | `ops/agent-runtime.md` |
 | Merge rule | `docs/agents/merge.md` |
+| Local checks | `scripts/ci.sh`, the script the CI runs, and the preview check in `docs/agents/live-check.md` |
 | Release procedure | Every merge to `main` deploys `acme/api`; `acme/web` bumps the published client — `docs/agents/release.md` |
 | Closing evidence | `docs/agents/done.md` |
 | Verification target | Staging API `https://api.staging.acme.dev`, token in `ACME_TOKEN`, GET only |
