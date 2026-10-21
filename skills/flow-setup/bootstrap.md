@@ -12,4 +12,4 @@ The Flow part of [`flow-setup`](SKILL.md) step 6. It creates what the loop needs
 
    The decision holds this text itself, so its authority does not depend on this skill's version (GTF-A6).
 3. **Release procedure tasks.** When the procedure tracks work in flight in a task (a `Release <repo> (next)` batch, for one), propose that task (`active`), basis the standing decision.
-4. **Write the parameters**, with the standing decision's id, to `.claude/flow-manager.md`, in the PR of step 7.
+4. **Write the parameters**, with the standing decision's id, to the parameters file (`.agents/flow-manager.md` unless the repo already has one), in the PR of step 7.
