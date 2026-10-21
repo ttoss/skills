@@ -31,9 +31,9 @@ Each one answers a question the loop asks but cannot answer for every project. L
 
 | Parameter | Default | Overridden by |
 | --- | --- | --- |
-| Max sessions | 2, per manager: each manager counts only the children it started | `--max-sessions N` |
+| Max runs | 2, per manager: the running children of the manager's name (`--manager`, default `flow-manager`) | `--max-runs N` (alias `--max-sessions`) |
 | Voice | `terse` | `--voice terse\|normal` |
-| Child handoff | `close`: the child pursues its task to its close. Any other value names the point where it stops, writes its state and next step, and is archived, each later need of its PR going to a fresh child — e.g. `review`: PR ready and review requested by the `Merge rule`. With children run as subagents ([SKILL.md](../SKILL.md#children-without-session-tools)), the point must be reachable without waiting on CI or a reviewer | — |
+| Child handoff | `close`: the child pursues its task to its close. Any other value names the point where it stops, writes its state and next step, and ends, each later need of its PR going to a fresh child — e.g. `review`: PR ready and review requested by the `Merge rule`. A runtime whose children end with the tick needs a point reachable without waiting on CI or a reviewer | — |
 | Child model | the manager's own model | — |
 | Verification model | a mid-tier model (Sonnet): closing evidence and read-only checks are reads and a templated write-back | — |
 
@@ -54,7 +54,7 @@ Each one answers a question the loop asks but cannot answer for every project. L
 | Human-reserved decisions | `CLAUDE.md` § Decisions |
 | Decision gate | `.claude/rules/open-questions.md` |
 | Findings rule | default |
-| Max sessions | 2 |
+| Max runs | 2 |
 | Voice | terse |
 | Child handoff | close |
 | Child model | inherit |
