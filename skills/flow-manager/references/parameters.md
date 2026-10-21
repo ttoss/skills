@@ -33,6 +33,7 @@ Each one answers a question the loop asks but cannot answer for every project. L
 | --- | --- | --- |
 | Max sessions | 2, per manager: each manager counts only the children it started | `--max-sessions N` |
 | Voice | `terse` | `--voice terse\|normal` |
+| Child handoff | `close`: the child pursues its task to its close. Any other value names the point where it stops, writes its state and next step, and is archived, each later need of its PR going to a fresh child — e.g. `review`: PR ready and review requested by the `Merge rule` | — |
 | Child model | the manager's own model | — |
 | Verification model | a mid-tier model (Sonnet): closing evidence and read-only checks are reads and a templated write-back | — |
 
@@ -55,6 +56,7 @@ Each one answers a question the loop asks but cannot answer for every project. L
 | Findings rule | default |
 | Max sessions | 2 |
 | Voice | terse |
+| Child handoff | close |
 | Child model | inherit |
 | Verification model | `claude-sonnet-5-5` |
 ```

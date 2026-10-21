@@ -7,7 +7,7 @@ Fill the `<…>` slots — each parameter's value from the project's [parameters
 
 Task <task_id> (<task url>), Flow project <proj_id>, assigned to you. Basis on every Flow write: <standing_decision_id>.
 1. `get-task`: the brief.
-2. PR (ready) → `implements` reference; task `waiting`, next step in body. Drive CI green. Merge: <Merge rule>.
+2. PR (ready) → `implements` reference; task `waiting`, next step in body. Drive CI green. Merge: <Merge rule>. Handoff: <Child handoff>; unless `close`, stop there: stop watching the PR (no subscription, no check-in), write the next step, end your turn — the manager takes it from there.
 3. After merge: <Release procedure>. A step that is a task `blocks` this task, never the reverse; drop any wait naming it. Close on <Closing evidence> (checked against <Verification target>); `outcome` = what you observed.
 4. Choice in <Human-reserved decisions> surviving <Decision gate>, or a wait only a person can clear: `decision` blocking the task, release it, stop. Never ask the person.
 5. Other work found: <Findings rule>. Don't widen the PR.
