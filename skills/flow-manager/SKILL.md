@@ -104,7 +104,7 @@ The focus narrows only what **starts a child**: the ready set, cleared waits tha
 ## 0. Preflight
 
 1. Parse the arguments (a `proj_...` id, a [focus](#focus) — `task_...`, `tag:<name>` or the remaining text —, `--max-sessions N`, `--manager <name>`, `--voice terse|normal`) and load the [project parameters](references/parameters.md): the project id from the argument, else the consuming repo's `.claude/flow-manager.md`, else a `## Flow manager` section of its `CLAUDE.md`/`AGENTS.md`. Required: Flow project id and standing-decision task id. Missing → print what is missing, point to `/flow-setup`, end the tick.
-2. Check the tools exist (load deferred ones with `ToolSearch`): Flow (`get-next`, `get-task`, `list-tasks`, `upsert-tasks`, `update-tasks`, `upsert-agent-run`, `list-agent-runs`), GitHub (PR read, merge), and sessions (`create_session`, `get_session`, `archive_session`, `send_message` from claude-code-remote). Without session tools, fall back to background `Agent` calls with `isolation: "worktree"` and say once per session that children will not survive this session.
+2. Check the tools exist (load deferred ones with `ToolSearch`): Flow (`get-next`, `get-task`, `list-tasks`, `upsert-tasks`, `update-tasks`, `upsert-agent-run`, `list-agent-runs`), GitHub (PR read, merge), and sessions (`create_session`, `get_session`, `archive_session`, `send_message` from claude-code-remote). Without session tools (a routine's session may have none), children run as subagents: [children without session tools](#children-without-session-tools).
 3. `get-task` the standing decision. If it is closed as cancelled/superseded or its body no longer authorises the loop, stop: report it and end the tick. The loop's authority is that task, not this skill.
 4. Record the manager's own [agent run](#agent-runs).
 
@@ -152,7 +152,16 @@ For each task:
 2. **Size test.** Does the brief ask for more than one independent delivery (code + guard, backend + screen, migration + use, more than one repo)? Then do not delegate it whole: create child tasks, each with its own acceptance, `blocks` edges in the order they must ship, the original as the target they block (GTF-T4), basis the standing decision (splitting changes neither scope nor decisions). Delegate only the first wave. The `Task size` parameter, when set, says what counts as independent there.
 3. Take it (GTF-E7, GTF-E5), basis the standing decision.
 4. `create_session` with every repo the task touches, `permission_mode` inherited (never `plan`), `model` from the [child model](#session-limit) (`Verification model` when the task is closing evidence or another read-only check), and the prompt from [child-prompt.md](references/child-prompt.md) filled in, with the [voice](#voice) block when the voice is terse. The prompt is deliberately short — the child re-reads it on every turn; anything a child rarely needs stays with the manager.
-5. Record the child's [agent run](#agent-runs) — immediately, in the same tick: `upsert-agent-run` with the session `url`, `project`, `works_on: [<task>]`, `parent` (the manager's own session URL), `agent: flow-manager child` (`flow-manager child: <name>` under `--manager`), `model` and `prompt_size` (bytes of the prompt sent). A child that is not in Flow does not exist for the next manager.
+5. Record the child's [agent run](#agent-runs) — immediately, in the same tick (a subagent child: [below](#children-without-session-tools)): `upsert-agent-run` with the session `url`, `project`, `works_on: [<task>]`, `parent` (the manager's own session URL), `agent: flow-manager child` (`flow-manager child: <name>` under `--manager`), `model` and `prompt_size` (bytes of the prompt sent). A child that is not in Flow does not exist for the next manager.
+
+### Children without session tools
+
+When the session has no `create_session`, a child is an `Agent` subagent with `isolation: "worktree"`, sent the same prompt (step 4). Nothing of it outlives the manager's session, so:
+
+- **`Child handoff` other than `close`** → run the subagents in the **foreground**, up to the free slots at once. Each stops at the handoff point the project names — one it can reach without waiting on CI or a reviewer — writes the task's state and next step, and returns; the tick ends after the last one. Every later need of the PR is a new subagent in a later tick (section 3.1).
+- **`close`** → a subagent cannot outlive the tick to pursue its task to its close: run it in the background, and say once per session that its children will not survive the session.
+
+Its agent run is keyed `<manager session URL>#<task id>`, opened when it starts and closed (`status`, `usage` from the `Agent` result, its PRs as `produced`) when it returns, so it never holds a slot past its tick. Section 2 has nothing of it to reconcile.
 
 ## 5. Report and end
 
