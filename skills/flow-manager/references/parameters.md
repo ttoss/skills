@@ -63,5 +63,5 @@ Shapes a release procedure can take, for `/flow-setup` to offer — none is the 
 
 - **Continuous**: every merge deploys; nothing for the loop to do after merge.
 - **Per-merge publish + consumer bump**: each merge publishes a package; a consumer repo bumps to it, one task per bump or batched.
-- **Batched release**: an open `Release <repo> (next)` task that tasks meant to ship `block`; the loop cuts it when the project's batch condition holds, then writes the bump and its verification as tasks.
+- **Batched release**: an open `Release <repo> (next)` task that tasks meant to ship `block`; the loop cuts it when the project's batch condition holds, then writes the bump and its verification as tasks. The batch `blocks` the bump and the bump `blocks` every task it ships, never the reverse.
 - **Manual**: a person releases; the loop waits on them (`external` wait).
