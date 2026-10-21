@@ -1,6 +1,6 @@
-# Child session prompt
+# Child prompt
 
-Fill the `<…>` slots — each parameter's value from the project's [parameters](parameters.md), or the default there, pointers kept as pointers — and send it as the `create_session` prompt. It is self-contained (the child repo may not have this skill) and short on purpose: every child turn re-reads it. The Flow MCP server's instructions already carry the method; what a child does not need here stays with the manager: filing friction it reports, re-pointing `blocks` edges when a release batch is cut.
+Fill the `<…>` slots — each parameter's value from the project's [parameters](parameters.md), or the default there, pointers kept as pointers — and start the child with it. It is self-contained (the child repo may not have this skill) and short on purpose: every child turn re-reads it. The Flow MCP server's instructions already carry the method; what a child does not need here stays with the manager: filing friction it reports, re-pointing `blocks` edges when a release batch is cut.
 
 ```text
 <voice block from voice.md, verbatim, when the voice is terse; nothing when normal>
