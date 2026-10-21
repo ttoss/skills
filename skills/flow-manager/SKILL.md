@@ -1,7 +1,7 @@
 ---
 name: flow-manager
-description: Manager tick for the autonomous delivery loop driven by Flow (Terezinha Flow task graph) and built on the Get Things Flowing (GTF) method. Each tick reads the project's Flow graph, advances what the graph says is next (merge done PRs by the project's merge rule, run its release procedure, run the checks that came due, clear finished waits), delegates ready tasks to child agent runs, ends finished children, writes every change back to Flow and stops. Holds no state between ticks, so any scheduler can repeat it — a recurring routine, a cron or CI job running the agent headless, or `/loop 10m /flow-manager`; `--max-runs N` caps how many child runs a manager has running at once, `--manager <name>` names the manager whose runs that cap counts, and `--voice terse|normal` sets how much prose they write (terse by default); a Flow task id, `tag:<name>` or a free-text description focuses the manager on that part of the graph. Use when the user says /flow-manager, "flow manager", "manage the flow", "run the delivery loop". Set a project up with `/flow-setup` first.
-argument-hint: "[project-id] [task-id | tag:<name> | description] [--max-runs N] [--manager <name>] [--voice terse|normal]"
+description: Manager tick for the autonomous delivery loop driven by Flow (Terezinha Flow task graph) and built on the Get Things Flowing (GTF) method. Each tick reads the project's Flow graph, advances what the graph says is next (merge done PRs by the project's merge rule, run its release procedure, run the checks that came due, clear finished waits), delegates ready tasks to child agent runs, ends finished children, writes every change back to Flow and stops. Holds no state between ticks, so any scheduler can repeat it — a recurring routine, a cron or CI job running the agent headless, or `/loop 10m /flow-manager`; `--max-runs N` caps how many child runs the project has running at once, however many managers tick it, and `--voice terse|normal` sets how much prose they write (terse by default); a Flow task id, `tag:<name>` or a free-text description focuses the manager on that part of the graph. Use when the user says /flow-manager, "flow manager", "manage the flow", "run the delivery loop". Set a project up with `/flow-setup` first.
+argument-hint: "[project-id] [task-id | tag:<name> | description] [--max-runs N] [--voice terse|normal]"
 ---
 
 # Flow manager
@@ -32,13 +32,13 @@ A child is an agent run the manager starts for one task. How it runs is the runt
 
 Every run is recorded (GTF-S7), keyed by its address — a URL or any URI; a child without one takes `<manager address>#<task id>`:
 
-- **The manager** records its own run in preflight, `agent: flow-manager: <manager name>`, and closes it in section 5. It records each child as it starts it: `works_on: [<task>]`, `parent` (its own run), `agent: flow-manager child: <manager name>`, `model`, `prompt_size` (bytes of the prompt). When it ends a child whose run is still open, it closes that run: `status`, `usage` if known, the PRs as `produced`.
+- **The manager** records its own run in preflight, `agent: flow-manager`, and closes it in section 5. It records each child as it starts it: `works_on: [<task>]`, `parent` (its own run), `agent: flow-manager child`, `model`, `prompt_size` (bytes of the prompt). When it ends a child whose run is still open, it closes that run: `status`, `usage` if known, the PRs as `produced`.
 - **The child** updates the `status` and `usage` of its own run.
-- **This manager's children** are the runs whose `agent` is `flow-manager child: <manager name>`, whichever tick started them: the ticks of one manager share its `agent` (GTF-S7). The manager reconciles, ends and closes only those. Any other `running` run on a task means the task is taken (GTF-S8); one that looks abandoned is reported, never ended.
+- **Every manager is the same agent.** A manager is a reader of the graph that acts on it, so the ticks of every manager on a project — one or several, any focus, any scheduler — play one role: their runs are one agent's (GTF-S7), and every `flow-manager child` run in the project is a child any tick reconciles, whichever tick started it. The runtime's acts reach only the runs it runs: a child it cannot read (another runtime's, another person's) is left alone, counts against the cap and holds its task (GTF-S8), and one that looks abandoned is reported, never ended.
 
 ## Run limit
 
-Child runs are where the tokens go, so the number `running` at once is capped (`/flow-manager --max-runs 2`). The cap is the first of: `--max-runs N` (`--max-sessions N` is read as an alias), the `Max runs` [project parameter](references/parameters.md), or **2**. It counts this manager's children that are `running` (`list-agent-runs` with `project`, `agent`, `status`), idle ones included — an idle child watching its PR wakes, and spends, on every CI result and review. The manager name is `--manager <name>`, default `flow-manager`: every tick of one manager counts the same runs, and two managers on one project (two foci, one per repo) take two names and each gets the full cap. `0` makes a manager-only tick: it still merges, ends finished runs, moves waits and writes to Flow, but starts no child.
+Child runs are where the tokens go, so the number `running` at once in the project is capped (`/flow-manager --max-runs 2`). The cap is the first of: `--max-runs N` (`--max-sessions N` is read as an alias; `--manager` is ignored), the `Max runs` [project parameter](references/parameters.md), or **2**. It counts the project's `flow-manager child` runs that are `running` (`list-agent-runs` with `project`, `agent`, `status`), idle ones included — an idle child watching its PR wakes, and spends, on every CI result and review. Every manager on the project counts the same runs, so two managers (two foci, one per repo) share one cap: raise it to run more at once. `0` makes a manager-only tick: it still merges, ends finished runs, moves waits and writes to Flow, but starts no child.
 
 At the cap, no new child starts; nothing is interrupted or ended early to make room. A slot frees when a child's run closes — at the task's close or at its `Child handoff`. The tick interval is the other cost knob: each tick is a manager run, so a longer interval and a lower cap both cut spend.
 
@@ -85,10 +85,10 @@ The focus narrows only what **starts a child**: the ready set, cleared waits tha
 
 ## 0. Preflight
 
-1. Parse the arguments (a `proj_...` id, a [focus](#focus) — `task_...`, `tag:<name>` or the remaining text —, `--max-runs N`, `--manager <name>`, `--voice terse|normal`) and load the [project parameters](references/parameters.md): the project id from the argument, else the consuming repo's `.agents/flow-manager.md`, else its `.claude/flow-manager.md`, else a `## Flow manager` section of its `AGENTS.md`/`CLAUDE.md`. Required: Flow project id and standing-decision task id. Missing → print what is missing, point to `/flow-setup`, end the tick.
+1. Parse the arguments (a `proj_...` id, a [focus](#focus) — `task_...`, `tag:<name>` or the remaining text —, `--max-runs N`, `--voice terse|normal`) and load the [project parameters](references/parameters.md): the project id from the argument, else the consuming repo's `.agents/flow-manager.md`, else its `.claude/flow-manager.md`, else a `## Flow manager` section of its `AGENTS.md`/`CLAUDE.md`. Required: Flow project id and standing-decision task id. Missing → print what is missing, point to `/flow-setup`, end the tick.
 2. Check the tools exist: Flow (`get-next`, `get-task`, `list-tasks`, `upsert-tasks`, `update-tasks`, `upsert-agent-run`, `list-agent-runs`), the code host (PR read, merge), and the runtime's acts on a [child run](#child-runs). Note whether a child can outlive the tick.
 3. `get-task` the standing decision. If it is closed as cancelled/superseded or its body no longer authorises the loop, stop: report it and end the tick. The loop's authority is that task, not this skill.
-4. Record the manager's own [agent run](#child-runs). Find this manager's previous run (`list-agent-runs` with `agent: flow-manager: <manager name>`, the newest before this one): its `started_at` is **the last run**, against which section 5 reports what is new (GTF-U4). An earlier run of it still `running` that the runtime reports gone is closed `failed`.
+4. Record the manager's own [agent run](#child-runs). Find the previous manager run on the project (`list-agent-runs` with `project` and `agent: flow-manager`, the newest before this one): its `started_at` is **the last run**, against which section 5 reports what is new (GTF-U4). An earlier manager run still `running` that the runtime reports gone is closed `failed`.
 
 ## 1. Read the graph
 
@@ -99,9 +99,9 @@ The focus narrows only what **starts a child**: the ready set, cleared waits tha
 
 ## 2. Reconcile children
 
-The child map is rebuilt from Flow on every tick, never remembered (GTF-S4): `list-agent-runs` with `project`, `agent: flow-manager child: <manager name>` and `status: [running]` answers every child of this manager not yet closed, each with its `url`, its `parent` and the tasks it `works_on`; `lingering=true` adds the runs still open after every task they worked on closed.
+The child map is rebuilt from Flow on every tick, never remembered (GTF-S4): `list-agent-runs` with `project`, `agent: flow-manager child` and `status: [running]` answers every child not yet closed, each with its `url`, its `parent` and the tasks it `works_on`; `lingering=true` adds the runs still open after every task they worked on closed.
 
-For each child run:
+For each child run the runtime can read ([every manager is the same agent](#child-runs)):
 
 | Child (as the runtime reports it) | Task state | Action |
 | --- | --- | --- |
@@ -127,13 +127,13 @@ Take the **first open step** below for every item it applies to, then the next s
 
 ## 4. Delegate ready work
 
-Free slots = the [run limit](#run-limit) minus this manager's `running` children (after section 2). No free slot → skip this section. Only tasks inside the [focus](#focus) qualify, when there is one. Fill the slots in this order: the checks that came due (section 3.4), then the section 3 steps that need a child (release steps, CI/conflict fixes), then section 1's candidates in their order.
+Free slots = the [run limit](#run-limit) minus the project's `running` children (after section 2). No free slot → skip this section. Only tasks inside the [focus](#focus) qualify, when there is one. Fill the slots in this order: the checks that came due (section 3.4), then the section 3 steps that need a child (release steps, CI/conflict fixes), then section 1's candidates in their order.
 
 For each task:
 
 1. `get-task` it (GTF-E2). Skip it if somebody else holds it, or if any agent's run is `running` on it (GTF-S8) — agents of one person share the assignee, so the run is what marks it taken. A choice it needs that the standing decision does not delegate → a `decision` that `blocks` it (GTF-T3).
 2. **Size test.** Does the brief ask for more than one independent delivery (code + guard, backend + screen, migration + use, more than one repo)? Then do not delegate it whole: create child tasks, each with its own acceptance, `blocks` edges in the order they must ship, the original as the target they block (GTF-T4), basis the standing decision (splitting changes neither scope nor decisions). Delegate only the first wave. The `Task size` parameter, when set, says what counts as independent there.
-3. Take it (GTF-E7, GTF-E5), basis the standing decision.
+3. Take it (GTF-E7, GTF-E5), basis the standing decision. A take answered `needs_reconciliation` lost a race, often to another manager: read the task again, start its child only if no run is now `running` on it, and reconcile the flag with what you found (GTF-R3).
 4. Start the child with every repo the task touches, the manager's permissions at most (never one that waits on a person to approve a plan), `model` from the [child model](#run-limit) (`Verification model` when the task is a check or another read-only job), and the prompt from [child-prompt.md](references/child-prompt.md) filled in, with the [voice](#voice) block when the voice is terse. The prompt is deliberately short — the child re-reads it on every turn; anything a child rarely needs stays with the manager.
 5. Record its [agent run](#child-runs) immediately, in the same tick (GTF-S7). A child that is not in Flow does not exist for the next tick.
 

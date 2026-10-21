@@ -32,7 +32,7 @@ Each one answers a question the loop asks but cannot answer for every project. L
 
 | Parameter | Default | Overridden by |
 | --- | --- | --- |
-| Max runs | 2, per manager: the running children of the manager's name (`--manager`, default `flow-manager`) | `--max-runs N` (alias `--max-sessions`) |
+| Max runs | 2: the project's running children, whichever manager started them | `--max-runs N` (alias `--max-sessions`) |
 | Voice | `terse` | `--voice terse\|normal` |
 | Child handoff | `close`: the child pursues its task to its close. Any other value names the point where it stops, writes its state, its next step and what the merge leaves (the closing evidence, or the check GTF-E8 needs), and ends, each later need of its PR going to a fresh child — e.g. `review`: PR ready and review requested by the `Merge rule`. A runtime whose children end with the tick needs a point reachable without waiting on a reviewer | — |
 | Child model | the manager's own model | — |
