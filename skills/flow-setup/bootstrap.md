@@ -13,3 +13,38 @@ The Flow part of [`flow-setup`](SKILL.md) step 6. It creates what the loop needs
    The decision holds this text itself, so its authority does not depend on this skill's version (GTF-A6).
 3. **Release procedure tasks.** When the procedure tracks work in flight in a task (a `Release <repo> (next)` batch, for one), propose that task (`active`), basis the standing decision.
 4. **Write the parameters**, with the standing decision's id, to the parameters file (`.agents/flow-manager.md` unless the repo already has one), in the PR of step 7.
+
+## The parameters file
+
+Shapes a release procedure can take, for [`flow-setup`](SKILL.md) step 4 to offer — none is the loop's own:
+
+- **Continuous**: every merge deploys; nothing for the loop to do after merge.
+- **Per-merge publish + consumer bump**: each merge publishes a package; a consumer repo bumps to it, one task per bump or batched.
+- **Batched release**: an open `Release <repo> (next)` task that tasks meant to ship `block`; the loop cuts it when the project's batch condition holds, then writes the bump as a task and each shipped task's check as its GTF-E8 wait. The batch `blocks` the bump and the bump `blocks` every task it ships, never the reverse.
+- **Manual**: a person releases; the loop waits on them (`external` wait).
+
+An example file, as step 4 above writes it:
+
+```markdown
+# Flow manager
+
+| Parameter | Value |
+| --- | --- |
+| Flow project id | `proj_xxxxxxxxxx` |
+| Standing-decision task id | `task_xxxxxxxxxx` |
+| Repos | `acme/api`, `acme/web` |
+| Runtime | `ops/agent-runtime.md` |
+| Merge rule | `docs/agents/merge.md` |
+| Local checks | `scripts/ci.sh`, the script the CI runs, and the preview check in `docs/agents/live-check.md` |
+| Release procedure | Every merge to `main` deploys `acme/api`; `acme/web` bumps the published client — `docs/agents/release.md` |
+| Closing evidence | `docs/agents/done.md` |
+| Verification target | Staging API `https://api.staging.acme.dev`, token in `ACME_TOKEN`, GET only |
+| Human-reserved decisions | `AGENTS.md` § Decisions |
+| Decision gate | `docs/agents/open-questions.md` |
+| Findings rule | default |
+| Max runs | 2 |
+| Voice | terse |
+| Child handoff | close |
+| Child model | inherit |
+| Verification model | `<a mid-tier model id>` |
+```

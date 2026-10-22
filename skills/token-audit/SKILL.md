@@ -1,6 +1,6 @@
 ---
 name: token-audit
-description: Find where Claude Code agent sessions in a project waste tokens, from measurements, not guesses — the instruction corpus every session loads, path-scoped rules that stack in busy packages, real session usage (cost, context growth, cache rewrites, PR wake-ups), the model each routine runs on, and tool payloads that bloat context. Produces a ranked report with fixes. Use when the user says /token-audit, "where are we wasting tokens", "make our agents cheaper", or session costs look high.
+description: Find where a project's Claude Code sessions waste tokens, from measurements, not guesses — the instruction corpus every session loads, scoped rules, real session usage (cost, context growth, cache rewrites, PR wake-ups), each routine's model and tool payloads. Produces a ranked report with fixes. Use when the user says /token-audit, "where are we wasting tokens" or "make our agents cheaper", or session costs look high.
 argument-hint: "[repo path] [--sessions N] [--no-sessions]"
 ---
 
@@ -28,6 +28,8 @@ Skip with `--no-sessions`, or when the session tools (`list_sessions`, `list_eve
 2. `list_sessions` (`mine: true`, `limit` from `--sessions`, default 50). Classify each: routine run, loop/manager parent, delegated child, interactive. Note which belong to other projects.
 3. For each routine's last run and a sample of 6–10 sessions across classes, in a subagent: `list_events` with `kinds: ["result"]`, paging back a few pages; the latest result's `modelUsage` is cumulative — input, cache read, cache write, output, cost, turns. For the 2–3 most expensive, read the first ~100 events for the baseline context (first call's input + cache tokens), context growth per call, the largest tool results, and cache writes after idle gaps.
 4. Write the raw numbers to a scratch file and cite it.
+
+When the project records its runs in Flow, `list-agent-runs` gives the same numbers without reading a transcript: `group_by=model`, by `task`, `tag` or `upstream_of`, by `agent` for a whole loop, and `since`/`until` either side of a change.
 
 ## 3. Match the model to the work
 

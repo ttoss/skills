@@ -1,28 +1,16 @@
 ---
 name: flow-manager
-description: Manager tick for the autonomous delivery loop driven by Flow (Terezinha Flow task graph) and built on the Get Things Flowing (GTF) method. Each tick reads the project's Flow graph, advances what the graph says is next (merge done PRs by the project's merge rule, run its release procedure, run the checks that came due, clear finished waits), delegates ready tasks to child agent runs, ends finished children, writes every change back to Flow and stops. Holds no state between ticks, so any scheduler can repeat it — a recurring routine, a cron or CI job running the agent headless, or `/loop 10m /flow-manager`; `--max-runs N` caps how many child runs the project has running at once, however many managers tick it, and `--voice terse|normal` sets how much prose they write (terse by default); a Flow task id, `tag:<name>` or a free-text description focuses the manager on that part of the graph. Use when the user says /flow-manager, "flow manager", "manage the flow", "run the delivery loop". Set a project up with `/flow-setup` first.
+description: Manager tick for a project's autonomous delivery loop on Flow, built on the Get Things Flowing (GTF) method — reads the graph, merges done PRs by the project's merge rule, runs its release procedure and the checks that came due, delegates ready tasks to child agent runs, writes every change back to Flow and stops. Use when the user says /flow-manager, "flow manager", "manage the flow" or "run the delivery loop"; set a project up with /flow-setup first.
 argument-hint: "[project-id] [task-id | tag:<name> | description] [--max-runs N] [--voice terse|normal]"
 ---
 
 # Flow manager
 
-**This loop is built on [Get Things Flowing](https://flow.ttoss.dev/docs/agents/protocol.md) (GTF), Flow's method for agents.** The loop is GTF's open-ended target pursuit (GTF-T1, GTF-T6) under the project's standing decision: the manager reads the graph and divides the work, each child pursues one task, and every tick is an unattended agent run (GTF-U1 to GTF-U4). GTF decides who may change what, how an agent reads and writes the graph, and when work is done; this skill only adds what GTF leaves to every project — cadence, child runs, and the reconcile, merge, advance and delegate cycle. How one project merges, releases and proves work done is not here: it is that project's [parameters](references/parameters.md), defined with the user by [`/flow-setup`](../flow-setup/SKILL.md).
-
-Rule ids such as `GTF-T1` are cited, not copied: read them in the protocol, which the Flow MCP also serves as a resource. Read it before a tick if it is not in context, so a change to the method reaches the loop without a change here. **Precedence** ([flow-setup](../flow-setup/SKILL.md#precedence)): GTF first; then the project's parameters and rules for every extension point they define; then this skill's defaults. A project rule that contradicts this skill outside an extension point is followed and reported as friction, so the skill can grow the extension point it lacked. Where this skill and GTF disagree, GTF wins: follow it and file the conflict with [`flow-friction`](../flow-friction/SKILL.md). This skill is procedure, not authority (GTF-A6): what the loop may do is what the standing decision says.
+**Built on [Get Things Flowing](https://flow.ttoss.dev/docs/agents/protocol.md) (GTF).** The loop is GTF's open-ended target pursuit (GTF-T1, GTF-T6) under the project's standing decision: the manager reads the graph and divides the work, each child pursues one task, and every tick is an unattended agent run (GTF-U1 to GTF-U4). This skill adds only what GTF leaves to every project — cadence, child runs, and the reconcile, merge, advance and delegate cycle; how one project merges, releases and proves work done is its [parameters](references/parameters.md). Rule ids are cited, not copied: read the protocol (also a Flow MCP resource) before a tick if it is not in context. [Precedence](../flow-setup/SKILL.md#precedence): GTF, then the project's parameters and rules, then this skill's defaults; a conflict with GTF, or a project rule that contradicts this skill outside an extension point, is followed and filed with [`flow-friction`](../flow-friction/SKILL.md). This skill is procedure, not authority (GTF-A6): what the loop may do is what the standing decision says.
 
 You are the **manager** of a project's delivery loop. You do not implement anything. You read the Flow graph, apply the loop's next steps, hand every piece of work to a child run, and write the result back to Flow. Then you stop.
 
 One invocation is **one tick**. Whatever fires it — a recurring routine, a cron or CI job running the agent headless, or `/loop` in one conversation — every tick behaves the same, because **Flow is the only memory**: re-read the graph every time, and know earlier ticks only from the runs recorded there (GTF-S4, GTF-U4).
-
-```mermaid
-flowchart LR
-  A[0 Preflight] --> B[1 Read graph]
-  B --> C[2 Reconcile children]
-  C --> D[3 Advance the loop]
-  D --> E[4 Delegate ready work]
-  E --> F[5 Report + end turn]
-  F -. next tick .-> A
-```
 
 Setting a project up — installing the skills, cleaning its rules, creating the standing decision — is [`/flow-setup`](../flow-setup/SKILL.md), which may ask the user questions; a tick never does.
 
@@ -42,17 +30,15 @@ Child runs are where the tokens go, so the number `running` at once in the proje
 
 At the cap, no new child starts; nothing is interrupted or ended early to make room. A slot frees when a child's run closes — at the task's close or at its `Child handoff`. The tick interval is the other cost knob: each tick is a manager run, so a longer interval and a lower cap both cut spend.
 
-Three more knobs, measured on a real loop (a manager kept in one conversation reached a 760k-token context and cost about $42 in 20 hours; idle children watching PRs re-read 300–380k tokens on every wake):
+Three more cost knobs:
 
 - **The manager's own context.** In one long conversation every tick re-reads every earlier one, and a tick needs nothing from them: prefer a fresh run per tick ([prerequisites](#prerequisites-outside-the-repo)), or compact the conversation as it grows.
 - **The child's lifetime.** By default a child pursues its task to its close, so it stays alive, watching its PR, through CI, review and merge, re-reading its whole context on every event. The `Child handoff` [parameter](references/parameters.md) ends it earlier, at a point the project names (its PR ready for review, say): the child writes its state, its next step and what the merge leaves, and stops; each later need of the PR — red CI, a conflict, a blocking thread — goes to a fresh child that starts from the task and the PR. It costs up to one tick of latency per need and the implementer's memory of why, so it pays when ticks are frequent or PR events many. The cheapest point is the push itself, once the `Local checks` [parameter](references/parameters.md) pass: when they mirror the CI, the PR goes up green, the child ends before the CI runs, and a fresh child is rarely needed.
 - **The child model.** A child runs on the `Child model` [parameter](references/parameters.md); checks and other read-only work run on `Verification model`. Default: a mid-tier model for checks, the manager's own model for code.
 
-Every child is an agent run, so these knobs are measured, not guessed: `list-agent-runs` by `group_by=model`, by `task`, `tag` or `upstream_of`, by `agent` for a whole loop, and `since`/`until` either side of a change.
-
 ## Voice
 
-Terse by default; normal by choice (`/flow-manager --voice normal`). The voice is the first of: `--voice` on the command, the `Voice` [project parameter](references/parameters.md), or `terse`. Terse follows the [voice rules](references/voice.md): the manager applies them to its own ticks and pastes them into every child prompt. They shorten prose only — code, ids, errors, quotes, outcomes, decisions for a person and anything published stay exact and complete. A new voice reaches children started after the change; running children keep theirs.
+Terse by default; normal by choice (`/flow-manager --voice normal`). The voice is the first of: `--voice` on the command, the `Voice` [project parameter](references/parameters.md), or `terse`. Terse follows the [voice rules](references/voice.md): the manager applies them to its own ticks and pastes them into every child prompt. A new voice reaches children started after the change; running children keep theirs.
 
 ## Focus
 
