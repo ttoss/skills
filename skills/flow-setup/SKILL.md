@@ -1,6 +1,6 @@
 ---
 name: flow-setup
-description: Set up, or re-audit, a repository for the Flow delivery loop. Reads the target codebase's agent rules (CLAUDE.md, AGENTS.md, .claude/rules, .github/instructions and similar), installs the ttoss Flow skills, and walks the user through defining the project's own delivery rules — merge rule, release procedure, closing evidence, verification target, human-reserved decisions, decision gate, findings rule — proposing each from what the repo already says. Removes rules that only restate Get Things Flowing (GTF) or the skills, proposes the Flow writes the loop needs (project, standing decision) and opens a PR in the target repo for review. Use when the user says /flow-setup, "set up flow", "onboard this repo to flow", "audit the flow rules", or wants to replace copied loop prose with the skills.
+description: Set up, or re-audit, a repository for the Flow delivery loop — installs the ttoss Flow skills, defines the project's delivery rules (merge rule, release procedure, closing evidence…) with the user from what the repo already says, removes rules that only restate Get Things Flowing (GTF) or the skills, proposes the Flow standing decision and opens a PR. Use when the user says /flow-setup, "set up flow", "onboard this repo to flow" or "audit the flow rules", or wants copied loop prose replaced by the skills.
 argument-hint: "[audit] [owner/repo]"
 ---
 
@@ -31,7 +31,7 @@ A project rule that only restates GTF or a skill is removed: one source of truth
 3. **Install the skills.** `npx skills add ttoss/skills` in the target repo, so `skills-lock.json` records `flow-manager`, `flow-friction` and `flow-setup`.
 4. **Define the project's rules.** For each [extension point](../flow-manager/references/parameters.md#extension-points), in the order of that table, and the `Runtime` parameter (how this project's runtime starts, reads, ends and messages a child run, and which tools a tick loads):
    1. **Find** what the repo already says: a rule, a CI step, a script, a standing decision in Flow. Quote it with `file:line`.
-   2. **Propose** an answer built from that evidence, and the default the loop would use instead. For `Release procedure`, offer the shape that matches what you found (the shapes in the parameters file are a menu, not a requirement). An answer that is already a project file is proposed as a pointer to it, not copied.
+   2. **Propose** an answer built from that evidence, and the default the loop would use instead. For `Release procedure`, offer the shape that matches what you found (the shapes in [bootstrap](bootstrap.md#the-parameters-file) are a menu, not a requirement). An answer that is already a project file is proposed as a pointer to it, not copied.
    3. **Ask** the user to confirm, change or leave it empty (the default). Ask the open ones together, numbered, each with your proposal; never guess an answer the repo does not show (GTF-A4).
    4. **Record** the answer: a pointer, a short inline rule, or empty. An answer too long for a table cell that exists nowhere in the repo becomes a new project rule file in the PR, and the parameter points to it.
 5. **Classify every other rule.** One row per rule (a bullet, a paragraph, a file section) that touches how agents work with tasks, PRs, releases, agent runs or decisions and is not already an answer from step 4. Rules about code style, tests or architecture that the loop does not touch are out of scope: leave them alone.
@@ -39,7 +39,7 @@ A project rule that only restates GTF or a skill is removed: one source of truth
    | The rule… | Action |
    | --- | --- |
    | restates GTF | delete it; where readers need the pointer, leave the GTF id |
-| holds for product development in general, but neither GTF nor a skill says it | keep it, and propose it to the skills with `flow-friction` |
+   | holds for product development in general, but neither GTF nor a skill says it | keep it, and propose it to the skills with `flow-friction` |
    | restates a ttoss skill | delete it; where readers need the pointer, name the skill |
    | contradicts GTF | delete it, after showing the user the GTF rule it breaks |
    | contradicts a skill outside an extension point | ask; kept → file it with `flow-friction` and link the issue in the PR |
