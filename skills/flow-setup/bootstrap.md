@@ -1,6 +1,6 @@
 # Bootstrap
 
-The Flow part of [`flow-setup`](SKILL.md) step 6. It creates what the loop needs in Flow, once per project. Creating a commitment is the person's call ([GTF-A1, GTF-A4](https://flow.ttoss.dev/docs/agents/protocol.md#authority)): list every write, numbered, and wait for their answer.
+The Flow part of [`flow-setup`](SKILL.md) step 7. It creates what the loop needs in Flow, once per project. Creating a commitment is the person's call ([GTF-A1, GTF-A4](https://flow.ttoss.dev/docs/agents/protocol.md#authority)): list every write, numbered, and wait for their answer.
 
 1. **Project.** `list-projects`; ask which one, or offer `create-project`.
 2. **Standing decision.** Search for an existing one (`list-tasks` `kind: decision`, `query: "standing"`); the project may already have standing rules that cover part of it — cite them rather than restate them. If none authorises the loop, propose one `decision` task, closed `completed` with the user's verbatim answer as `basis: { said }`, titled `Standing: the delivery loop runs autonomously`, whose body is a target-pursuit standing rule saying what [GTF-T1](https://flow.ttoss.dev/docs/agents/protocol.md#pursue-a-target) asks for, built from step 4's answers:
@@ -12,7 +12,7 @@ The Flow part of [`flow-setup`](SKILL.md) step 6. It creates what the loop needs
 
    The decision holds this text itself, so its authority does not depend on this skill's version (GTF-A6).
 3. **Release procedure tasks.** When the procedure tracks work in flight in a task (a `Release <repo> (next)` batch, for one), propose that task (`active`), basis the standing decision.
-4. **Write the parameters**, with the standing decision's id, to the parameters file (`.agents/flow-manager.md` unless the repo already has one), in the PR of step 7.
+4. **Write the parameters**, with the standing decision's id, to the parameters file (`.agents/flow-manager.md` unless the repo already has one), in the PR of step 8.
 
 ## The parameters file
 
@@ -42,9 +42,27 @@ An example file, as step 4 above writes it:
 | Human-reserved decisions | `AGENTS.md` § Decisions |
 | Decision gate | `docs/agents/open-questions.md` |
 | Findings rule | default |
+| Change decisions | `docs/agents/feature-flags.md`, `docs/agents/monitoring.md` |
+| Instruction layout | `docs/agents/rule-layout.md` |
 | Max runs | 2 |
 | Voice | terse |
 | Child handoff | close |
 | Child model | inherit |
 | Verification model | `<a mid-tier model id>` |
+```
+
+## The entry section
+
+[`flow-setup`](SKILL.md) step 6 writes it, filled, into the repo's always-loaded entry file. It is what a session started without `/flow-manager` knows about Flow, so it stays short: pointers, never the rules they point to.
+
+```markdown
+## Flow
+
+Work in this repo lives in the Flow project `<proj id>`; no other tracker holds it. Every session follows [Get Things Flowing](https://flow.ttoss.dev/docs/agents/protocol.md) and the project parameters in `<parameters file>`, started by `/flow-manager` or not:
+
+- Work through a task: the one you were given, or one you find (`list-tasks` with `query`) or propose before changing anything. Record your agent run against it (GTF-S7).
+- Apply the parameters on the way: `Change decisions` and `Local checks` before the PR; `Merge rule`; `Findings rule`; `Decision gate` and `Human-reserved decisions` for open choices.
+- The PR carries the task's URL; the task carries the PR as an `implements` reference and its state before you stop.
+- Friction with a skill, GTF or a Flow tool → `flow-friction`, then continue.
+- Where an instruction lives and when it loads: `Instruction layout`. A new one goes there, never only here.
 ```

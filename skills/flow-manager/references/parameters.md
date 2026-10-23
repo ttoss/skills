@@ -1,6 +1,6 @@
 # Project parameters
 
-The loop is generic; everything about **how a project delivers** is a parameter. The manager reads them from the consuming repo, first match wins: the `/flow-manager <project id>` argument (project id only), `.agents/flow-manager.md`, `.claude/flow-manager.md`, or a `## Flow manager` section of `AGENTS.md` / `CLAUDE.md`. [`/flow-setup`](../../flow-setup/SKILL.md) defines them with the user and writes the file.
+The loop is generic; everything about **how a project delivers** is a parameter. The manager reads them from the consuming repo, first match wins: the `/flow-manager <project id>` argument (project id only), `.agents/flow-manager.md`, `.claude/flow-manager.md`, or a `## Flow manager` section of `AGENTS.md` / `CLAUDE.md`. [`/flow-setup`](../../flow-setup/SKILL.md) defines them with the user and writes the file. They bind every session working in the repo, not only the loop's: the [entry section](../../flow-setup/bootstrap.md#the-entry-section) sends a session started by a plain prompt to them.
 
 A value is either the rule written inline or a pointer to the project file that holds it (`` `docs/agents/release.md` ``). A pointer keeps one source of truth: the manager and every child read the file, never a copy.
 
@@ -29,6 +29,8 @@ Each one answers a question the loop asks but cannot answer for every project. L
 | Ready brief | What a task's body must state before a child may start it (section 4, step 3)? | an objective and an acceptance a child can check; a body that only says it needs triage or a person's input is not one |
 | Task size | What counts as an independent delivery that the manager splits before delegating (section 4, step 3)? | a brief asking for more than one delivery that can ship alone (code + guard, backend + screen, migration + use, more than one repo) |
 | Findings rule | What a child does with something it notices outside its task | GTF-C1: capture it; a prerequisite `blocks` the task (GTF-T4). **No inbox** — `ingest-capture` answers `not_found` for a project-restricted credential: write it as an `incubated` task `derived_from` the task at hand, never `blocks`, source and words verbatim in the body, basis the standing decision (GTF-C4, GTF-L3), named in the PR body or tick report |
+| Change decisions | What every change must decide, and record in its PR, beyond passing the `Local checks` — e.g. whether it ships behind a feature flag, how production will show it broke, what a new scheduled job does on its first run, the order of a migration and its use | none: a change records only what its brief's acceptance asks |
+| Instruction layout | Where the project's agent instructions live, when each loads (every session, only while some files are edited, only when linked), and where a new one goes | the entry file (`AGENTS.md` or `CLAUDE.md`) holds what a session must know before it opens any file; a rule about editing some files loads with those files; reference text is linked, never loaded by default |
 
 ## Tuning
 
