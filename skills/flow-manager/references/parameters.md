@@ -20,6 +20,7 @@ Each one answers a question the loop asks but cannot answer for every project. L
 | Parameter | The loop asks | Default when empty |
 | --- | --- | --- |
 | Merge rule | When may a done PR be merged, and by whom? | CI green on the head, no conflict, no unresolved blocking review thread |
+| Review request | Who asks for the review of a PR that is ready, and when; and what the loop does with a request that was lost (it fired no review, or a review claimed it and posted nothing) | none when the `Merge rule` asks for no review; else the PR's author asks for it once CI is green on the head, and the next tick asks again for a ready PR whose head has green CI and no review |
 | Local checks | What the CI runs that a child can run before it pushes — lint, types, tests, a build, a preview deploy, a live check — so its PR goes up green | the repo's own fast checks: lint, typecheck and the tests of what changed |
 | Release procedure | After a merge, what turns delivered work into work in effect — publish, deploy, bump a consumer, wait for a restart? Which steps does the loop run, which are automatic, which are a person's? | none: merged is in effect once CI deploys it, and nothing is batched |
 | Closing evidence | What proves a task done, when is it checked, and who runs the check? | the standing decision's closing evidence; if silent, merged plus the repo's own verification. The loop runs the checks that come due (GTF-E8) unless this names another reader of them |
@@ -38,7 +39,7 @@ Each one answers a question the loop asks but cannot answer for every project. L
 | --- | --- | --- |
 | Max runs | 2: the project's running children, whichever manager started them | `--max-runs N` (alias `--max-sessions`) |
 | Voice | `terse` | `--voice terse\|normal` |
-| Child handoff | `close`: the child pursues its task to its close. Any other value names the point where it stops, writes its state, its next step and what the merge leaves (the closing evidence, or the check GTF-E8 needs), and ends, each later need of its PR going to a fresh child — e.g. `push`: the PR is up after the `Local checks` pass, its CI and review left to the manager; `review`: PR ready and review requested by the `Merge rule`. A runtime whose children end with the tick needs a point reachable without waiting on a reviewer | — |
+| Child handoff | `close`: the child pursues its task to its close. Any other value names the point where it stops, writes its state, its next step and what the merge leaves (the closing evidence, or the check GTF-E8 needs), and ends, each later need of its PR going to a fresh child — e.g. `push`: the PR is up after the `Local checks` pass, its CI and review left to the manager; `review`: PR ready and review requested by the `Review request`. A runtime whose children end with the tick needs a point reachable without waiting on a reviewer | — |
 | Child model | the manager's own model | — |
 | Verification model | a mid-tier model: checks are reads and a templated write-back | — |
 
