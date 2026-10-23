@@ -1,6 +1,6 @@
 ---
 name: flow-setup
-description: Set up, or re-audit, a repository for the Flow delivery loop — installs the ttoss Flow skills, defines the project's delivery rules (merge rule, release procedure, closing evidence…) with the user from what the repo already says, removes rules that only restate Get Things Flowing (GTF) or the skills, proposes the Flow standing decision and opens a PR. Use when the user says /flow-setup, "set up flow", "onboard this repo to flow" or "audit the flow rules", or wants copied loop prose replaced by the skills.
+description: Set up, or re-audit, a repository for Flow — the source of truth for every agent instruction in it. Installs the ttoss Flow skills, defines the project's delivery rules (merge rule, release procedure, closing evidence…) with the user from what the repo already says, classifies every other instruction the repo holds (written before Flow or since, about delivery or about code), removes what only restates Get Things Flowing (GTF) or the skills, writes the entry section every session reads, proposes the Flow standing decision and opens a PR. Use when the user says /flow-setup, "set up flow", "onboard this repo to flow" or "audit the flow rules", or wants copied loop prose replaced by the skills.
 argument-hint: "[audit] [owner/repo]"
 ---
 
@@ -10,6 +10,8 @@ Prepares a repository for [`flow-manager`](../flow-manager/SKILL.md), once, and 
 
 The loop is generic on purpose. Everything that differs between projects — when a PR merges, what happens after it, what proves a task done — is an **extension point** the project answers in its [parameters](../flow-manager/references/parameters.md). Defining those answers with the user is most of this skill.
 
+It is also the **source of truth for the repo's agent instructions**. Every one — written before Flow or since, about delivery or about code — has a level ([precedence](#precedence)) and a home, and `/flow-setup audit` keeps it that way. Content about the product's own code (its architecture, domains, packages, providers) stays the project's to write; this skill decides only its level, where it lives and when it loads, by the project's `Instruction layout`. An instruction the repo holds that this skill never classified is a second source of truth.
+
 ## Precedence
 
 Rule of thumb: GTF is a general method for any work, in any profession; the ttoss skills are for product development; a project is one product. A rule belongs at the most general level where it holds in every case.
@@ -17,16 +19,16 @@ Rule of thumb: GTF is a general method for any work, in any profession; the ttos
 Every rule an agent follows in a Flow project comes from one of three sources:
 
 1. **[Get Things Flowing](https://flow.ttoss.dev/docs/agents/protocol.md)** — the method. Always wins; cited by rule id (`GTF-E8`), never restated.
-2. **The project** — one product: its parameters and the rules they point to. Where the project defines an extension point, its answer is followed.
+2. **The project** — one product: its parameters, the rules they point to, and its **domain rules** (what holds only for this product's code). Where the project defines an extension point, its answer is followed.
 3. **The ttoss skills** — what holds for product development in general: the loop's cycle (tasks delivered through PRs, CI, review and merge), plus a default for every extension point the project leaves empty.
 
 A project rule that only restates GTF or a skill is removed: one source of truth. A project rule that contradicts a skill **outside** an extension point is kept and followed when the user confirms it, and filed through [`flow-friction`](../flow-friction/SKILL.md) as the extension point the skill lacks. A project rule never overrides GTF.
 
 ## Steps
 
-`/flow-setup` runs all of them; `/flow-setup audit` runs 1, 2, 4, 5, 7 and 8 on a repo already set up, to catch rules that drifted, answers that no longer match how the project delivers, or text a change to GTF or the skills made redundant.
+`/flow-setup` runs all of them; `/flow-setup audit` runs 1, 2, 4, 5, 6, 8 and 9 on a repo already set up, to catch rules that drifted, answers that no longer match how the project delivers, text a change to GTF or the skills made redundant, and instructions added since without a level or a home.
 
-1. **Read the target.** The repo named in the argument, else the current one. Collect every agent rule source: `CLAUDE.md`, `AGENTS.md` (any depth), `.claude/rules/**`, `.claude/skills/**`, `.github/instructions/**`, `.github/copilot-instructions.md`, `.cursor/rules/**`, plus `skills-lock.json` and the parameters file (`.agents/flow-manager.md` or `.claude/flow-manager.md`) if present. Also read what shows how the project ships and how its agents run: CI workflows, release and deploy scripts, `CONTRIBUTING.md`, and whatever fires scheduled agent runs (a routine's file, a cron or CI job).
+1. **Read the target.** The repo named in the argument, else the current one. Collect every agent instruction source: `CLAUDE.md`, `AGENTS.md` (any depth), `.claude/rules/**`, `.claude/skills/**`, `.claude/agents/**`, `.github/instructions/**`, `.github/copilot-instructions.md`, `.cursor/rules/**`, the reference documents they link to, plus `skills-lock.json` and the parameters file (`.agents/flow-manager.md` or `.claude/flow-manager.md`) if present. Also read what shows how the project ships and how its agents run: CI workflows, release and deploy scripts, `CONTRIBUTING.md`, and whatever fires scheduled agent runs (a routine's file, a cron or CI job).
 2. **Read the levels above.** The GTF protocol (the Flow MCP resource or the link above), the installed ttoss skills and the [parameters](../flow-manager/references/parameters.md) list. Classify against the text as it is now, never from memory.
 3. **Install the skills.** `npx skills add ttoss/skills` in the target repo, so `skills-lock.json` records `flow-manager`, `flow-friction` and `flow-setup`.
 4. **Define the project's rules.** For each [extension point](../flow-manager/references/parameters.md#extension-points), in the order of that table, and the `Runtime` parameter (how this project's runtime starts, reads, ends and messages a child run, and which tools a tick loads):
@@ -34,7 +36,7 @@ A project rule that only restates GTF or a skill is removed: one source of truth
    2. **Propose** an answer built from that evidence, and the default the loop would use instead. For `Release procedure`, offer the shape that matches what you found (the shapes in [bootstrap](bootstrap.md#the-parameters-file) are a menu, not a requirement). An answer that is already a project file is proposed as a pointer to it, not copied.
    3. **Ask** the user to confirm, change or leave it empty (the default). Ask the open ones together, numbered, each with your proposal; never guess an answer the repo does not show (GTF-A4).
    4. **Record** the answer: a pointer, a short inline rule, or empty. An answer too long for a table cell that exists nowhere in the repo becomes a new project rule file in the PR, and the parameter points to it.
-5. **Classify every other rule.** One row per rule (a bullet, a paragraph, a file section) that touches how agents work with tasks, PRs, releases, agent runs or decisions and is not already an answer from step 4. Rules about code style, tests or architecture that the loop does not touch are out of scope: leave them alone.
+5. **Classify every other instruction.** One row per rule (a bullet, a paragraph, a file section) from any source of step 1 that is not already an answer from step 4 — about delivery or about code, written before Flow or since. Nothing is out of scope: a rule left unclassified stays a second source of truth.
 
    | The rule… | Action |
    | --- | --- |
@@ -43,14 +45,18 @@ A project rule that only restates GTF or a skill is removed: one source of truth
    | restates a ttoss skill | delete it; where readers need the pointer, name the skill |
    | contradicts GTF | delete it, after showing the user the GTF rule it breaks |
    | contradicts a skill outside an extension point | ask; kept → file it with `flow-friction` and link the issue in the PR |
-   | answers an extension point | make it the parameter's pointer (step 4) |
+   | answers an extension point — often a process rule written before Flow (a merge checklist, an open-questions gate, a feature-flag or monitoring policy) | make it the parameter's pointer (step 4); delete whatever in it restates GTF or a skill |
+   | answers a question the loop asks that no extension point names | keep it, and propose the extension point with `flow-friction` |
+   | states how this product's code is built — its architecture, a domain, a package, a provider, a code or test convention | keep it as a domain rule, content unchanged; move it only to the home and loading condition the `Instruction layout` gives |
+   | restates another project rule | delete it; point to the one kept |
    | fills a gap the levels above leave open | keep it, worded so it does not restate them |
 
    When a rule is half one thing and half another, split it. When unsure, say so in the row and ask.
-6. **Bootstrap Flow** by [bootstrap.md](bootstrap.md): the project and the standing decision, built from step 4's answers, each proposed numbered and written only on the user's answer (GTF-A1, GTF-A4). In an audit, check them instead: the standing decision is not superseded and still authorises what step 4's answers ask the loop to do.
-7. **Open a PR in the target repo** on a new branch, never on the default branch. It carries the parameters file (`.agents/flow-manager.md`, or the one the repo already has), any new rule file from step 4, and the removals of step 5. The body has two tables: the parameters, each with its evidence and whether the user confirmed, changed or left it default; and the classification, each rule quoted short with its `file:line`, its action and the GTF id, skill or issue that justifies it. The PR is the user's review of every answer and every removal.
-8. **Report** the prerequisites from [`flow-manager`](../flow-manager/SKILL.md#prerequisites-outside-the-repo), each passing or failing, the extension points left at their default, and how to fire the tick in this runtime: a recurring routine or a cron or CI job running `/flow-manager <project id>` headless, a fresh run each time, or `/loop 10m /flow-manager` inside one conversation. Say whether the Flow deployment has `upsert-agent-run` and `list-agent-runs`; the loop needs them ([child runs](../flow-manager/SKILL.md#child-runs)). In an audit, read `list-agent-runs` with `linked=false` and `lingering=true` and report what it finds: spend that left no trace, and runs still open after their task closed.
+6. **Write the entry section.** The repo's always-loaded entry file (`AGENTS.md` or `CLAUDE.md` at the root, both when both exist) carries the [entry section](bootstrap.md#the-entry-section), filled from step 4, so a session started without `/flow-manager` — a person's prompt, a scheduled routine, a review — works by the same parameters as a child. It points to GTF and the parameters and restates neither: step 5 never removes it. In an audit, check it still names the current project, parameters file and skills.
+7. **Bootstrap Flow** by [bootstrap.md](bootstrap.md): the project and the standing decision, built from step 4's answers, each proposed numbered and written only on the user's answer (GTF-A1, GTF-A4). In an audit, check them instead: the standing decision is not superseded and still authorises what step 4's answers ask the loop to do.
+8. **Open a PR in the target repo** on a new branch, never on the default branch. It carries the parameters file (`.agents/flow-manager.md`, or the one the repo already has), any new rule file from step 4, the removals and moves of step 5, and the entry section of step 6. The body has two tables: the parameters, each with its evidence and whether the user confirmed, changed or left it default; and the classification, each rule quoted short with its `file:line`, its action and the GTF id, skill or issue that justifies it. The PR is the user's review of every answer and every removal.
+9. **Report** the prerequisites from [`flow-manager`](../flow-manager/SKILL.md#prerequisites-outside-the-repo), each passing or failing, the extension points left at their default, and how to fire the tick in this runtime: a recurring routine or a cron or CI job running `/flow-manager <project id>` headless, a fresh run each time, or `/loop 10m /flow-manager` inside one conversation. Say whether the Flow deployment has `upsert-agent-run` and `list-agent-runs`; the loop needs them ([child runs](../flow-manager/SKILL.md#child-runs)). In an audit, read `list-agent-runs` with `linked=false` and `lingering=true` and report what it finds: spend that left no trace, and runs still open after their task closed.
 
 ## Done means
 
-Every extension point has an answer the user confirmed or a default they accepted; the target repo's rules say nothing GTF or the skills already say; and the project rules plus the parameters file are everything a new manager needs that the levels above do not give it.
+Every extension point has an answer the user confirmed or a default they accepted; every instruction in the repo has a level and the home the `Instruction layout` gives it; the repo's rules say nothing GTF, the skills or another project rule already say; the entry section lets a session started by a plain prompt find the project, its parameters and the skills; and the project rules plus the parameters file are everything a new manager needs that the levels above do not give it.

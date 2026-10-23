@@ -1,6 +1,6 @@
 ---
 name: flow-friction
-description: File friction met while working the Flow delivery loop — a gap or contradiction in a ttoss skill, the Get Things Flowing method or the Flow MCP tools — as an issue in ttoss/skills, commenting on a matching open issue instead of duplicating it. Use when a manager or child run hits such friction, when a child's final message names friction it could not file, or when the user says /flow-friction or "report friction".
+description: File friction met while working in a Flow project — a gap or contradiction in a ttoss skill, the Get Things Flowing method or the Flow MCP tools — as an issue in ttoss/skills, commenting on a matching open issue instead of duplicating it. Use when any session working in a Flow project hits such friction (a manager or child run, or one started by a plain prompt), when a child's final message names friction it could not file, or when the user says /flow-friction or "report friction".
 argument-hint: "[what happened]"
 ---
 
