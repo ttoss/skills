@@ -72,6 +72,8 @@ Work in this repo lives in the Flow project `<proj id>`; no other tracker holds 
 
 [`flow-setup`](SKILL.md) step 7 rebuilds it whole on every setup and audit, for people who want the loop at a glance. It is generated: its first line says so, and a change to it is a change to the parameters or the rules it points to, followed by `/flow-setup audit`. It carries no rule of its own; every line points to the parameter, rule, skill or routine that holds it.
 
+**Every step shows the Flow write that records it.** Flow is the loop's only memory (GTF-S4): a session that dies mid-step leaves the next manager tick only what the graph holds. So each agent step in the diagram, and each row of the stage table, names what it writes before it ends — the task's status and wait, a reference, an edge, the agent run — and the diagram draws every step against the task's state in Flow, not as a pipeline beside it. A step with no Flow write is a gap in the loop: name it in the map's last section as the Flow task that closes it.
+
 ```markdown
 # Agentic workflow — <project name>
 
@@ -79,17 +81,17 @@ Work in this repo lives in the Flow project `<proj id>`; no other tracker holds 
 
 Work state lives in the Flow project `<proj id>`; the code host holds code, PRs and review.
 
-<one diagram: signal → task → child run → PR → merge → release → closing evidence, with each scheduled run and each person's step on it>
+<one diagram: signal → task → child run → PR → merge → release → closing evidence, with each scheduled run and each person's step on it. Each step's edge into the next carries its Flow write (`active` + agent run, `implements` reference + `waiting`, `calendar` + check date, `completed` + outcome), so the task's state in Flow is the spine every step reads from and writes back to>
 
-| Stage | Who acts | Fired by | Governed by |
-| --- | --- | --- | --- |
-| Intake | <routines, people, captures> | <schedule or event> | `Findings rule`, <intake routines> |
-| Ready | manager | tick | `Ready brief`, `Task size` |
-| Decisions | person | `decision` task | `Decision gate`, `Human-reserved decisions` |
-| Implementation | child | manager tick | `Change decisions`, `Local checks`, `Child handoff` |
-| Review and merge | <reviewer, manager, person> | <label, event> | `Merge rule` |
-| Release | <loop, CI, person> | merge | `Release procedure` |
-| Close | <who reads the checks> | due date | `Closing evidence`, `Verification target` |
+| Stage | Who acts | Fired by | Flow write before it ends | Governed by |
+| --- | --- | --- | --- | --- |
+| Intake | <routines, people, captures> | <schedule or event> | a capture, or a task with its `source` reference | `Findings rule`, <intake routines> |
+| Ready | manager | tick | its own agent run; the task claimed on it | `Ready brief`, `Task size` |
+| Decisions | person | `decision` task | the `decision` `waiting` on them, `blocks` the task; closed `completed` with the answer | `Decision gate`, `Human-reserved decisions` |
+| Implementation | child | manager tick | child run `works_on` the task; task `active`; PR as `implements`, head SHA and what the merge leaves in the body; task `waiting` | `Change decisions`, `Local checks`, `Child handoff` |
+| Review and merge | <reviewer, manager, person> | <label, event> | the verdict on the task; `waiting` on a person on FINDINGS | `Merge rule` |
+| Release | <loop, CI, person> | merge | each release step a task that `blocks` the merged one, or a `scheduled` wait | `Release procedure` |
+| Close | <who reads the checks> | due date | `completed` with what was observed, or `calendar` with the check and its date (GTF-E8) | `Closing evidence`, `Verification target` |
 
 ## Where each piece lives
 
@@ -98,4 +100,8 @@ Work state lives in the Flow project `<proj id>`; the code host holds code, PRs 
 | <each extension point and the Runtime> | <its pointer> |
 | <each group of domain rules from step 5> | <its home and loading condition> |
 | <each scheduled agent run> | <its file> |
+
+## Gaps
+
+<each step that writes nothing to Flow, as the Flow task that closes it; "none" when every step writes>
 ```
