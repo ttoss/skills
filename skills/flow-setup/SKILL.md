@@ -24,6 +24,22 @@ Every rule an agent follows in a Flow project comes from one of three sources:
 
 A project rule that only restates GTF or a skill is removed: one source of truth. A project rule that contradicts a skill **outside** an extension point is kept and followed when the user confirms it, and filed through [`flow-friction`](../flow-friction/SKILL.md) as the extension point the skill lacks. A project rule never overrides GTF.
 
+## One owner per step
+
+Each step of the loop has one owner, and each fact one home. Two owners of a step drift apart silently, each acting on a state the other already changed: an intake run that also fixes, an implementer that also merges or polls for the verdict, a reviewer that also writes the task. The owners, unless the project's parameters name others:
+
+| Step | Owner |
+| --- | --- |
+| Intake | whatever finds the signal (a scheduled triage, a person, an agent mid-task): it writes a task with its investigation, or a capture, and never a fix |
+| Implementation | a child run, or a person; the PR goes up ready (not draft) only when nothing is left to push |
+| Review request | the `Review request` |
+| Review and merge | the reviewer the `Merge rule` names, and whoever it lets merge; the verdict stays on the PR |
+| After the verdict | the manager's tick, the only writer of the task once the review answers: a person's reservation, what the merge leaves ([flow-manager](../flow-manager/SKILL.md) 3.1) |
+| Release | the `Release procedure` |
+| Close | the reader the `Closing evidence` names, else the tick |
+
+A fallback is not a second owner: the tick re-asks a lost review request or merges what the reviewer left, by the parameter that gives it that act.
+
 ## Steps
 
 `/flow-setup` runs all of them; `/flow-setup audit` runs 1, 2, 4, 5, 6, 7, 9 and 10 on a repo already set up, to catch rules that drifted, answers that no longer match how the project delivers, text a change to GTF or the skills made redundant, and instructions added since without a level or a home.
@@ -35,7 +51,7 @@ A project rule that only restates GTF or a skill is removed: one source of truth
    1. **Find** what the repo already says: a rule, a CI step, a script, a standing decision in Flow. Quote it with `file:line`.
    2. **Propose** an answer built from that evidence, and the default the loop would use instead. For `Release procedure`, offer the shape that matches what you found (the shapes in [bootstrap](bootstrap.md#the-parameters-file) are a menu, not a requirement). An answer that is already a project file is proposed as a pointer to it, not copied.
    3. **Ask** the user to confirm, change or leave it empty (the default). Ask the open ones together, numbered, each with your proposal; never guess an answer the repo does not show (GTF-A4).
-   4. **Record** the answer: a pointer, a short inline rule, or empty. An answer too long for a table cell that exists nowhere in the repo becomes a new project rule file in the PR, and the parameter points to it.
+   4. **Record** the answer: a pointer, a short inline rule, or empty. An answer longer than a short list item that exists nowhere in the repo becomes a new project rule file in the PR, and the parameter points to it.
 5. **Classify every other instruction.** One row per rule (a bullet, a paragraph, a file section) from any source of step 1 that is not already an answer from step 4 — about delivery or about code, written before Flow or since. Nothing is out of scope: a rule left unclassified stays a second source of truth.
 
    | The rule… | Action |
@@ -45,6 +61,7 @@ A project rule that only restates GTF or a skill is removed: one source of truth
    | restates a ttoss skill | delete it; where readers need the pointer, name the skill |
    | contradicts GTF | delete it, after showing the user the GTF rule it breaks |
    | contradicts a skill outside an extension point | ask; kept → file it with `flow-friction` and link the issue in the PR |
+   | gives a step a second owner ([one owner per step](#one-owner-per-step)) — a scheduled run that fixes what it triages, an implementer that merges or polls, a reviewer that writes the task | ask, proposing the one owner; the other side becomes a task, a pointer or nothing |
    | answers an extension point — often a process rule written before Flow (a merge checklist, an open-questions gate, a feature-flag or monitoring policy) | make it the parameter's pointer (step 4); delete whatever in it restates GTF or a skill |
    | answers a question the loop asks that no extension point names | keep it, and propose the extension point with `flow-friction` |
    | states how this product's code is built — its architecture, a domain, a package, a provider, a code or test convention | keep it as a domain rule, content unchanged; move it only to the home and loading condition the `Instruction layout` gives |
