@@ -2,7 +2,7 @@
 
 How work in a software project goes from a signal to a closed task, once, for every project. What differs between projects is each one's answers to the [parameters](parameters.md); a project with no answer gets the default. The process is [Get Things Flowing](https://flow.ttoss.dev/docs/agents/protocol.md) (GTF) applied to delivery: the rule ids below are GTF's.
 
-## Seven rules
+## Eight rules
 
 1. **One owner per transition.** Only a stage's owner changes the task's state in that stage. Two owners drift apart silently, each acting on a state the other already changed.
 2. **The state lives in Flow.** Every stage reads the task before it acts and writes it back before it ends, so a run that dies mid-stage is resumed from the graph (GTF-S4).
@@ -11,6 +11,7 @@ How work in a software project goes from a signal to a closed task, once, for ev
 5. **One worker per task.** A run takes a task with its `works_on`; a task another run holds comes back `contended` (GTF-S8).
 6. **Done is the effect, observed where it matters.** Integrated is not in effect (GTF-E8).
 7. **Loops have a limit.** Each reason a change goes back (red checks, findings) gets the automatic rounds the `Merge rule` allows; the next goes to a person.
+8. **Finish before starting.** The work closest to done goes first: verify, then release, then the gates (reviews the loop runs, fix rounds, conflicts), then new work. A priority a person set outranks the stage.
 
 ## Words
 
