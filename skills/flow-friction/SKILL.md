@@ -6,14 +6,14 @@ argument-hint: "[what happened]"
 
 # Flow friction
 
-The loop is built on [Get Things Flowing](https://flow.ttoss.dev/docs/agents/protocol.md) (GTF); cite its rule ids from there. Friction is whatever made the loop slower, wrong or impossible **because of the tooling or the method**, not because of the project. It goes to [ttoss/skills](https://github.com/ttoss/skills/issues) so the rules and tools get fixed in one place. Report to the user in the [terse voice](../flow-manager/references/voice.md) unless the project's `Voice` parameter is `normal`; the issue body itself stays in full sentences.
+The loop is built on [Get Things Flowing](https://flow.ttoss.dev/docs/agents/protocol.md) (GTF); cite its rule ids from there. Friction is whatever made the loop slower, wrong or impossible **because of the tooling or the method**, not because of the project. It goes to [ttoss/skills](https://github.com/ttoss/skills/issues) so the rules and tools get fixed in one place. Report to the user in one line; the issue body itself is in full sentences.
 
 | Friction (file it) | Not friction (do something else) |
 | --- | --- |
-| A skill rule that is ambiguous, contradicts another rule or the Flow protocol, or misses a case you met | A bug in the project's own code → a capture, or a blocking task when your task needs it (GTF-C1, GTF-T4) |
-| A GTF rule the loop cannot follow as written | A choice only the user can make → a Flow `decision` |
+| A skill rule that is ambiguous, contradicts another rule or the Flow protocol, or misses a case you met | A bug in the project's own code → an `incubated` task, or a blocking task when your task needs it (GTF-C1, GTF-T4) |
+| A GTF rule the loop cannot follow as written | A choice only the user can make → a wait on the user, on the task it holds (GTF-N6) |
 | A Flow MCP tool that errors, refuses a move the method requires, answers differently from its description, or is missing — also `report-error` to Flow (GTF-F3) | A permission refusal or missing credential in this environment → report it to the user |
-| A project rule that contradicts a skill outside an extension point — propose the extension point the skill lacks ([precedence](../flow-setup/SKILL.md#precedence)) | A project rule that only restates GTF or a skill → remove it with `/flow-setup audit` |
+| A project rule that contradicts a skill outside a parameter — propose the parameter the skill lacks ([precedence](../flow-setup/SKILL.md#precedence)) | A project rule that only restates GTF or a skill → remove it with `/flow-setup audit` |
 | A workaround you had to invent to keep going | A one-off network blip that passed on retry |
 
 ## Steps
@@ -33,7 +33,7 @@ Filing is a finding you may report without asking (GTF-A3).
      - **Workaround** — what you did instead, or "blocked".
      - **Proposal** — the smallest change to the rule or tool that removes it.
      - The agent run's address, then any attribution your environment requires on GitHub posts.
-4. **Link it back.** Add the issue URL as a `context` reference on the Flow task you were working (basis: the standing decision), so the next reader of the graph sees it. A blocked task also names the issue in its wait `reason`.
+4. **Link it back.** Add the issue URL as a `context` reference on the Flow task you were working, so the next reader of the graph sees it. A blocked task also names the issue in its wait `reason`.
 5. **Tell** the user in one line in your report: `friction filed: <issue url>`.
 
 ## Keep out of the issue
