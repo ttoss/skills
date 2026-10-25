@@ -1,0 +1,30 @@
+name: check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  front-matter:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # The skills CLI skips a skill whose front matter does not parse, so a
+      # consumer's lock silently loses it.
+      - name: Every SKILL.md front matter parses
+        run: |
+          pip install --quiet pyyaml
+          python3 - <<'PY'
+          import glob, sys, yaml
+          bad = []
+          for path in sorted(glob.glob('skills/*/SKILL.md')):
+              try:
+                  meta = yaml.safe_load(open(path, encoding='utf-8').read().split('---', 2)[1])
+                  assert meta.get('name') == path.split('/')[1], 'name differs from its directory'
+                  assert meta.get('description'), 'no description'
+              except Exception as error:
+                  bad.append(f'{path}: {error}')
+          print('\n'.join(bad) or 'every front matter parses')
+          sys.exit(1 if bad else 0)
+          PY

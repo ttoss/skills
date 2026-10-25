@@ -1,6 +1,6 @@
 ---
 name: flow
-description: Runs a project's autonomous delivery loop on Flow, built on the Get Things Flowing (GTF) method, and holds the delivery process every session in a Flow project follows (references/process.md) — one tick reads the graph, integrates done changes by the project's merge rule, runs its release procedure and the checks that came due, delegates ready tasks to child agent runs, writes every change back to Flow and stops. Use when the user says /flow, "run the delivery loop", "manage the flow" or "flow manager"; set a project up with /flow-setup first. Not for creating, reading, moving or triaging tasks: the Flow MCP tools and their instructions cover that.
+description: Runs a project's autonomous delivery loop on Flow, built on the Get Things Flowing (GTF) method, and holds the delivery process every session in a Flow project follows (references/process.md) — one tick reads the graph, integrates done changes by the project's merge rule, runs its release procedure and the checks that came due, delegates ready tasks to child agent runs, writes every change back to Flow and stops. Use when the user says /flow, "run the delivery loop", "manage the flow" or "flow manager"; set a project up with /flow-setup first. Not for creating, reading, moving or triaging tasks, which the Flow MCP tools and their instructions cover.
 argument-hint: "[project-id] [task-id | tag:<name> | description] [--max-runs N]"
 ---
 
