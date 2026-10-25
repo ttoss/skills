@@ -8,7 +8,7 @@ argument-hint: "[repo path] [--sessions N] [--no-sessions]"
 
 What an agent session costs is **its context, re-read on every API call**, priced mostly as cache reads and cache writes; output is usually under 5%. So the audit looks for what makes a context big, what keeps it growing, and what makes the cache be written again — and ranks by **measured** spend, never by file size alone. The instruction files are the easiest lever and rarely the biggest: on the project this skill was built from, they were ~20k tokens per session, while one long-lived manager session cost $42 in 20 hours.
 
-Report in the [terse voice](../flow-manager/references/voice.md) unless the project's `Voice` is `normal`. This skill reads and proposes; it changes nothing (a routine's model, a rule, a skill) without the user's word, and when the project's rules restrict how instruction files change (one rule per PR, demote-don't-delete), the fixes it proposes follow them.
+Report in as few words as carry the meaning, and in full sentences wherever a person reads the report later. This skill reads and proposes; it changes nothing (a routine's model, a rule, a skill) without the user's word, and when the project's rules restrict how instruction files change (one rule per PR, demote-don't-delete), the fixes it proposes follow them.
 
 ## Keep the audit itself cheap
 
