@@ -16,16 +16,16 @@ The Flow part of [`flow-setup`](SKILL.md) step 7. It creates what the loop needs
    ```
 
 3. **Release procedure tasks.** When the procedure tracks work in flight in a task, such as a `Release <repo> (next)` batch, propose that task, `active`.
-4. **Write the parameters**, with the standing decision's id, to the parameters file (`.agents/flow-manager.md`, unless the repo already has one), in the PR of step 8.
+4. **Write the parameters**, with the standing decision's id, to the parameters file: `.agents/flow.md`, or `.claude/flow.md` where the repo keeps its agent files under `.claude/`. An older `flow-manager.md` moves there, in the PR of step 8.
 
 ## The parameters file
 
 A list, one parameter per item, each a pointer or a short rule:
 
 ```markdown
-# Flow manager
+# Flow
 
-`flow-manager` parameters for Acme. Each value points to the rule that holds it; edit the rule, not this list.
+`flow` parameters for Acme. Each value points to the rule that holds it; edit the rule, not this list.
 
 - **Flow project id**: `proj_xxxxxxxxxx`.
 - **Standing-decision task id**: `task_xxxxxxxxxx`.
@@ -44,12 +44,12 @@ A list, one parameter per item, each a pointer or a short rule:
 
 ## The entry section
 
-[`flow-setup`](SKILL.md) step 6 writes it, filled, into the repo's always-loaded entry file. It is what a session started without `/flow-manager` knows about Flow, so it stays short: pointers, never the rules they point to.
+[`flow-setup`](SKILL.md) step 6 writes it, filled, into the repo's always-loaded entry file. It is what a session started without `/flow` knows about Flow, so it stays short: pointers, never the rules they point to.
 
 ```markdown
 ## Flow
 
-Work in this repo lives in the Flow project `<proj id>`; no other tracker holds it. Every session follows [Get Things Flowing](https://flow.ttoss.dev/docs/agents/protocol.md), the delivery process of the `flow-manager` skill (`references/process.md`) and this project's parameters in `<parameters file>`, started by `/flow-manager` or not:
+Work in this repo lives in the Flow project `<proj id>`; no other tracker holds it. Every session follows [Get Things Flowing](https://flow.ttoss.dev/docs/agents/protocol.md), the delivery process of the `flow` skill (`references/process.md`) and this project's parameters in `<parameters file>`, started by `/flow` or not:
 
 - Work through a task: the one you were given, or one you find (`list-tasks` with `query`) or propose before changing anything. Your run holds the task (GTF-S8).
 - Apply the parameters on the way: `Before proposing` before the change; `Merge rule`; `Intake` for what you notice; `Decisions` for open choices.
