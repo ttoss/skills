@@ -11,11 +11,11 @@ The Flow part of [`flow-setup`](SKILL.md) step 7. It creates what the loop needs
    - **Acts:** every act that process gives the tick and its children under those answers: take, move and close tasks; start and end child runs; integrate what the `Merge rule` lets the loop integrate; ask for the reviews `Review` gives it; run the steps the `Release procedure` gives it; run the checks of the `Closing evidence`; write what it notices as the `Intake` says.
    - **Closing evidence:** the `Closing evidence` answer.
    - **Choices:** which ready task to start next, in `get-next` order, and the choices that pass the `Decisions` test.
-   - **Tidying:** end finished child runs; retract the `implements` reference of a change closed without integrating; close the tasks an integrated change says it settles, citing it; re-point the `blocks` edges a release batch moves.
+   - **Tidying:** end finished child runs; retract the `implements` reference of a change closed without integrating; close the tasks an integrated change says it settles, citing it; re-point the `blocks` edges the `Release procedure` moves.
    - **Reserved to a person:** the classes `Decisions` reserves, any change to the files above or to the project's agent instructions, and every act the process does not give the loop.
    ```
 
-3. **Release procedure tasks.** When the procedure tracks work in flight in a task, such as a `Release <repo> (next)` batch, propose that task, `active`.
+3. **Release procedure tasks.** When the procedure tracks work in flight in a task, propose that task, `active`.
 4. **Write the parameters**, with the standing decision's id, to the parameters file: `.agents/flow.md`, or `.claude/flow.md` where the repo keeps its agent files under `.claude/`. An older `flow-manager.md` moves there, in the PR of step 8.
 
 ## The parameters file
