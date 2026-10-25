@@ -1,10 +1,10 @@
 ---
-name: flow-manager
-description: Manager tick for a project's autonomous delivery loop on Flow, built on the Get Things Flowing (GTF) method — reads the graph, integrates done changes by the project's merge rule, runs its release procedure and the checks that came due, delegates ready tasks to child agent runs, writes every change back to Flow and stops. Use when the user says /flow-manager, "flow manager", "manage the flow" or "run the delivery loop"; set a project up with /flow-setup first.
+name: flow
+description: Runs a project's autonomous delivery loop on Flow, built on the Get Things Flowing (GTF) method, and holds the delivery process every session in a Flow project follows (references/process.md) — one tick reads the graph, integrates done changes by the project's merge rule, runs its release procedure and the checks that came due, delegates ready tasks to child agent runs, writes every change back to Flow and stops. Use when the user says /flow, "run the delivery loop", "manage the flow" or "flow manager"; set a project up with /flow-setup first. Not for creating, reading, moving or triaging tasks: the Flow MCP tools and their instructions cover that.
 argument-hint: "[project-id] [task-id | tag:<name> | description] [--max-runs N]"
 ---
 
-# Flow manager
+# Flow
 
 **Built on [Get Things Flowing](https://flow.ttoss.dev/docs/agents/protocol.md) (GTF).** The loop is GTF's open-ended target pursuit (GTF-T1, GTF-T6) under the project's standing decision, running the [delivery process](references/process.md) with the project's [parameters](references/parameters.md). Rule ids are cited, not copied: read the protocol (also a Flow MCP resource) and the process before a tick if they are not in context. [Precedence](../flow-setup/SKILL.md#precedence): GTF, then the project's parameters, then this skill's defaults; a conflict with GTF, or a project rule that contradicts this skill outside a parameter, is followed and filed with [`flow-friction`](../flow-friction/SKILL.md). This skill is procedure, not authority (GTF-A6): what the loop may do is what the standing decision delegates.
 
@@ -25,7 +25,7 @@ One invocation is **one tick**, and every tick behaves the same whatever fires i
 
 A child is an agent run the tick starts for one task. How it runs is the runtime's: a separate agent session, a subagent of the tick, a headless process. The loop asks four acts of the runtime: **start** a run with a prompt, a model and the task's repos; **read** whether it is working, idle, failed or gone; **end** it; and, where the runtime can, **message** it. The `Runtime` parameter says how; without it, use what the tools at hand offer. A child that cannot outlive the tick, such as a subagent, runs in the foreground and needs `Child handoff: push`.
 
-**The tick records every child before starting it** (GTF-S7), and that record is the claim (GTF-S8): `works_on: [<task>]`, `parent` (the tick's run), `agent: flow-manager child`, `authority` (the standing decision), `model`, `prompt_size`. Its address is the runtime's; a child with none takes `<tick address>?task=<task id>` (`&task=` when the address already has a query). A task that comes back under `contended` belongs to another run: skip it. The child never takes the task or writes its run. The tick closes a child's run when it ends the child, with its `usage` when the runtime reports it and the changes it made as `produced`.
+**The tick records every child before starting it** (GTF-S7), and that record is the claim (GTF-S8): `works_on: [<task>]`, `parent` (the tick's run), `agent: flow-manager child`, `authority` (the standing decision), `model`, `prompt_size`. Its address is the runtime's; a child with none takes `<tick address>?task=<task id>` (`&task=` when the address already has a query). A task that comes back under `contended` belongs to another run: skip it. The labels name the role a run plays, not this skill, so runs recorded before and after any rename stay one agent's. The child never takes the task or writes its run. The tick closes a child's run when it ends the child, with its `usage` when the runtime reports it and the changes it made as `produced`.
 
 **Every manager is the same agent.** The ticks of every manager on a project play one role, so their runs are one agent's (GTF-S7), and every `flow-manager child` run in the project is a child any tick reconciles. The runtime's acts reach only the runs it runs: a child it cannot read is left alone, counts against the cap and holds its task, and one that looks abandoned is reported, never ended.
 
@@ -40,9 +40,9 @@ The other cost knobs: a fresh run per tick rather than one growing conversation;
 By default the tick works the whole project. Name a part of the graph to spend its children there only:
 
 ```text
-/flow-manager task_8k2m4p6q9r
-/flow-manager tag:billing
-/flow-manager "finish the webhook retries"
+/flow task_8k2m4p6q9r
+/flow tag:billing
+/flow "finish the webhook retries"
 ```
 
 | Focus | Resolves to |
@@ -110,4 +110,4 @@ When one fails, the tick says so and skips the steps that need it; it never retr
 
 - The code host enforces the `Merge rule`, and the runtime allows each act the standing decision delegates: the tick may integrate changes and start and end children, and children get at most its permissions. An act the runtime refuses moves its task to `waiting` on a person, naming the refusal (GTF-U3).
 - The credential for the `Closing evidence` target is in the environment.
-- Something fires the tick. Flow keeps the state but wakes nobody (GTF-S5): a recurring routine, or a cron or CI job running `/flow-manager <project id>` headless, starts every tick fresh from the graph; `/loop` inside one conversation lives only as long as the conversation.
+- Something fires the tick. Flow keeps the state but wakes nobody (GTF-S5): a recurring routine, or a cron or CI job running `/flow <project id>` headless, starts every tick fresh from the graph; `/loop` inside one conversation lives only as long as the conversation.
