@@ -80,6 +80,8 @@ Rebuild the child map from Flow every tick (GTF-S4): `list-agent-runs` with `pro
 
 **The graph first, then the end.** A child is ended only once Flow holds what it did: the task's status, its wait, its next step and what integrating leaves. When the child did not write it, the tick reads what the child did and writes it. Before ending a child, file any friction its last message says it could not file. Close its run with the end (`status`, `usage` when known, `produced`).
 
+Last, the acts the `Runtime` parameter adds to every tick, such as archiving the sessions of child runs already closed: the table above reads only open runs.
+
 ## 3. Advance the loop
 
 Apply the process's [transitions](references/process.md#transitions) to every open task with an `implements` change, and to the release steps and checks in flight. Each act must be one the standing decision delegates (GTF-T1); after a verdict the tick is the task's only writer (GTF-S3). In order:
@@ -91,7 +93,7 @@ Apply the process's [transitions](references/process.md#transitions) to every op
 
 ## 4. Delegate ready work
 
-Free slots are the run limit minus the project's `running` children, after section 2. No free slot → skip this section. Only tasks inside the focus qualify. Fill the slots in this order: the checks that came due, the rounds and release steps section 3 sent, then section 1's candidates in their order. For each task:
+Free slots are the run limit minus the project's `running` children, after section 2. No free slot → skip this section. Only tasks inside the focus qualify. Fill the slots closest to done first ([process](references/process.md#eight-rules), rule 8): the checks that came due, then the release steps section 3 sent, then the gates (the reviews the loop runs, the rounds and conflicts section 3 sent), then section 1's candidates; within a stage, in `get-next` order. A higher priority, which only a person sets, goes ahead whatever its stage; between equal priorities the stage decides. For each task:
 
 1. `get-task` it (GTF-E2). Skip it if a person holds it.
    **Already done?** A change in the project's repos names the task and the task has no `implements` reference → add it and let section 3 handle the change; do not delegate it. Every task that `blocks` it is closed and they were its parts → its child is a check child, reading their outcomes against the task's acceptance.
