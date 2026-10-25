@@ -35,7 +35,7 @@ Each answers a question the process asks but cannot answer for every project. Le
 | Review | Who reviews a change (`none` is valid), who asks for the review and when, and what the tick does with a request that got lost | none: the gates are the checks |
 | Merge rule | When a change may be integrated and by whom; what only a person may integrate; how many automatic rounds each reason gets | the gates green on the change's head, no conflict, no blocking review thread; the loop integrates; one automatic round per reason, a red caused outside the change not counted |
 | Release procedure | After integrating, what puts the change in effect: which steps the loop runs, which are automatic, which are a person's | none: integrated is in effect once its pipeline passes |
-| Closing evidence | What proves a task done, where it is checked (the target, its credential, which calls are read-only) and who reads the checks | integrated and its pipeline green; a check that needs a target the project did not name waits on a person |
+| Closing evidence | What proves a task done, where it is checked (the target, every credential its checks use, which calls are read-only) and who reads the checks | integrated and its pipeline green; a check that needs a target the project did not name waits on a person |
 | Delivery kinds | Which deliveries are not a change through the code host, and for each, its gates, who integrates it and what proves it | none: every delivery is a pull request |
 
 ## Release procedure shapes
@@ -44,7 +44,8 @@ None is the loop's own; [`/flow-setup`](../../flow-setup/SKILL.md) offers the on
 
 - **Continuous:** every integration deploys; the task waits for its pipeline, then its check.
 - **Per-integration publish and consumer bump:** each integration publishes a package; the bump of a consumer is its own task that `blocks` what it ships.
-- **Batched release:** an open `Release <repo> (next)` task that the tasks meant to ship `block`; the loop cuts it when the project's batch condition holds, and the bump, when there is one, `blocks` every task it ships.
 - **Manual:** a person releases; the tasks wait on them.
+
+Any other shape, such as a batched release, is the project's own answer, in the file its `Release procedure` points to; the loop holds it to GTF-N4: a step `blocks` what it ships, never the reverse.
 
 An example parameters file is in [bootstrap](../../flow-setup/bootstrap.md#the-parameters-file).
