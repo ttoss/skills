@@ -25,11 +25,11 @@ Then read the top always-loaded files and the rules that stack in the busiest ar
 Skip with `--no-sessions`, or when the session tools (`list_sessions`, `list_events`, `list_triggers` from claude-code-remote) are absent — say so in the report.
 
 1. `list_triggers`: every routine with its model, schedule and `last_run.session_id`.
-2. `list_sessions` (`mine: true`, `limit` from `--sessions`, default 50). Classify each: routine run, loop/tick parent, delegated child, interactive. Note which belong to other projects.
+2. `list_sessions` (`mine: true`, `limit` from `--sessions`, default 50). Classify each: routine run, tick parent (a routine or `/loop`), delegated child, interactive. Note which belong to other projects.
 3. For each routine's last run and a sample of 6–10 sessions across classes, in a subagent: `list_events` with `kinds: ["result"]`, paging back a few pages; the latest result's `modelUsage` is cumulative — input, cache read, cache write, output, cost, turns. For the 2–3 most expensive, read the first ~100 events for the baseline context (first call's input + cache tokens), context growth per call, the largest tool results, and cache writes after idle gaps.
 4. Write the raw numbers to a scratch file and cite it.
 
-When the project records its runs in Flow, `list-agent-runs` gives the same numbers without reading a transcript: `group_by=model`, by `task`, `tag` or `upstream_of`, by `agent` for a whole loop, and `since`/`until` either side of a change.
+When the project records its runs in Flow, `list-agent-runs` gives the same numbers without reading a transcript: `group_by=model`, by `task`, `tag` or `upstream_of`, by `agent` for every run in one role (`flow tick`, `flow child`, and `flow-manager`, `flow-manager child` before 2026-10-27), and `since`/`until` either side of a change.
 
 ## 3. Match the model to the work
 

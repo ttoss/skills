@@ -6,12 +6,12 @@ argument-hint: "[what happened]"
 
 # Flow friction
 
-The loop is built on [Get Things Flowing](https://flow.ttoss.dev/docs/agents/protocol.md) (GTF); cite its rule ids from there. Friction is whatever made the loop slower, wrong or impossible **because of the tooling or the method**, not because of the project. It goes to [ttoss/skills](https://github.com/ttoss/skills/issues) so the rules and tools get fixed in one place. Report to the user in one line; the issue body itself is in full sentences.
+The Agentic Workflow is built on [Get Things Flowing](https://flow.ttoss.dev/docs/agents/protocol.md) (GTF); cite its rule ids from there. Friction is whatever made an agent's work slower, wrong or impossible **because of the tooling or the method**, not because of the project. It goes to [ttoss/skills](https://github.com/ttoss/skills/issues) so the rules and tools get fixed in one place. Report to the user in one line; the issue body itself is in full sentences.
 
 | Friction (file it) | Not friction (do something else) |
 | --- | --- |
 | A skill rule that is ambiguous, contradicts another rule or the Flow protocol, or misses a case you met | A bug in the project's own code → an `incubated` task, or a blocking task when your task needs it (GTF-C1, GTF-T4) |
-| A GTF rule the loop cannot follow as written | A choice only the user can make → a wait on the user, on the task it holds (GTF-N6) |
+| A GTF rule an agent cannot follow as written | A choice only the user can make → a wait on the user, on the task it holds (GTF-N6) |
 | A Flow MCP tool that errors, refuses a move the method requires, answers differently from its description, or is missing — also `report-error` to Flow (GTF-F3) | A permission refusal or missing credential in this environment → report it to the user |
 | A project rule that contradicts a skill outside a parameter — propose the parameter the skill lacks ([precedence](../flow-setup/SKILL.md#precedence)) | A project rule that only restates GTF or a skill → remove it with `/flow-setup audit` |
 | A workaround you had to invent to keep going | A one-off network blip that passed on retry |
@@ -23,9 +23,9 @@ Filing never blocks the work: write the issue, then continue the tick or task wh
 Filing is a finding you may report without asking (GTF-A3).
 
 1. **Classify** it as one area: `flow` (or the other skill's name), `workflow` (the delivery process or the parameters, whose fix is a change to the [Agentic Workflow](https://ttoss.dev/docs/engineering/workflow) in ttoss/ttoss), `gtf` (the method), or `flow-mcp` (the tools).
-2. **Search first.** Search the open issues of `ttoss/skills`, with whatever GitHub tool the runtime has (an MCP issue search, `gh issue list --search`), for the area and two or three distinctive words (the tool name, the rule number, the error code). A match → add a comment with your new evidence only, then stop. Never file the same friction twice from consecutive loop ticks: the search is how a stateless tick knows it already did.
+2. **Search first.** Search the open issues of `ttoss/skills`, with whatever GitHub tool the runtime has (an MCP issue search, `gh issue list --search`), for the area and two or three distinctive words (the tool name, the rule number, the error code). A match → add a comment with your new evidence only, then stop. Never file the same friction twice from consecutive ticks: the search is how a stateless tick knows it already did.
 3. **File** it as an issue in `ttoss/skills` (an MCP issue write, `gh issue create`):
-   - Title: `[<area>] <what is wrong, in one line>` — e.g. `[flow-mcp] update-tasks refuses waiting → calendar the loop needs for deploy waits`.
+   - Title: `[<area>] <what is wrong, in one line>` — e.g. `[flow-mcp] update-tasks refuses waiting → calendar the tick needs for deploy waits`.
    - Body, in this order, short:
      - **What happened** — the step you were on (skill section, or the GTF rule id as the protocol names it) and what you did.
      - **Evidence** — the exact tool call and response, error code, or the rule text quoted. Flow task ids and URLs are fine.
