@@ -23,6 +23,8 @@ How this project's runtime runs the loop, usually a pointer to the file the sche
 - **Models:** the child's model (default: the manager's) and the check model for checks and other read-only work (default: a mid-tier model).
 - **Each tick:** cleanup the runtime needs on every tick, such as archiving the sessions of runs already closed.
 
+A runtime several projects share is a preset, which the project's `Runtime` names and completes with what differs: [Claude Code sessions](runtime-claude-code-remote.md).
+
 ## Extension points
 
 Each answers a question the process asks but cannot answer for every project. Left empty, the loop uses the last column, and the first report names the defaults in force.
