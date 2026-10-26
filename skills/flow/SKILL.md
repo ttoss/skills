@@ -55,7 +55,7 @@ Free text is re-resolved every tick, so it must land on the same tasks every tim
 
 ## 0. Preflight
 
-1. Parse the arguments and load the [parameters](references/parameters.md). Required: Flow project id and standing-decision task id. Missing → say what is missing, point to `/flow-setup`, end the tick.
+1. Parse the arguments and load the [parameters](references/parameters.md), with the [runtime preset](references/parameters.md#runtime) their `Runtime` names. Required: Flow project id and standing-decision task id. Missing → say what is missing, point to `/flow-setup`, end the tick.
 2. Check the tools exist: Flow (`get-next`, `get-task`, `list-tasks`, `upsert-tasks`, `update-tasks`, `upsert-agent-run`, `list-agent-runs`, `retract-reference`), the code host (read and integrate a change), and the runtime's acts on a child.
 3. Record the tick's run: `agent: flow-manager`, `authority` the standing decision. The answer naming it under `lapsed` (not `completed`, or superseded or retracted) → report it and end the tick; never `get-task` it, since every write under it adds to it. The newest earlier manager run on the project (`list-agent-runs` with `project` and `agent: flow-manager`) started at **the last run**; one still `running` that the runtime reports gone is closed `failed`.
 
