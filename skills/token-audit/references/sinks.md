@@ -19,7 +19,7 @@ Each sink was measured on a real project (OneClick Ads, 2026-10-19/20). Numbers 
 
 | Sink | Evidence it was | Fix |
 | --- | --- | --- |
-| A loop that never starts fresh | A `/loop 30m` manager reached a 760k context, $42 in 20 h; ~700k re-read per call | One routine firing a fresh session per tick (state lives in the task graph), or `/compact` when it grows |
+| A loop that never starts fresh | A `/loop 30m` tick reached a 760k context, $42 in 20 h; ~700k re-read per call | One routine firing a fresh session per tick (state lives in the task graph), or `/compact` when it grows |
 | Cache rewritten after idle gaps | Two full-context cache writes (657k, 698k tokens, ~$5 each) after 2 h and 9 h idle | Same as above; a session that must idle long should be small |
 | Top-tier model on read-only work | Opus routines $4–5 per run; a same-size Sonnet routine $0.87 | Mid-tier for reads, triage, digests, verification; top tier where code is written |
 | Children inherit the parent's model | A one-query verification child on Opus, $2.45 | Pass `model` per child by the kind of task |

@@ -6,7 +6,7 @@ argument-hint: "[repo path] [--sessions N] [--no-sessions] [--routine]"
 
 # Token audit
 
-What an agent session costs is **its context, re-read on every API call**, priced mostly as cache reads and cache writes; output is usually under 5%. So the audit looks for what makes a context big, what keeps it growing, and what makes the cache be written again — and ranks by **measured** spend, never by file size alone. The instruction files are the easiest lever and rarely the biggest: on the project this skill was built from, they were ~20k tokens per session, while one long-lived manager session cost $42 in 20 hours.
+What an agent session costs is **its context, re-read on every API call**, priced mostly as cache reads and cache writes; output is usually under 5%. So the audit looks for what makes a context big, what keeps it growing, and what makes the cache be written again — and ranks by **measured** spend, never by file size alone. The instruction files are the easiest lever and rarely the biggest: on the project this skill was built from, they were ~20k tokens per session, while one long-lived tick session cost $42 in 20 hours.
 
 Report in as few words as carry the meaning, and in full sentences wherever a person reads the report later. This skill reads and proposes; it changes nothing (a routine's model, a rule, a skill) without the user's word, and when the project's rules restrict how instruction files change (one rule per PR, demote-don't-delete), the fixes it proposes follow them.
 
@@ -25,7 +25,7 @@ Then read the top always-loaded files and the rules that stack in the busiest ar
 Skip with `--no-sessions`, or when the session tools (`list_sessions`, `list_events`, `list_triggers` from claude-code-remote) are absent — say so in the report.
 
 1. `list_triggers`: every routine with its model, schedule and `last_run.session_id`.
-2. `list_sessions` (`mine: true`, `limit` from `--sessions`, default 50). Classify each: routine run, loop/manager parent, delegated child, interactive. Note which belong to other projects.
+2. `list_sessions` (`mine: true`, `limit` from `--sessions`, default 50). Classify each: routine run, loop/tick parent, delegated child, interactive. Note which belong to other projects.
 3. For each routine's last run and a sample of 6–10 sessions across classes, in a subagent: `list_events` with `kinds: ["result"]`, paging back a few pages; the latest result's `modelUsage` is cumulative — input, cache read, cache write, output, cost, turns. For the 2–3 most expensive, read the first ~100 events for the baseline context (first call's input + cache tokens), context growth per call, the largest tool results, and cache writes after idle gaps.
 4. Write the raw numbers to a scratch file and cite it.
 
