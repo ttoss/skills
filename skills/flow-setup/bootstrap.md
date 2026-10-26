@@ -60,7 +60,7 @@ Work in this repo lives in the Flow project `<proj id>`; no other tracker holds 
 
 ## The workflow map
 
-[`flow-setup`](SKILL.md) step 8 rebuilds `AGENTIC_WORKFLOW.md` whole on every setup and audit, for the project's people: the [Agentic Workflow](https://ttoss.dev/docs/engineering/workflow) as the project runs it. It is generated and says so on its first line. It points: every line names the parameter, rule, skill or routine that holds it, so a change to it is a change to those, followed by `/flow-setup audit`. A person's step is drawn apart from an agent's.
+[`flow-setup`](SKILL.md) step 8 rebuilds `AGENTIC_WORKFLOW.md` whole on every setup and audit, for the project's people: the [Agentic Workflow](https://ttoss.dev/docs/engineering/workflow) as the project runs it. It is generated and says so on its first line. It points: every line names the parameter, rule, skill or routine that holds it, so a change to it is a change to those, followed by `/flow-setup audit`. It tells apart the workflow's stages and the three kinds of actor in them: a routine's run (the tick and the runs it starts), a person, and automation (CI, a pipeline, a channel where signals arrive). The diagram colours each state by who acts next, the stage table gives each kind its column, and the routines table lists every routine the workflow has and whether this project runs it.
 
 ```markdown
 # Agentic Workflow — <project name>
@@ -69,23 +69,28 @@ Work in this repo lives in the Flow project `<proj id>`; no other tracker holds 
 
 Work lives in the Flow project `<proj id>`, under the standing decision [`<task id>`](https://flow.ttoss.dev/app/tasks/<task id>); <the code host> holds the code and its changes. It runs the ttoss [Agentic Workflow](https://ttoss.dev/docs/engineering/workflow): every run reads a task's state from Flow, acts and writes it back, so the next run starts from the graph.
 
-<a mermaid stateDiagram-v2 of the workflow's states, each transition labelled with who makes it here, and the states that wait on a person styled apart>
+<a mermaid stateDiagram-v2 of the workflow's states as this project has them, each transition labelled with who makes it, each state coloured by who acts next: classDef routine fill:#cfe2ff, person fill:#f6c177, automation fill:#e5e5e5>
 
-| Stage | Who acts here | Fired by | Governed by |
-| --- | --- | --- | --- |
-| Intake | <who writes the task for a signal> | <the signal, or the intake routine> | `Intake`: <pointer> |
-| Decide | <who> | <a choice the work needs> | `Decisions`: <pointer> |
-| Implement | <a child of the tick, a person> | <the tick> | `Before proposing`, `Child handoff` |
-| Gates | <the checks; the reviewer> | <the change proposed> | `Review`, `Merge rule` |
-| Integrate | <the tick; what a person integrates> | <the gates green> | `Merge rule` |
-| Release | <the pipeline, a person, a release task> | <integration> | `Release procedure` |
-| Verify | <the check's reader> | <the check's date> | `Closing evidence` |
+Blue: a routine's run acts next. Orange: a person. Grey: automation.
+
+| Stage | Routine | Person | Automation | Governed by |
+| --- | --- | --- | --- | --- |
+| Intake | <the intake routine; what runs write as they notice it> | <who writes a task by hand, for which signals> | <where signals arrive> | `Intake` |
+| Decide | — | <the choices reserved to a person> | — | `Decisions` |
+| Implement | <the tick starts a child per ready task> | <a person working a task in their own session> | — | `Before proposing`, `Child handoff` |
+| Gates | <the tick's review child, when `Review` gives the loop the review> | <a person's review> | <the required checks> | `Review`, `Merge rule` |
+| Integrate | <what the tick integrates> | <what a person integrates> | — | `Merge rule` |
+| Release | <a release step the tick delegates> | <a person's release step> | <the pipeline> | `Release procedure` |
+| Verify | <the tick's check child, or the routine `Closing evidence` names> | <a check a person reads> | — | `Closing evidence` |
 
 ## Routines
 
-| Routine | When | Runs |
-| --- | --- | --- |
-| <each row of `Routines`; with none: nothing fires the tick yet, so it runs when someone invokes `/flow <proj id>`> | | |
+| Routine | What it does | Runs | Here |
+| --- | --- | --- | --- |
+| Tick | moves tasks through the stages: delegates, reviews, integrates, releases, verifies | `/flow <proj id>` | <its schedule, or "not scheduled: someone runs it by hand"> |
+| Chase | tells each person what waits on them | `/flow <proj id> --chase` | <its schedule, or "not set up"> |
+| Audit | finds where the loop spends tokens, files each fix as a task | `/token-audit --routine` | <its schedule, or "not set up"> |
+| <each project routine> | <what it does> | `<its file>` | <what fires it> |
 
 ## Where each piece lives
 
