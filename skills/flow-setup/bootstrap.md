@@ -54,7 +54,7 @@ Work in this repo lives in the Flow project `<proj id>`; no other tracker holds 
 
 - Work through a task: the one you were given, or one you find (`list-tasks` with `query`) or propose before changing anything. Your run holds the task (GTF-S8).
 - Apply the parameters on the way: `Before proposing` before the change; `Merge rule`; `Intake` for what you notice; `Decisions` for open choices.
-- The change carries the task's URL and the tasks it settles; before you stop, the task carries the change as an `implements` reference, what integrating leaves, and its wait on the gates. After the verdict, the manager's tick writes the task.
+- The change carries the task's URL and the tasks it settles; before you stop, the task carries the change as an `implements` reference, what integrating leaves, and its wait on the gates. After the verdict, the tick writes the task.
 - Friction with a skill, GTF or a Flow tool → `flow-friction`, then continue.
 ```
 
