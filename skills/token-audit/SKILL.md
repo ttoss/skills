@@ -29,7 +29,7 @@ Skip with `--no-sessions`, or when the session tools (`list_sessions`, `list_eve
 3. For each routine's last run and a sample of 6–10 sessions across classes, in a subagent: `list_events` with `kinds: ["result"]`, paging back a few pages; the latest result's `modelUsage` is cumulative — input, cache read, cache write, output, cost, turns. For the 2–3 most expensive, read the first ~100 events for the baseline context (first call's input + cache tokens), context growth per call, the largest tool results, and cache writes after idle gaps.
 4. Write the raw numbers to a scratch file and cite it.
 
-When the project records its runs in Flow, `list-agent-runs` gives the same numbers without reading a transcript: `group_by=model`, by `task`, `tag` or `upstream_of`, by `agent` for every run in one role (`flow-manager`, `flow-manager child`), and `since`/`until` either side of a change.
+When the project records its runs in Flow, `list-agent-runs` gives the same numbers without reading a transcript: `group_by=model`, by `task`, `tag` or `upstream_of`, by `agent` for every run in one role (`flow tick`, `flow child`, and `flow-manager`, `flow-manager child` before 2026-10-27), and `since`/`until` either side of a change.
 
 ## 3. Match the model to the work
 
