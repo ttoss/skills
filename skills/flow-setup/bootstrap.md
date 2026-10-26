@@ -8,7 +8,7 @@ The Flow part of [`flow-setup`](SKILL.md) step 7. It creates what the loop needs
    ```markdown
    The delivery loop runs the delivery process of the ttoss Flow skills that `<repo>`'s `skills-lock.json` pins, with this project's answers in `<parameters file>`, both as they stand on the default branch of `<repo>`, where they change only through a merge a person approved (<how: required review from the files' owners>).
 
-   - **Acts:** every act that process gives the tick and its children under those answers: take, move and close tasks; start and end child runs; integrate what the `Merge rule` lets the loop integrate; ask for the reviews `Review` gives it; run the steps the `Release procedure` gives it; run the checks of the `Closing evidence`; write what it notices as the `Intake` says.
+   - **Acts:** every act that process gives the tick, its children and its routines under those answers: take, move and close tasks; start and end child runs; integrate what the `Merge rule` lets the loop integrate, until the `Renewal` date; ask for the reviews `Review` gives it; run the steps the `Release procedure` gives it; run the checks of the `Closing evidence`; draw the sample of its own integrations the `Calibration` gives a person to review; write what it notices as the `Intake` says.
    - **Closing evidence:** the `Closing evidence` answer.
    - **Choices:** which ready task to start next, in `get-next` order, and the choices that pass the `Decisions` test.
    - **Tidying:** end finished child runs; retract the `implements` reference of a change closed without integrating; close the tasks an integrated change says it settles, citing it; re-point the `blocks` edges the `Release procedure` moves.
@@ -16,7 +16,7 @@ The Flow part of [`flow-setup`](SKILL.md) step 7. It creates what the loop needs
    ```
 
 3. **Release procedure tasks.** When the procedure tracks work in flight in a task, propose that task, `active`.
-4. **Write the parameters**, with the standing decision's id, to the parameters file: `.agents/flow.md`, or `.claude/flow.md` where the repo keeps its agent files under `.claude/`. An older `flow-manager.md` moves there, in the PR of step 8.
+4. **Write the parameters**, with the standing decision's id and its `Renewal` (the user, who answered for the decision, and a date 90 days later unless they name another), to the parameters file: `.agents/flow.md`, or `.claude/flow.md` where the repo keeps its agent files under `.claude/`. An older `flow-manager.md` moves there, in the PR of step 8.
 
 ## The parameters file
 
@@ -29,9 +29,10 @@ A list, one parameter per item, each a pointer or a short rule:
 
 - **Flow project id**: `proj_xxxxxxxxxx`.
 - **Standing-decision task id**: `task_xxxxxxxxxx`.
+- **Renewal**: 2027-01-24, `ana@acme.dev`.
 - **Repos**: `acme/api`, `acme/web`.
-- **Runtime**: `ops/agent-runtime.md` (children, run records, max runs 2, child handoff `push`, models).
-- **Routines**: the Tick hourly on weekdays 09:00–18:00 `America/Sao_Paulo` (`/flow proj_xxxxxxxxxx`); the Chase on weekdays at 08:50 (`/flow proj_xxxxxxxxxx --chase`), to `#eng`; the Audit on Fridays at 16:50 (`/token-audit --routine`); Sentry triage on each new issue (`.agents/routines/sentry-triage.md`). Models and connectors in `ops/agent-runtime.md`.
+- **Runtime**: `ops/agent-runtime.md` (children, run records, max runs 2, child handoff `push`, models by exact id).
+- **Routines**: the Tick hourly on weekdays 09:00–18:00 `America/Sao_Paulo` (`/flow proj_xxxxxxxxxx`); the Chase on weekdays at 08:50 (`/flow proj_xxxxxxxxxx --chase`), to `#eng`; the Audit on Fridays at 16:50 (`/token-audit --routine`); the Calibration on Fridays at 16:40 (`/flow proj_xxxxxxxxxx --calibrate`); Sentry triage on each new issue (`.agents/routines/sentry-triage.md`). Models and connectors in `ops/agent-runtime.md`.
 - **Intake**: `docs/agents/intake.md`; a pull request with no task gets one.
 - **Ready brief**: default.
 - **Decisions**: `AGENTS.md` § Decisions, tested by `docs/agents/open-questions.md`.
@@ -41,6 +42,7 @@ A list, one parameter per item, each a pointer or a short rule:
 - **Release procedure**: every merge to `main` deploys `acme/api`; `acme/web` bumps the published client (`docs/agents/release.md`).
 - **Closing evidence**: `docs/agents/done.md`; checked against the Staging API `https://api.staging.acme.dev`, token in `ACME_TOKEN`, GET only.
 - **Delivery kinds**: help-center articles (a person approves, an agent publishes, the live page proves it).
+- **Calibration**: default.
 ```
 
 ## The entry section
@@ -90,6 +92,7 @@ Blue: a routine's run acts next. Orange: a person. Grey: automation.
 | Tick | moves tasks through the stages: delegates, reviews, integrates, releases, verifies | `/flow <proj id>` | <its schedule, or "not scheduled: someone runs it by hand"> |
 | Chase | tells each person what waits on them | `/flow <proj id> --chase` | <its schedule, or "not set up"> |
 | Audit | finds where the loop spends tokens, files each fix as a task | `/token-audit --routine` | <its schedule, or "not set up"> |
+| Calibration | gives a person a random sample of what the loop integrated to review in depth, and compares how the loop behaves on each model | `/flow <proj id> --calibrate` | <its schedule, or "not set up"> |
 | <each project routine> | <what it does> | `<its file>` | <what fires it> |
 
 ## Where each piece lives
