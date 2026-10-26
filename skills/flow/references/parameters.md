@@ -1,6 +1,11 @@
-# Project parameters
+---
+title: Project Parameters
+sidebar_position: 2
+---
 
-The [delivery process](process.md) is generic; how one project delivers is its answers here. The manager reads them from the consuming repo, first match wins: the `/flow <project id>` argument (project id only), `.agents/flow.md`, `.claude/flow.md`, or a `## Flow parameters` section of `AGENTS.md` / `CLAUDE.md`. [`/flow-setup`](../../flow-setup/SKILL.md) defines them with the user. They bind every session working in the repo, not only the loop's.
+# Project Parameters
+
+The [delivery process](process.md) is the engine, the same for every project; these are its extension points, and a project's answers to them are how it delivers. The manager reads them from the consuming repo, first match wins: the `/flow <project id>` argument (project id only), `.agents/flow.md`, `.claude/flow.md`, or a `## Flow parameters` section of `AGENTS.md` / `CLAUDE.md`. [`/flow-setup`](https://github.com/ttoss/skills/blob/main/skills/flow-setup/SKILL.md) defines them with the user. They bind every session working in the repo, not only the loop's.
 
 A value is a short rule written inline, or a pointer to the project file that holds it (`` `docs/agents/release.md` ``). A pointer keeps one source of truth: the manager and every child read the file, never a copy.
 
@@ -23,7 +28,7 @@ How this project's runtime runs the loop, usually a pointer to the file the sche
 - **Models:** the child's model (default: the manager's) and the check model for checks and other read-only work (default: a mid-tier model).
 - **Each tick:** cleanup the runtime needs on every tick, such as archiving the sessions of runs already closed.
 
-A runtime several projects share is a preset, which the project's `Runtime` names and completes with what differs: [Claude Code sessions](runtime-claude-code-remote.md).
+A runtime several projects share is a preset, which the project's `Runtime` names and completes with what differs: [Claude Code sessions](https://github.com/ttoss/skills/blob/main/skills/flow/references/runtime-claude-code-remote.md).
 
 ## Extension points
 
@@ -43,7 +48,7 @@ Each answers a question the process asks but cannot answer for every project. Le
 
 ## Release procedure shapes
 
-None is the loop's own; [`/flow-setup`](../../flow-setup/SKILL.md) offers the one that matches what the repo shows:
+None is the loop's own; [`/flow-setup`](https://github.com/ttoss/skills/blob/main/skills/flow-setup/SKILL.md) offers the one that matches what the repo shows:
 
 - **Continuous:** every integration deploys; the task waits for its pipeline, then its check.
 - **Per-integration publish and consumer bump:** each integration publishes a package; the bump of a consumer is its own task that `blocks` what it ships.
@@ -51,4 +56,4 @@ None is the loop's own; [`/flow-setup`](../../flow-setup/SKILL.md) offers the on
 
 Any other shape, such as a batched release, is the project's own answer, in the file its `Release procedure` points to; the loop holds it to GTF-N4: a step `blocks` what it ships, never the reverse.
 
-An example parameters file is in [bootstrap](../../flow-setup/bootstrap.md#the-parameters-file).
+An example parameters file is in [bootstrap](https://github.com/ttoss/skills/blob/main/skills/flow-setup/bootstrap.md#the-parameters-file).
