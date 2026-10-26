@@ -1,18 +1,18 @@
 # Bootstrap
 
-The Flow part of [`flow-setup`](SKILL.md) step 7. It creates what the loop needs in Flow, once per project. Creating a commitment is the person's call ([GTF-A1, GTF-A4](https://flow.ttoss.dev/docs/agents/protocol.md#authority)): list every write, numbered, and wait for their answer.
+The Flow part of [`flow-setup`](SKILL.md) step 7. It creates what the agents need in Flow, once per project. Creating a commitment is the person's call ([GTF-A1, GTF-A4](https://flow.ttoss.dev/docs/agents/protocol.md#authority)): list every write, numbered, and wait for their answer.
 
 1. **Project.** `list-projects`; ask which one, or offer `create-project`.
-2. **Standing decision.** Search for an existing one (`list-tasks` `kind: decision`, `query: "standing"`). If none authorises the loop, propose one `decision` task, closed `completed` with the user's verbatim answer as `basis: { said }`, titled `Standing: the delivery loop runs autonomously`. Its body delegates by pointer, so a new version of the skills or a changed parameter needs no new decision ([GTF-A6, GTF-T1](https://flow.ttoss.dev/docs/agents/protocol.md#authority)):
+2. **Standing decision.** Search for an existing one (`list-tasks` `kind: decision`, `query: "standing"`). If none authorises the agents, propose one `decision` task, closed `completed` with the user's verbatim answer as `basis: { said }`, titled `Standing: the agents run the Agentic Workflow autonomously`. Its body delegates by pointer, so a new version of the skills or a changed parameter needs no new decision ([GTF-A6, GTF-T1](https://flow.ttoss.dev/docs/agents/protocol.md#authority)):
 
    ```markdown
-   The delivery loop runs the delivery process of the ttoss Flow skills that `<repo>`'s `skills-lock.json` pins, with this project's answers in `<parameters file>`, both as they stand on the default branch of `<repo>`, where they change only through a merge a person approved (<how: required review from the files' owners>).
+   The project's agents run the delivery process of the ttoss Flow skills that `<repo>`'s `skills-lock.json` pins, with this project's answers in `<parameters file>`, both as they stand on the default branch of `<repo>`, where they change only through a merge a person approved (<how: required review from the files' owners>).
 
-   - **Acts:** every act that process gives the tick, its children and its routines under those answers: take, move and close tasks; start and end child runs; integrate what the `Merge rule` lets the loop integrate, until the `Renewal` date; ask for the reviews `Review` gives it; run the steps the `Release procedure` gives it; run the checks of the `Closing evidence`; draw the sample of its own integrations the `Calibration` gives a person to review; write what it notices as the `Intake` says.
+   - **Acts:** every act that process gives the tick, its children and its routines under those answers: take, move and close tasks; start and end child runs; integrate what the `Merge rule` lets the agents integrate, until the `Renewal` date; ask for the reviews `Review` gives it; run the steps the `Release procedure` gives it; run the checks of the `Closing evidence`; draw the sample of its own integrations the `Calibration` gives a person to review; write what it notices as the `Intake` says.
    - **Closing evidence:** the `Closing evidence` answer.
    - **Choices:** which ready task to start next, in `get-next` order, and the choices that pass the `Decisions` test.
    - **Tidying:** end finished child runs; retract the `implements` reference of a change closed without integrating; close the tasks an integrated change says it settles, citing it; re-point the `blocks` edges the `Release procedure` moves.
-   - **Reserved to a person:** the classes `Decisions` reserves, any change to the files above or to the project's agent instructions, and every act the process does not give the loop.
+   - **Reserved to a person:** the classes `Decisions` reserves, any change to the files above or to the project's agent instructions, and every act the process does not give the agents.
    ```
 
 3. **Release procedure tasks.** When the procedure tracks work in flight in a task, propose that task, `active`.
@@ -80,7 +80,7 @@ Blue: a routine's run acts next. Orange: a person. Grey: automation.
 | Intake | <the intake routine; what runs write as they notice it> | <who writes a task by hand, for which signals> | <where signals arrive> | `Intake` |
 | Decide | — | <the choices reserved to a person> | — | `Decisions` |
 | Implement | <the tick starts a child per ready task> | <a person working a task in their own session> | — | `Before proposing`, `Child handoff` |
-| Gates | <the tick's review child, when `Review` gives the loop the review> | <a person's review> | <the required checks> | `Review`, `Merge rule` |
+| Gates | <the tick's review child, when `Review` gives an agent the review> | <a person's review> | <the required checks> | `Review`, `Merge rule` |
 | Integrate | <what the tick integrates> | <what a person integrates> | — | `Merge rule` |
 | Release | <a release step the tick delegates> | <a person's release step> | <the pipeline> | `Release procedure` |
 | Verify | <the tick's check child, or the routine `Closing evidence` names> | <a check a person reads> | — | `Closing evidence` |
@@ -91,8 +91,8 @@ Blue: a routine's run acts next. Orange: a person. Grey: automation.
 | --- | --- | --- | --- |
 | Tick | moves tasks through the stages: delegates, reviews, integrates, releases, verifies | `/flow <proj id>` | <its schedule, or "not scheduled: someone runs it by hand"> |
 | Chase | tells each person what waits on them | `/flow <proj id> --chase` | <its schedule, or "not set up"> |
-| Audit | finds where the loop spends tokens, files each fix as a task | `/token-audit --routine` | <its schedule, or "not set up"> |
-| Calibration | gives a person a random sample of what the loop integrated to review in depth, and compares how the loop behaves on each model | `/flow <proj id> --calibrate` | <its schedule, or "not set up"> |
+| Audit | finds where the agents spend tokens, files each fix as a task | `/token-audit --routine` | <its schedule, or "not set up"> |
+| Calibration | gives a person a random sample of what the agents integrated to review in depth, and compares how the agents behave on each model | `/flow <proj id> --calibrate` | <its schedule, or "not set up"> |
 | <each project routine> | <what it does> | `<its file>` | <what fires it> |
 
 ## Where each piece lives
