@@ -13,4 +13,13 @@ The tick and each child run in a cloud session of their own, through the `claude
 
 A session's `usage` is its `external_metadata.usage`, with `peak_context` its `context_usage.used_tokens`, and a session reports it only after its turn ends, so a tick never knows its own.
 
-**Each tick**, last in § 2: the last run (§ 0) and its children (`list-agent-runs` with `parent`), each closed with no `usage` and addressed by a session URL with no query, get `usage` from `get_session` on that session, then `archive_session`. A child the tick ends is archived by End.
+**Each run**, last in § 2 of a tick and last before any other routine's run closes: the last run under its `agent` (§ 0) and, for a tick, that run's children (`list-agent-runs` with `parent`), each closed with no `usage` and addressed by a session URL with no query, get `usage` from `get_session` on that session, then `archive_session`. A child the tick ends is archived by End.
+
+**Routines** are Claude Code routines, each starting a fresh session on every firing with its row's invocation as the prompt:
+
+| Act | How |
+| --- | --- |
+| Create | `create_trigger` with `create_new_session_on_fire: true`, `cron_expression` in the row's time zone (`CRON_TZ=<zone> <fields>`) on a minute other than :00 and :30, `prompt` the row's invocation, `connectors` the row's, `notifications` `{"push": true}` where the final message is what it delivers (the Chase, the Audit) and `initiation: human_request`; then `update_trigger` with the row's `model` |
+| List | `list_triggers`: each routine's schedule, model, enabled state and `last_run` |
+| Validate | `fire_trigger`, then `get_session` on the `last_run` session: `<repo>` checked out, so the skills load; the row's connectors present; its run recorded in Flow |
+| Event | a GitHub event or an API call fires a routine only through claude.ai's routine settings, which these tools cannot reach: the person sets it, one GitHub trigger per routine |

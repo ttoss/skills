@@ -33,5 +33,5 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: process.md and parameters.md match the ttoss Engineering Workflow
+      - name: process.md, parameters.md and routines.md match the ttoss Engineering Workflow
         run: sh scripts/sync-workflow.sh && git diff --exit-code

@@ -31,6 +31,7 @@ A list, one parameter per item, each a pointer or a short rule:
 - **Standing-decision task id**: `task_xxxxxxxxxx`.
 - **Repos**: `acme/api`, `acme/web`.
 - **Runtime**: `ops/agent-runtime.md` (children, run records, max runs 2, child handoff `push`, models).
+- **Routines**: the Tick hourly on weekdays 09:00–18:00 `America/Sao_Paulo` (`/flow proj_xxxxxxxxxx`); the Chase on weekdays at 08:50 (`/flow proj_xxxxxxxxxx --chase`), to `#eng`; the Audit on Fridays at 16:50 (`/token-audit --routine`); Sentry triage on each new issue (`.agents/routines/sentry-triage.md`). Models and connectors in `ops/agent-runtime.md`.
 - **Intake**: `docs/agents/intake.md`; a pull request with no task gets one.
 - **Ready brief**: default.
 - **Decisions**: `AGENTS.md` § Decisions, tested by `docs/agents/open-questions.md`.

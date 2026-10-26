@@ -1,7 +1,7 @@
 ---
 name: token-audit
 description: Find where a project's Claude Code sessions waste tokens, from measurements, not guesses — the instruction corpus every session loads, scoped rules, real session usage (cost, context growth, cache rewrites, PR wake-ups), each routine's model and tool payloads. Produces a ranked report with fixes. Use when the user says /token-audit, "where are we wasting tokens" or "make our agents cheaper", or session costs look high.
-argument-hint: "[repo path] [--sessions N] [--no-sessions]"
+argument-hint: "[repo path] [--sessions N] [--no-sessions] [--routine]"
 ---
 
 # Token audit
@@ -46,3 +46,12 @@ When the repo ships an MCP server or tools the sessions themselves call, measure
 ## 6. Report
 
 One ranked list, largest measured saving first. Each item: the sink, the evidence (session id, file and bytes, or tool and size), the fix, the estimated saving with its arithmetic, and who decides (config the user owns, a PR, an upstream skill). Separate **apply now** (config, a routine's model) from **PRs to open** and from **needs a decision**. Anything found on the way that is not about tokens (a security or privacy gap) goes at the top, flagged, never buried.
+
+## As a routine
+
+`/token-audit --routine` is the weekly [Audit](https://github.com/ttoss/skills/blob/main/skills/flow/references/routines.md#standard-routines) of a Flow project. Nobody reads the run while it works (GTF-U1), so it asks nothing and leaves its findings where a person will find them:
+
+1. Load the project's Flow [parameters](../flow/references/parameters.md) and record the run: `agent: token-audit`, `authority` the standing decision. The last run under that agent (`list-agent-runs` with `project` and `agent`) starts the week it covers (GTF-U4).
+2. Run steps 1 to 5 over the project's `Repos`, its routines and the week's sessions, reading `list-agent-runs` (`since` the last run, `group_by` `agent`, then `model`) before any transcript.
+3. Each fix in the report becomes one `incubated` task in the project, tagged `token-audit`, with its evidence, saving and who decides (GTF-C1), unless an open task already proposes it (`list-tasks` with `query`). It changes nothing: not a routine's model, schedule or connectors, a rule or a skill.
+4. The report, against the week before (the same reads, one week earlier): the spend in total and by agent, the three costliest tasks, the runs that reached no task (`linked=false`) or stayed open (`lingering=true`), and one line per task filed, by `url`. It is the run's final message, which the runtime delivers to the routine's owner. Before it, the `Runtime`'s acts on every run, then close the run.
