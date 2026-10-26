@@ -1,7 +1,7 @@
 ---
 name: flow
 description: Runs a project's autonomous delivery loop on Flow by the ttoss Engineering Workflow (Get Things Flowing applied to product development), and holds the delivery process every session in a Flow project follows (references/process.md) — one tick reads the graph, integrates done changes by the project's merge rule, runs its release procedure and the checks that came due, delegates ready tasks to child agent runs, writes every change back to Flow and stops. Use when the user says /flow, "run the delivery loop", "manage the flow" or "flow manager"; set a project up with /flow-setup first. Not for creating, reading, moving or triaging tasks, which the Flow MCP tools and their instructions cover.
-argument-hint: "[project-id] [task-id | tag:<name> | description] [--max-runs N]"
+argument-hint: "[project-id] [task-id | tag:<name> | description] [--max-runs N] [--chase]"
 ---
 
 # Flow
@@ -11,6 +11,8 @@ argument-hint: "[project-id] [task-id | tag:<name> | description] [--max-runs N]
 You are the **manager** of a project's delivery loop. You implement nothing. You read the Flow graph, apply the process's transitions, hand every piece of work to a child run, write the result back to Flow and stop.
 
 One invocation is **one tick**, and every tick behaves the same whatever fires it (a recurring routine, a cron or CI job running the agent headless, `/loop` in one conversation), because **Flow is the only memory**: re-read the graph every time, and know earlier ticks only from the runs recorded there (GTF-S4, GTF-U4). Setting a project up is [`/flow-setup`](../flow-setup/SKILL.md), which may ask the user questions; a tick never does.
+
+**`--chase` runs the Chase instead of a tick**: section 0 with `agent: flow chase`, then [chase](references/chase.md), which ends the run. The tick and the chase are two of the workflow's [standard routines](references/routines.md#standard-routines); the third, the audit, is [`token-audit`](../token-audit/SKILL.md) `--routine`.
 
 ## Hard rules of a tick
 
@@ -33,7 +35,7 @@ A child is an agent run the tick starts for one task. How it runs is the runtime
 
 Child runs are where the tokens go, so the project's `running` children are capped: `--max-runs N` (`--max-sessions N` is read as an alias), else `Max runs` in the `Runtime` parameter, else **2**. The cap counts the project's `flow-manager child` runs that are `running` (`list-agent-runs` with `project`, `agent`, `status`), idle ones included, and every manager on the project counts the same runs; a child this tick started counts from its start. `0` makes a manager-only tick: it integrates, ends finished runs and moves waits, but starts no child. At the cap nothing is interrupted to make room; a slot frees when a child's run closes.
 
-The other cost knobs: a fresh run per tick rather than one growing conversation; `Child handoff: push`, which ends a child once its change is proposed and gives each later need of the change (red checks, findings, a conflict) to a fresh child; and the child and check models.
+The other cost knobs: a fresh run per tick rather than one growing conversation; `Child handoff: push`, which ends a child once its change is proposed and gives each later need of the change (red checks, findings, a conflict) to a fresh child; and the child, check and review models.
 
 ## Focus
 
@@ -79,13 +81,13 @@ Rebuild the child map from Flow every tick (GTF-S4): `list-agent-runs` with `pro
 
 **The graph first, then the end.** A child is ended only once Flow holds what it did: the task's status, its wait, its next step and what integrating leaves. When the child did not write it, the tick reads what the child did and writes it. Before ending a child, file any friction its last message says it could not file. Close its run with the end (`status`, `usage` when known, `produced`).
 
-Last, the acts the `Runtime` parameter adds to every tick, such as archiving the sessions of child runs already closed: the table above reads only open runs.
+Last, the acts the `Runtime` parameter adds to every run (`Each run`), such as recording the usage of runs already closed and ending their sessions: the table above reads only open runs.
 
 ## 3. Advance the loop
 
 Apply the process's [transitions](references/process.md#transitions) to every open task with an `implements` change, and to the release steps and checks in flight. Each act must be one the standing decision delegates (GTF-T1); after a verdict the tick is the task's only writer (GTF-S3). In order:
 
-1. **Changes.** For each open task's change: a draft is work in progress, so skip it. Gates passed and the `Merge rule` lets the loop integrate → integrate it. Gates pending → leave it: its wait already names them. Red checks, findings or a conflict → the task goes back a round, `active` with the log or the findings in its body, for section 4; past the `Merge rule`'s round limit, counted as the task's fix runs, it waits on a person instead. A child still running on the change, as with `Child handoff: verdict`, owns its rounds until the verdict: leave it. A review request lost → the `Review` fallback. A gate reserved to a person → the task waits on them. Closed without integrating → retract the `implements` reference, citing the change, and the task waits on a person to implement it again or cancel it. Integrated with nothing written since → what the task's body says integrating leaves (immediate evidence closes it, citing the change; otherwise its release step or its check's wait, GTF-E8), and the other tasks the change's description says it settles, as far as the standing decision delegates tidying (GTF-S6). A task with several changes waits for the last one. A body that says nothing → the task waits on a person, naming what is missing.
+1. **Changes.** For each open task's change: a draft is work in progress, so skip it. Gates passed and the `Merge rule` lets the loop integrate → integrate it. Gates pending → leave it: its wait already names them. When the review is the loop's (`Review`) and the head's checks are green with no verdict naming the head, the change goes to a review child in section 4. Red checks, findings or a conflict → the task goes back a round, `active` with the log or the findings in its body, for section 4; past the `Merge rule`'s round limit, counted as the task's fix runs, it waits on a person instead. A child still running on the change, as with `Child handoff: verdict`, owns its rounds until the verdict: leave it. A review request lost → the `Review` fallback. A gate reserved to a person → the task waits on them. Closed without integrating → retract the `implements` reference, citing the change, and the task waits on a person to implement it again or cancel it. Integrated with nothing written since → what the task's body says integrating leaves (immediate evidence closes it, citing the change; otherwise its release step or its check's wait, GTF-E8), and the other tasks the change's description says it settles, as far as the standing decision delegates tidying (GTF-S6). A task with several changes waits for the last one. A body that says nothing → the task waits on a person, naming what is missing.
 2. **Changes with no task.** A change in the project's repos that names no task → the `Intake` answer.
 3. **Release.** Apply the `Release procedure` to what was integrated: a step the loop runs is a task delegated like any other, a step a pipeline runs is a wait on the integrated task, and a person's step is a task of theirs. A step that is a task `blocks` each integrated task it ships, never the reverse (GTF-N4). When a step's task closes, each task it blocked moves to its check's wait or closes, citing the step's task, whose outcome is the evidence. Anything else the procedure asks of the graph, such as edges it moves, is done as it says, and a running child is messaged only when its work changes.
 4. **Checks that came due.** Each `date_came` or `hold_cleared` task, and each `waiting` task whose `external` wait is past its `until`: a wait that states a check goes to a check child in section 4, which takes every due check sharing its target and credential, unless the `Closing evidence` names another reader; any other wait is checked against the world: cleared → `active`, citing what you checked; still held → move `until` to the next check. A wait `on` a person stays: it is theirs.
@@ -97,7 +99,7 @@ Free slots are the run limit minus the project's `running` children, after secti
 1. `get-task` it (GTF-E2). Skip it if a person holds it.
    **Already done?** A change in the project's repos names the task and the task has no `implements` reference → add it and let section 3 handle the change; do not delegate it. Every task that `blocks` it is closed and they were its parts → its child is a check child, reading their outcomes against the task's acceptance.
 2. **Ready?** A brief short of the `Ready brief`, or a choice the standing decision does not delegate → the task waits on the person, naming what is missing (GTF-N6), and the slot passes on. A brief asking for more than one delivery that can ship alone → split it into tasks with their own acceptance, `blocks` edges in the order they ship and the original as the target they block (GTF-T4), and delegate the first wave.
-3. **Claim and start.** Take the task with the tick's run (see [child runs](#child-runs)); `contended` → skip the task. A check child takes every task its checks cover. Start the child with every repo the task touches, the tick's permissions at most (never one that waits on a person to approve a plan), its model, and the prompt from [child-prompt.md](references/child-prompt.md) filled in.
+3. **Claim and start.** Take the task with the tick's run (see [child runs](#child-runs)); `contended` → skip the task. A check child takes every task its checks cover; a review child, the change's task. Start the child with every repo the task touches, the tick's permissions at most (never one that waits on a person to approve a plan), its model, and the prompt from [child-prompt.md](references/child-prompt.md) filled in.
 
 A skipped task passes its slot to the next candidate, and every skip has a reason in the graph; its priority is never the reason, since the ranking already weighed it. Children that end with the tick run in the foreground, up to the free slots at once, and the tick ends when the last one returns.
 
@@ -111,4 +113,4 @@ When one fails, the tick says so and skips the steps that need it; it never retr
 
 - The code host enforces the `Merge rule`, and the runtime allows each act the standing decision delegates: the tick may integrate changes and start and end children, and children get at most its permissions. An act the runtime refuses moves its task to `waiting` on a person, naming the refusal (GTF-U3).
 - Every credential the `Closing evidence` names is in the environment.
-- Something fires the tick. Flow keeps the state but wakes nobody (GTF-S5): a recurring routine, or a cron or CI job running `/flow <project id>` headless, starts every tick fresh from the graph; `/loop` inside one conversation lives only as long as the conversation.
+- Something fires the tick. Flow keeps the state but wakes nobody (GTF-S5): the project's `Routines`, each a recurring routine or a cron or CI job running `/flow <project id>` headless, start every run fresh from the graph; `/loop` inside one conversation lives only as long as the conversation.
