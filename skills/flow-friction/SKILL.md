@@ -1,6 +1,6 @@
 ---
 name: flow-friction
-description: File friction met while working in a Flow project — a gap or contradiction in a ttoss skill, the ttoss Engineering Workflow, the Get Things Flowing method or the Flow MCP tools — as an issue in ttoss/skills, commenting on a matching open issue instead of duplicating it. Use when any session working in a Flow project hits such friction (a manager or child run, or one started by a plain prompt), when a child's final message names friction it could not file, or when the user says /flow-friction or "report friction".
+description: File friction met while working in a Flow project — a gap or contradiction in a ttoss skill, the ttoss Agentic Workflow, the Get Things Flowing method or the Flow MCP tools — as an issue in ttoss/skills, commenting on a matching open issue instead of duplicating it. Use when any session working in a Flow project hits such friction (a manager or child run, or one started by a plain prompt), when a child's final message names friction it could not file, or when the user says /flow-friction or "report friction".
 argument-hint: "[what happened]"
 ---
 
@@ -22,7 +22,7 @@ Filing never blocks the work: write the issue, then continue the tick or task wh
 
 Filing is a finding you may report without asking (GTF-A3).
 
-1. **Classify** it as one area: `flow` (or the other skill's name), `workflow` (the delivery process or the parameters, whose fix is a change to the [Engineering Workflow](https://ttoss.dev/docs/engineering/workflow) in ttoss/ttoss), `gtf` (the method), or `flow-mcp` (the tools).
+1. **Classify** it as one area: `flow` (or the other skill's name), `workflow` (the delivery process or the parameters, whose fix is a change to the [Agentic Workflow](https://ttoss.dev/docs/engineering/workflow) in ttoss/ttoss), `gtf` (the method), or `flow-mcp` (the tools).
 2. **Search first.** Search the open issues of `ttoss/skills`, with whatever GitHub tool the runtime has (an MCP issue search, `gh issue list --search`), for the area and two or three distinctive words (the tool name, the rule number, the error code). A match → add a comment with your new evidence only, then stop. Never file the same friction twice from consecutive loop ticks: the search is how a stateless manager knows it already did.
 3. **File** it as an issue in `ttoss/skills` (an MCP issue write, `gh issue create`):
    - Title: `[<area>] <what is wrong, in one line>` — e.g. `[flow-mcp] update-tasks refuses waiting → calendar the loop needs for deploy waits`.

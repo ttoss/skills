@@ -1,5 +1,5 @@
 #!/bin/sh
-# Copies the ttoss Engineering Workflow pages the flow skill carries verbatim.
+# Copies the ttoss Agentic Workflow pages the flow skill carries verbatim.
 # An edit to them belongs in ttoss/ttoss, never here.
 set -e
 base="https://raw.githubusercontent.com/ttoss/ttoss/${1:-main}/docs/website/docs/engineering/workflow"
