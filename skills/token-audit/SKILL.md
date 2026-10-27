@@ -49,9 +49,9 @@ One ranked list, largest measured saving first. Each item: the sink, the evidenc
 
 ## As a routine
 
-`/token-audit --routine` is the weekly [Audit](https://github.com/ttoss/skills/blob/main/skills/flow/references/routines.md#standard-routines) of a Flow project. Nobody reads the run while it works (GTF-U1), so it asks nothing and leaves its findings where a person will find them:
+`/token-audit --routine` is the weekly [Audit](https://raw.githubusercontent.com/ttoss/ttoss/main/docs/website/docs/engineering/workflow/routines.md#standard-routines) of a Flow project. Nobody reads the run while it works (GTF-U1), so it asks nothing and leaves its findings where a person will find them:
 
-1. Load the project's Flow [parameters](../flow/references/parameters.md) and record the run: `agent: token-audit`, `authority` the standing decision. The last run under that agent (`list-agent-runs` with `project` and `agent`) starts the week it covers (GTF-U4).
+1. Load the project's Flow [parameters](https://raw.githubusercontent.com/ttoss/ttoss/main/docs/website/docs/engineering/workflow/parameters.md) and record the run: `agent: token-audit`, `authority` the standing decision. The last run under that agent (`list-agent-runs` with `project` and `agent`) starts the week it covers (GTF-U4).
 2. Run steps 1 to 5 over the project's `Repos`, its routines and the week's sessions, reading `list-agent-runs` (`since` the last run, `group_by` `agent`, then `model`) before any transcript.
 3. Each fix in the report becomes one `incubated` task in the project, tagged `token-audit`, with its evidence, saving and who decides (GTF-C1), unless an open task already proposes it (`list-tasks` with `query`). It changes nothing: not a routine's model, schedule or connectors, a rule or a skill.
 4. The report, against the week before (the same reads, one week earlier): the spend in total and by agent, the three costliest tasks, the runs that reached no task (`linked=false`) or stayed open (`lingering=true`), and one line per task filed, by `url`. It is the run's final message, which the runtime delivers to the routine's owner. Before it, the `Runtime`'s acts on every run, then close the run.
