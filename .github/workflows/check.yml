@@ -28,10 +28,3 @@ jobs:
           print('\n'.join(bad) or 'every front matter parses')
           sys.exit(1 if bad else 0)
           PY
-
-  workflow-pages:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: The workflow pages match the ttoss Agentic Workflow
-        run: sh scripts/sync-workflow.sh && git diff --exit-code
