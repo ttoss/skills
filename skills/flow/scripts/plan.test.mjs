@@ -1,5 +1,6 @@
-import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { test } from 'node:test';
+
 import { plan } from './plan.mjs';
 
 const now = '2026-10-30T12:00:00Z';
@@ -11,7 +12,7 @@ const params = {
   agentsMayIntegrate: true,
   focus: null,
 };
-const change = (over = {}) => ({
+const change = (over = {}) => { return {
   url: 'https://github.com/o/r/pull/1',
   draft: false,
   headSha: 'h',
@@ -26,8 +27,8 @@ const change = (over = {}) => ({
   touchesOwnGates: false,
   reservedToPerson: false,
   ...over,
-});
-const task = (over = {}) => ({
+} };
+const task = (over = {}) => { return {
   id: 'task_a',
   status: 'waiting',
   priority: null,
@@ -43,12 +44,12 @@ const task = (over = {}) => ({
   rounds: 0,
   change: null,
   ...over,
-});
-const acts = (snapshot, kind) => plan({ now, params, ...snapshot }).filter((a) => a.act === kind);
+} };
+const acts = (snapshot, kind) => { return plan({ now, params, ...snapshot }).filter((a) => { return a.act === kind }) };
 
 test('a CLEAN verdict on the head with green checks integrates', () => {
   assert.deepEqual(
-    acts({ tasks: [task({ change: change() })] }, 'integrate').map((a) => a.task),
+    acts({ tasks: [task({ change: change() })] }, 'integrate').map((a) => { return a.task }),
     ['task_a'],
   );
 });
@@ -59,7 +60,7 @@ test('a verdict for an older head is no verdict: a review child starts', () => {
     'start_child',
   );
   assert.deepEqual(
-    start.map((a) => a.kind),
+    start.map((a) => { return a.kind }),
     ['review'],
   );
 });
@@ -76,20 +77,20 @@ test('a review already running starts no second one', () => {
 
 test('a change to its own gates waits on a person', () => {
   const out = plan({ now, params, tasks: [task({ change: change({ touchesOwnGates: true }) })] });
-  assert.equal(out.filter((a) => a.act === 'integrate').length, 0);
-  assert.equal(out.filter((a) => a.act === 'wait_on_person').length, 1);
+  assert.equal(out.filter((a) => { return a.act === 'integrate' }).length, 0);
+  assert.equal(out.filter((a) => { return a.act === 'wait_on_person' }).length, 1);
 });
 
 test('an unread gate question becomes a judge act, never an integration', () => {
   const out = plan({ now, params, tasks: [task({ change: change({ touchesOwnGates: null }) })] });
-  assert.equal(out.filter((a) => a.act === 'integrate').length, 0);
-  assert.equal(out.find((a) => a.act === 'judge').about, 'merge_rule');
+  assert.equal(out.filter((a) => { return a.act === 'integrate' }).length, 0);
+  assert.equal(out.find((a) => { return a.act === 'judge' }).about, 'merge_rule');
 });
 
 test('red checks take one round, then wait on a person', () => {
   assert.deepEqual(
     acts({ tasks: [task({ change: change({ checks: 'red' }) })] }, 'start_child').map(
-      (a) => a.kind,
+      (a) => { return a.kind },
     ),
     ['round'],
   );
@@ -107,7 +108,7 @@ test('red caused on the default branch counts no round', () => {
     tasks: [task({ change: change({ checks: 'red', redOnDefault: true }) })],
   });
   assert.equal(
-    out.filter((a) => ['start_child', 'move_task', 'wait_on_person'].includes(a.act)).length,
+    out.filter((a) => { return ['start_child', 'move_task', 'wait_on_person'].includes(a.act) }).length,
     0,
   );
 });
@@ -123,7 +124,7 @@ test('a conflict goes to a child before new work', () => {
     'start_child',
   );
   assert.deepEqual(
-    out.map((a) => [a.kind, a.tasks[0]]),
+    out.map((a) => { return [a.kind, a.tasks[0]] }),
     [
       ['conflict', 'task_c'],
       ['implement', 'task_new'],
@@ -152,8 +153,8 @@ test('a high bug goes before a conflict', () => {
 
 test('closed without integrating retracts and waits on a person', () => {
   const out = plan({ now, params, tasks: [task({ change: change({ closed: true }) })] });
-  assert.equal(out.filter((a) => a.act === 'retract_reference').length, 1);
-  assert.equal(out.filter((a) => a.act === 'wait_on_person').length, 1);
+  assert.equal(out.filter((a) => { return a.act === 'retract_reference' }).length, 1);
+  assert.equal(out.filter((a) => { return a.act === 'wait_on_person' }).length, 1);
 });
 
 test('integrated: the body decides what is left', () => {
@@ -176,7 +177,7 @@ test('integrated: the body decides what is left', () => {
 test('a draft is skipped', () => {
   const out = plan({ now, params, tasks: [task({ change: change({ draft: true }) })] });
   assert.deepEqual(
-    out.map((a) => a.act),
+    out.map((a) => { return a.act }),
     ['report'],
   );
 });
@@ -206,7 +207,7 @@ test('a stale unreadable child closes failed; a fresh one stays', () => {
     'close_run',
   );
   assert.deepEqual(
-    out.map((a) => [a.run, a.status]),
+    out.map((a) => { return [a.run, a.status] }),
     [['arun_old', 'failed']],
   );
 });
@@ -235,18 +236,18 @@ test('closing a child frees its slot', () => {
     ],
     tasks: [task({ id: 'task_new', status: 'active', candidate: true })],
   });
-  assert.equal(out.filter((a) => a.act === 'start_child').length, 1);
+  assert.equal(out.filter((a) => { return a.act === 'start_child' }).length, 1);
 });
 
 test("another person's children take no slot", () => {
-  const others = [1, 2].map((n) => ({
+  const others = [1, 2].map((n) => { return {
     run: `arun_${n}`,
     tasks: [],
     startedAt: '2026-10-30T11:00:00Z',
     byMe: false,
     runtime: 'working',
     handoff: false,
-  }));
+  } });
   assert.equal(
     acts({ children: others, tasks: [task({ status: 'active', candidate: true })] }, 'start_child')
       .length,
@@ -263,8 +264,8 @@ test('an unjudged brief takes a slot as a judge act; a short one waits on its au
       task({ id: 'task_s', status: 'active', candidate: true, brief: 'short', rank: 0 }),
     ],
   });
-  assert.equal(out.find((a) => a.act === 'judge').task, 'task_u');
-  assert.equal(out.find((a) => a.act === 'wait_on_person').task, 'task_s');
+  assert.equal(out.find((a) => { return a.act === 'judge' }).task, 'task_u');
+  assert.equal(out.find((a) => { return a.act === 'wait_on_person' }).task, 'task_s');
 });
 
 test('a task held by a person is skipped with its reason', () => {
