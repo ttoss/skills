@@ -76,9 +76,9 @@ The planner never returns an act the standing decision does not delegate; the li
 
 ### Migration
 
-1. Build the planner and its fixtures; the prose `flow/SKILL.md` stays the tick.
-2. Add a `--plan-only` mode to the tick: it reads the snapshot, runs the planner, and appends the plan to its run's report without acting. Two weeks of ticks then show, per tick, where the planner and the prose tick disagree.
-3. When they agree, the tick executes the plan and `flow/SKILL.md` shrinks to the reads, the acts and the judgments.
+1. Build the planner and its fixtures (ttoss/skills#105).
+2. The tick executes the plan at once, except the two acts the next tick cannot undo, `integrate` and closing a task: for those, the prose section 3 decides too, and the tick acts only when both agree, naming every disagreement in its report line. Decided by Pedro on 2026-10-30 over a plan-only period: the tests prove the decisions on a correct snapshot, and only the irreversible acts need protecting from a snapshot read wrong.
+3. When the report lines show no disagreement on the guarded acts over enough ticks, the guard goes and `flow/SKILL.md` shrinks to the reads, the acts and the judgments.
 
 ## Open
 
