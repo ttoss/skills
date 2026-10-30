@@ -28,3 +28,15 @@ jobs:
           print('\n'.join(bad) or 'every front matter parses')
           sys.exit(1 if bad else 0)
           PY
+
+  flow-planner:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      # The planner decides the tick's transitions; each row of the process's
+      # transition table has a fixture here.
+      - name: Planner tests
+        run: node --test "skills/flow/scripts/*.test.mjs"
