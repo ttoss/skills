@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, symlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import { plan } from './plan.mjs';
 
@@ -296,4 +301,15 @@ test('a task a person holds starts no check, round or review child', () => {
   const out = plan({ now, params, tasks: held });
   assert.equal(out.filter((a) => { return a.act === 'start_child' }).length, 0);
   assert.deepEqual(out.at(-1).skipped.map((s) => { return s.task }).sort(), ['task_check', 'task_round']);
+});
+
+test('the planner prints its acts when run through a symlinked skill directory', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'plan-'));
+  const link = join(dir, 'flow');
+  symlinkSync(resolve(dirname(fileURLToPath(import.meta.url)), '..'), link);
+  const out = execFileSync(process.execPath, [join(link, 'scripts', 'plan.mjs')], {
+    input: JSON.stringify({ now, params, tasks: [] }),
+  }).toString();
+  const acts = JSON.parse(out);
+  assert.equal(acts.at(-1).act, 'report');
 });

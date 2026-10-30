@@ -1,3 +1,6 @@
+import { realpathSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
 // The tick's planner (docs/proposals/tick-in-code.md): a pure function from
 // what the tick read to the acts it should take, in order. It calls nothing;
 // the model reads the snapshot, runs this, executes the acts and answers the
@@ -333,7 +336,10 @@ export const plan = ({ now, params, children = [], tasks = [] }) => {
   return [...acted, report];
 };
 
-const isMain = process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href;
+// Resolved on both sides: a skill installed through a symlink (`.claude/skills`
+// pointing at `.agents/skills`) is run by its link path, while Node reports
+// the module at its real path.
+const isMain = process.argv[1] && realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1]);
 if (isMain) {
   let input = '';
   process.stdin.setEncoding('utf8');
