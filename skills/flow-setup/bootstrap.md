@@ -11,6 +11,7 @@ The Flow part of [`flow-setup`](SKILL.md) step 7. It creates what the agents nee
    - **Acts:** every act that process gives the tick, its children and its routines under those answers: take, move and close tasks; start and end child runs; integrate what the `Merge rule` lets the agents integrate; ask for the reviews `Review` gives it; run the steps the `Release procedure` gives it; run the checks of the `Closing evidence`; write what it notices as the `Intake` says.
    - **Closing evidence:** the `Closing evidence` answer.
    - **Choices:** which ready task to start next, in `get-next` order, and the choices that pass the `Decisions` test.
+   - **Noticed work:** what the `Intake` lets the agents write as a task (GTF-C1), in the status it names and with no priority; the rest is a capture. Never an `incubated` task: that is a person's.
    - **Tidying:** end finished child runs; retract the `implements` reference of a change closed without integrating; close the tasks an integrated change says it settles, citing it; re-point the `blocks` edges the `Release procedure` moves.
    - **Reserved to a person:** the classes `Decisions` reserves, any change to the files above or to the project's agent instructions, and every act the process does not give the agents.
    ```
