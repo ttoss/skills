@@ -69,6 +69,18 @@ Make the reads that do not wait on another's answer in one turn (step 1, the `wa
 2. The slices the tick acts on (GTF-U2), `limit` 20, without the focus filter: `waiting` and `blocked` always, since they hold the changes, release steps and children in flight; `date_came` and `hold_cleared` when their counts are not 0. `review`, `active_held` and `waiting_on_me` are for the person's runs.
 3. When the `Release procedure` tracks work in flight in a task, find it with `list-tasks`.
 
+## 1b. Plan
+
+Sections 2 to 4 are decided by the planner, `scripts/plan.mjs` in this skill's directory, a pure function from what the tick read to the acts it takes (ttoss/skills `docs/proposals/tick-in-code.md`):
+
+1. **Snapshot.** Write one JSON file in the schema at the top of `plan.mjs`, from section 1's reads, section 2's `list-agent-runs` calls, what the runtime reports for each child, and, for each open task with an `implements` change, the change as the code host reports it. A field you could not read is `null`, never guessed.
+2. **Run** `node <this skill's directory>/scripts/plan.mjs < snapshot.json`.
+3. **Execute** the acts in the order returned, each as the section it belongs to describes. A `judge` act is yours: answer it by the section that owns it, put the answer in the snapshot, and run the planner again.
+4. **Two acts are guarded**, since they cannot be undone by the next tick: before an `integrate` or a `move_task` to `completed`, apply section 3 as written and act only when it agrees. When it does not, do what section 3 says and name the disagreement in the report line (`planner disagreed: <act> <task url>: <why>`).
+5. `node` missing, or the planner throws → run sections 2 to 4 as written, and say so in the report line.
+
+Sections 2 to 4 remain the specification the planner implements.
+
 ## 2. Reconcile children
 
 Rebuild the child map from Flow every tick (GTF-S4): `list-agent-runs` with `project`, `status: [running]` and `agent: flow child`; `lingering=true` adds the runs still open after every task they worked on closed. A child the runtime cannot read stays open, whatever its parent tick or its task says, until it is stale ([child runs](#child-runs)): then the tick closes it `failed`, which ends its hold, so a task it left `active` is ready again; it reads nothing more, since a stale child left nothing beyond what Flow and its change already show. For each child the runtime can read:
