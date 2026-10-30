@@ -275,6 +275,21 @@ const delegate = ({ items, free }) => {
   return { acts, skipped, free: left };
 };
 
+// `plan: <n> acts (<kind> <count>, …) · runs <n>/<cap> by me (<free> free: <why>)`
+const planLine = ({ acts, runsByMe, cap, free, freeReason }) => {
+  const counts = {};
+  for (const a of acts) {
+    counts[a.act] = (counts[a.act] ?? 0) + 1;
+  }
+  const kinds = Object.entries(counts)
+    .map(([kind, n]) => {
+      return `${kind} ${n}`;
+    })
+    .join(', ');
+  const slots = free > 0 ? ` (${free} free: ${freeReason})` : '';
+  return `plan: ${acts.length} acts${kinds ? ` (${kinds})` : ''} · runs ${runsByMe}/${cap} by me${slots}`;
+};
+
 export const plan = ({ now, params, children = [], tasks = [] }) => {
   const reconciled = reconcileChildren({ children, params, now });
   const work = tasks.map((task) => {
@@ -293,23 +308,24 @@ export const plan = ({ now, params, children = [], tasks = [] }) => {
   const anyNew = items.some((i) => {
     return i.stage === 'new' && i.task.inFocus !== false;
   });
+  const acted = [...reconciled.acts, ...work.flatMap((w) => {
+    return w.acts;
+  }), ...delegated.acts];
+  const freeReason =
+    delegated.free > 0 ? (anyNew ? 'every candidate left was skipped' : 'no candidate left in the focus') : null;
   const report = {
     act: 'report',
     started,
     runsByMe: running + started,
     cap: params.maxRuns,
     freeSlots: delegated.free,
-    freeReason: delegated.free > 0 ? (anyNew ? 'every candidate left was skipped' : 'no candidate left in the focus') : null,
+    freeReason,
     skipped: delegated.skipped,
+    // The tick's report line opens with this, quoted exactly, so a tick that
+    // never ran the planner is visible in its own report.
+    line: planLine({ acts: acted, runsByMe: running + started, cap: params.maxRuns, free: delegated.free, freeReason }),
   };
-  return [
-    ...reconciled.acts,
-    ...work.flatMap((w) => {
-      return w.acts;
-    }),
-    ...delegated.acts,
-    report,
-  ];
+  return [...acted, report];
 };
 
 const isMain = process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href;

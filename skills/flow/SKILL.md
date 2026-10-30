@@ -71,13 +71,14 @@ Make the reads that do not wait on another's answer in one turn (step 1, the `wa
 
 ## 1b. Plan
 
-Sections 2 to 4 are decided by the planner, `scripts/plan.mjs` in this skill's directory, a pure function from what the tick read to the acts it takes (ttoss/skills `docs/proposals/tick-in-code.md`):
+Sections 2 to 4 are decided by the planner, and this section is not optional: section 2 starts only once the planner has run or its fallback is named. The planner is `scripts/plan.mjs` in this skill's directory: a pure function from what the tick read to the acts it takes (ttoss/skills `docs/proposals/tick-in-code.md`):
 
 1. **Snapshot.** Write one JSON file in the schema at the top of `plan.mjs`, from section 1's reads, section 2's `list-agent-runs` calls, what the runtime reports for each child, and, for each open task with an `implements` change, the change as the code host reports it. A field you could not read is `null`, never guessed.
 2. **Run** `node <this skill's directory>/scripts/plan.mjs < snapshot.json`.
 3. **Execute** the acts in the order returned, each as the section it belongs to describes. A `judge` act is yours: answer it by the section that owns it, put the answer in the snapshot, and run the planner again.
 4. **Two acts are guarded**, since they cannot be undone by the next tick: before an `integrate` or a `move_task` to `completed`, apply section 3 as written and act only when it agrees. When it does not, do what section 3 says and name the disagreement in the report line (`planner disagreed: <act> <task url>: <why>`).
-5. `node` missing, or the planner throws → run sections 2 to 4 as written, and say so in the report line.
+5. `node` missing, or the planner throws → run sections 2 to 4 as written, and open the report line with `fallback: <why>`.
+6. **The report line opens with the planner's `line`** (the `report` act's last field), quoted exactly, or with `fallback:`. A line with neither is a tick that skipped this section, and the Chase counts it.
 
 Sections 2 to 4 remain the specification the planner implements.
 
@@ -121,7 +122,7 @@ A skipped task passes its slot to the next candidate, and every skip has a reaso
 
 ## 5. End
 
-Close the tick's run with its `status` and, when the runtime reports it, its `usage` (GTF-S7). Whatever needs a person is already a wait on them in the graph (GTF-U3), so the tick ends in one line: what moved, by task `url`, what failed, anything Flow reported (GTF-F2), the runs against the cap, named as by me since the count is this person's alone, with each free slot left unused and its reason, the stale runs it closed, by `url`, and the ready `total`, such as `flow tick: merged task_…, started task_… · runs 1/2 by me (1 free: no candidate in the focus) · 6 ready`. With nothing to do: `flow tick: no change (runs N/cap by me, M ready)`. Do not schedule anything yourself: the `Routines` fire the next tick.
+Close the tick's run with its `status` and, when the runtime reports it, its `usage` (GTF-S7). Whatever needs a person is already a wait on them in the graph (GTF-U3), so the tick ends in one line: what moved, by task `url`, what failed, anything Flow reported (GTF-F2), the runs against the cap, named as by me since the count is this person's alone, with each free slot left unused and its reason, the stale runs it closed, by `url`, and the ready `total`, opening with section 1b's `plan:` or `fallback:`, such as `flow tick: plan: 2 acts (integrate 1, start_child 1) · runs 1/2 by me (1 free: no candidate in the focus) · merged task_…, started task_… · 6 ready`. With nothing to do: `flow tick: plan: 0 acts · runs N/cap by me (… free: …) · no change · M ready`. Do not schedule anything yourself: the `Routines` fire the next tick.
 
 ## Prerequisites outside the repo
 
