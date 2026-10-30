@@ -282,3 +282,8 @@ test('an empty graph reports free slots with a reason', () => {
   const report = plan({ now, params }).at(-1);
   assert.equal(report.freeReason, 'no candidate left in the focus');
 });
+
+test('the report carries the line a tick opens its report with', () => {
+  const report = plan({ now, params, tasks: [task({ change: change() })] }).at(-1);
+  assert.equal(report.line, 'plan: 1 acts (integrate 1) · runs 0/2 by me (2 free: no candidate left in the focus)');
+});
