@@ -221,13 +221,18 @@ const byPriority = (a, b) => {
   );
 };
 
-// A new candidate that takes no slot: out of focus, held, or short of the brief.
-const newCandidateSkip = (task) => {
-  if (task.inFocus === false) {
-    return { reason: null };
-  }
+// A task a person holds takes no slot at any stage (section 4, step 1); a new
+// candidate also takes none out of focus or short of the brief.
+const itemSkip = (item) => {
+  const { task } = item;
   if (task.heldByPerson) {
     return { reason: 'held by a person' };
+  }
+  if (item.stage !== 'new') {
+    return null;
+  }
+  if (task.inFocus === false) {
+    return { reason: null };
   }
   if (task.brief === 'short') {
     return {
@@ -256,7 +261,7 @@ const delegate = ({ items, free }) => {
   const skipped = [];
   let left = free;
   for (const item of [...items].sort(byPriority)) {
-    const skip = item.stage === 'new' ? newCandidateSkip(item.task) : null;
+    const skip = itemSkip(item);
     if (skip) {
       if (skip.act) {
         acts.push(skip.act);
