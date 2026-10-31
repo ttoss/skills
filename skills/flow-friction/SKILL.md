@@ -12,7 +12,7 @@ The Agentic Workflow is built on [Get Things Flowing](https://flow.ttoss.dev/doc
 | --- | --- |
 | A skill rule that is ambiguous, contradicts another rule or the Flow protocol, or misses a case you met | A bug in the project's own code → written down as the `Intake` says (by default an `incubated` task), or a blocking task when your task needs it (GTF-C1, GTF-T4) |
 | A GTF rule an agent cannot follow as written | A choice only the user can make → a wait on the user, on the task it holds (GTF-N6) |
-| A Flow MCP tool that errors, refuses a move the method requires, answers differently from its description, or is missing — also `report-error` to Flow (GTF-F3) | A permission refusal or missing credential in this environment → report it to the user |
+| A Flow MCP tool that errors, refuses a move the method requires, answers differently from its description, or is missing — also `report-error` to Flow | A permission refusal or missing credential in this environment → report it to the user |
 | A project rule that contradicts a skill outside a parameter — propose the parameter the skill lacks ([precedence](../flow-setup/SKILL.md#precedence)) | A project rule that only restates GTF or a skill → remove it with `/flow-setup audit` |
 | A workaround you had to invent to keep going | A one-off network blip that passed on retry |
 
