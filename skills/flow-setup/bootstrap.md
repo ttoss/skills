@@ -17,7 +17,7 @@ The Flow part of [`flow-setup`](SKILL.md) step 7. It creates what the agents nee
    ```
 
 3. **Release procedure tasks.** When the procedure tracks work in flight in a task, propose that task, `active`.
-4. **Write the parameters**, with the standing decision's id, to the parameters file: `.agents/flow.md`, or `.claude/flow.md` where the repo keeps its agent files under `.claude/`. An older `flow-manager.md` moves there, in the PR of step 9.
+4. **Write the parameters**, with the standing decision's id, to the parameters file: `.agents/flow.md`, or `.claude/flow.md` where the repo keeps its agent files under `.claude/`.
 
 ## The parameters file
 
