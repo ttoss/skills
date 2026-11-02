@@ -59,6 +59,8 @@ The focus narrows only what **starts a child**; integrating, ending finished run
 
 ## 1. Read the graph
 
+**With `FLOW_API_KEY` in the environment, the Flow side of this section is a script.** `node <this skill's directory>/scripts/check.mjs --project <id>` first (`ok: false` → read by hand, and the report line names the failing check). Then `node <this skill's directory>/scripts/snapshot.mjs --project <id> --extra <file>`, where the file holds what Flow cannot know: `params` from the parameters (`maxRuns`, `staleAfterHours`, `autoRounds`, `reviewByAgent`, `agentsMayIntegrate`, `focus`), each child's `runtime` by run id, `defaults` (item 5), and per task its `brief`, `leaves`, `rounds`, `repairs` and `change`. Its answer is section 2's snapshot: read on the code host each change it lists under `needs.changes`, add it to the file as that task's `change`, and run it again until `needs.changes` is empty; a task under `needs.unread` is one Flow could not answer, and stays out of this tick. Never print, echo or log the key. The items below are what the script reads, and what a tick without a key reads by hand.
+
 Make the reads that do not wait on another's answer in one turn, since each model call re-reads the whole context; only `date_came` and `hold_cleared` wait on step 1's `counts`.
 
 1. `get-next` with `project: [<id>]`, `limit` 10 and the focus filter when there is one: the ranked candidates, `total` and the `counts`. With a task focus, the next wave of `get-order` `upstream_of` is the candidate list instead.

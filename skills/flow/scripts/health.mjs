@@ -1,6 +1,8 @@
 import { readFileSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
+import { createClient, DEFAULT_BASE } from './flow-api.mjs';
+
 // The flow's health lines the Chase and the Audit report: a pure function from
 // Flow's answers, verbatim, to the lines. It calls nothing; the model makes the
 // reads, saves each answer to a file and runs this, so every window, label,
@@ -260,12 +262,13 @@ const priced = (totals) => {
 };
 
 /**
- * One spend group, both weeks, in one unit: cost when both weeks have priced
- * runs, else tokens for both, so a reader never sets dollars beside tokens.
+ * One spend group, both weeks, in one unit: cost when every week that has the
+ * group has priced runs, else tokens for both, so a reader never sets dollars beside tokens.
  * A token count a week did not report is said, never taken as 0.
  */
 export const spendPair = ({ now, before }) => {
-  if (priced(now) && priced(before)) {
+  // A group missing in one week takes the other week's unit.
+  if ((priced(now) || !now) && (priced(before) || !before) && (now || before)) {
     return `${spendOf(now)} (${spendOf(before)} the week before)`;
   }
   const fields = TOKENS.filter(([field]) => {
@@ -344,27 +347,14 @@ export const audit = ({ thisWeek, weekBefore, runsThisWeek, runsWeekBefore, inbo
 };
 
 /**
- * Flow's answers for one routine, read with an API key. `fetchImpl` is the
- * global fetch unless a test passes another. Every read is a GET: the script
- * never writes, whatever the key may do.
+ * Flow's answers for one routine, read with an API key through `client`
+ * (flow-api.mjs), or a client built from `key`, `base` and `fetchImpl`.
  */
-export const readFlow = async ({ routine, project, now, key, base = 'https://flow.ttoss.dev', fetchImpl = fetch }) => {
+export const readFlow = async ({ routine, project, now, client, key, base = DEFAULT_BASE, fetchImpl = fetch }) => {
   const w = windows(now);
-  const get = async (path, query) => {
-    const url = new URL(`/api/v1${path}`, base);
-    for (const [name, value] of Object.entries(query)) {
-      url.searchParams.append(name, String(value));
-    }
-    const res = await fetchImpl(url, { headers: { authorization: `Bearer ${key}`, accept: 'application/json' } });
-    if (!res.ok) {
-      const error = new Error(`GET ${url.pathname} answered ${res.status}${res.status === 404 ? ': the key cannot reach it' : ''}`);
-      error.status = res.status;
-      throw error;
-    }
-    return res.json();
-  };
+  const { get } = client || createClient({ key, base, fetchImpl });
   const metrics = (win, tag) => {
-    return get(`/projects/${project}/metrics`, { since: win.since, until: win.until, ...(tag ? { tag } : {}) });
+    return get(`/projects/${project}/metrics`, { since: win.since, until: win.until, tag });
   };
   if (routine === 'chase') {
     const [thisWeek, weekBefore, bugThisWeek, bugWeekBefore] = await Promise.all([
