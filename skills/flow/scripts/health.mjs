@@ -10,13 +10,17 @@ import { fileURLToPath } from 'node:url';
 // packages/app/src/lib/flowStages.ts): a stage is a word beside Flow's own row,
 // never a value of Flow's vocabulary, and no two rows are ever added together.
 //
-// Usage:
-//   node health.mjs windows <now>
+// Usage, reading Flow itself with the API key in FLOW_API_KEY (and FLOW_URL,
+// default https://flow.ttoss.dev), so no answer passes through the model:
+//   node health.mjs chase --project <proj_…> [--now <ISO 8601>]
+//   node health.mjs audit --project <proj_…> [--now <ISO 8601>]
+// or, with no key, from answers the model saved verbatim, one file each:
+//   node health.mjs windows <ISO 8601>
 //   node health.mjs chase --this <metrics> --before <metrics> --bug-this <metrics> --bug-before <metrics>
 //   node health.mjs audit --this <metrics> --before <metrics> --runs-this <runs> --runs-before <runs> --inbox <captures>
-// where each file is one tool answer as Flow returned it: `get-project-metrics`,
-// `list-agent-runs` with `group_by: outcome` and `limit: 0`, `list-captures`
-// with `triaged: false` and `limit: 1`. Output: JSON `{ alert, lines, mismatches }`.
+// where each file is one tool answer: `get-project-metrics`, `list-agent-runs`
+// with `group_by: outcome` and `limit: 0`, `list-captures` with `triaged: false`
+// and `limit: 1`. Output: JSON `{ alert, lines, mismatches }`.
 
 const DAY = 86_400_000;
 
@@ -251,6 +255,37 @@ const TOKENS = [
   ['cache_write_tokens', 'cache writes'],
 ];
 
+const priced = (totals) => {
+  return Boolean(totals) && totals.unpriced < totals.runs && totals.cost_usd !== undefined;
+};
+
+/**
+ * One spend group, both weeks, in one unit: cost when both weeks have priced
+ * runs, else tokens for both, so a reader never sets dollars beside tokens.
+ * A token count a week did not report is said, never taken as 0.
+ */
+export const spendPair = ({ now, before }) => {
+  if (priced(now) && priced(before)) {
+    return `${spendOf(now)} (${spendOf(before)} the week before)`;
+  }
+  const fields = TOKENS.filter(([field]) => {
+    return (now && now[field] !== undefined) || (before && before[field] !== undefined);
+  });
+  const tokens = (totals) => {
+    if (!totals) {
+      return 'no group';
+    }
+    const runs = `${totals.runs} ${totals.runs === 1 ? 'run' : 'runs'}`;
+    if (!fields.length) {
+      return `${runs}, no tokens reported`;
+    }
+    return `${runs} · ${fields.map(([field, label]) => {
+      return totals[field] === undefined ? `${label} not reported` : `${totals[field].toLocaleString('en-US')} ${label}`;
+    }).join(', ')}`;
+  };
+  return `${tokens(now)} (${tokens(before)} the week before), in tokens because a week has no cost reported`;
+};
+
 /** One week of one spend group, as the answer gives it. */
 export const spendOf = (totals) => {
   if (!totals) {
@@ -274,9 +309,9 @@ export const audit = ({ thisWeek, weekBefore, runsThisWeek, runsWeekBefore, inbo
     return (answer.groups || []).find((g) => { return g.key === key; })?.totals;
   };
   for (const [key, label] of OUTCOMES) {
-    lines.push(`Spend, ${label}: ${spendOf(groupOf(runsThisWeek, key))} (${spendOf(groupOf(runsWeekBefore, key))} the week before)`);
+    lines.push(`Spend, ${label}: ${spendPair({ now: groupOf(runsThisWeek, key), before: groupOf(runsWeekBefore, key) })}`);
   }
-  lines.push(`Spend, every run: ${spendOf(runsThisWeek.totals)} (${spendOf(runsWeekBefore.totals)} the week before); a run on tasks with different outcomes counts in each group, so the groups do not add up to it`);
+  lines.push(`Spend, every run: ${spendPair({ now: runsThisWeek.totals, before: runsWeekBefore.totals })}; a run on tasks with different outcomes counts in each group, so the groups do not add up to it`);
 
   const incubated = pair({ now: thisWeek, before: weekBefore }).filter((r) => {
     return r.key.status === 'incubated' && (active(r.now) || active(r.before));
@@ -299,11 +334,59 @@ export const audit = ({ thisWeek, weekBefore, runsThisWeek, runsWeekBefore, inbo
 
   const oldest = (inbox.captures || [])[0];
   lines.push(
-    inbox.total
+    inbox.unreadable
+      ? `Untriaged inbox: not readable with this credential (${inbox.unreadable})`
+      : inbox.total
       ? `Untriaged inbox, now (the account's, across every project): ${inbox.total} captures, the oldest ${(oldest.inbox_age_ms / DAY).toFixed(1)}d old`
       : 'Untriaged inbox, now (the account\'s, across every project): empty',
   );
   return { alert: null, lines, mismatches: mismatches({ now: thisWeek, before: weekBefore }) };
+};
+
+/**
+ * Flow's answers for one routine, read with an API key. `fetchImpl` is the
+ * global fetch unless a test passes another. Every read is a GET: the script
+ * never writes, whatever the key may do.
+ */
+export const readFlow = async ({ routine, project, now, key, base = 'https://flow.ttoss.dev', fetchImpl = fetch }) => {
+  const w = windows(now);
+  const get = async (path, query) => {
+    const url = new URL(`/api/v1${path}`, base);
+    for (const [name, value] of Object.entries(query)) {
+      url.searchParams.append(name, String(value));
+    }
+    const res = await fetchImpl(url, { headers: { authorization: `Bearer ${key}`, accept: 'application/json' } });
+    if (!res.ok) {
+      const error = new Error(`GET ${url.pathname} answered ${res.status}${res.status === 404 ? ': the key cannot reach it' : ''}`);
+      error.status = res.status;
+      throw error;
+    }
+    return res.json();
+  };
+  const metrics = (win, tag) => {
+    return get(`/projects/${project}/metrics`, { since: win.since, until: win.until, ...(tag ? { tag } : {}) });
+  };
+  if (routine === 'chase') {
+    const [thisWeek, weekBefore, bugThisWeek, bugWeekBefore] = await Promise.all([
+      metrics(w.thisWeek), metrics(w.weekBefore), metrics(w.thisWeek, 'bug'), metrics(w.weekBefore, 'bug'),
+    ]);
+    return { thisWeek, weekBefore, bugThisWeek, bugWeekBefore };
+  }
+  const runs = (win) => {
+    return get('/agent-runs', { project, since: win.since, until: win.until, group_by: 'outcome', limit: 0 });
+  };
+  const [thisWeek, weekBefore, runsThisWeek, runsWeekBefore] = await Promise.all([
+    metrics(w.thisWeek), metrics(w.weekBefore), runs(w.thisWeek), runs(w.weekBefore),
+  ]);
+  // A key restricted to projects is never given the inbox, which is in no
+  // project: Flow answers 404, and the line says so instead of failing.
+  const inbox = await get('/captures', { triaged: false, limit: 1 }).catch((error) => {
+    if (error.status === 404 || error.status === 403) {
+      return { unreadable: 'a key restricted to projects is not given the inbox' };
+    }
+    throw error;
+  });
+  return { thisWeek, weekBefore, runsThisWeek, runsWeekBefore, inbox };
 };
 
 const flags = (args) => {
@@ -324,23 +407,48 @@ const need = (got, names) => {
   }
 };
 
+const run = async (argv, env) => {
+  const [mode, ...rest] = argv;
+  if (mode === 'windows') {
+    return windows(rest[0]);
+  }
+  if (mode !== 'chase' && mode !== 'audit') {
+    throw new Error('usage: health.mjs windows <now> | chase … | audit …');
+  }
+  const opts = {};
+  for (let i = 0; i < rest.length; i += 2) {
+    if (!rest[i].startsWith('--') || rest[i + 1] === undefined) {
+      throw new Error(`expected --name <value>, got ${rest[i]}`);
+    }
+    opts[rest[i].slice(2)] = rest[i + 1];
+  }
+  if (opts.project) {
+    if (!env.FLOW_API_KEY) {
+      throw new Error('--project reads Flow itself and needs FLOW_API_KEY');
+    }
+    const answers = await readFlow({
+      routine: mode,
+      project: opts.project,
+      now: opts.now || new Date().toISOString(),
+      key: env.FLOW_API_KEY,
+      base: env.FLOW_URL || 'https://flow.ttoss.dev',
+    });
+    return mode === 'chase' ? chase(answers) : audit(answers);
+  }
+  const f = flags(rest);
+  if (mode === 'chase') {
+    need(f, ['this', 'before', 'bug-this', 'bug-before']);
+    return chase({ thisWeek: f.this, weekBefore: f.before, bugThisWeek: f['bug-this'], bugWeekBefore: f['bug-before'] });
+  }
+  need(f, ['this', 'before', 'runs-this', 'runs-before', 'inbox']);
+  return audit({ thisWeek: f.this, weekBefore: f.before, runsThisWeek: f['runs-this'], runsWeekBefore: f['runs-before'], inbox: f.inbox });
+};
+
 // Resolved on both sides, as plan.mjs does, for a skill installed through a symlink.
 const isMain = process.argv[1] && realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1]);
 if (isMain) {
-  const [mode, ...rest] = process.argv.slice(2);
-  let result;
-  if (mode === 'windows') {
-    result = windows(rest[0]);
-  } else if (mode === 'chase') {
-    const f = flags(rest);
-    need(f, ['this', 'before', 'bug-this', 'bug-before']);
-    result = chase({ thisWeek: f.this, weekBefore: f.before, bugThisWeek: f['bug-this'], bugWeekBefore: f['bug-before'] });
-  } else if (mode === 'audit') {
-    const f = flags(rest);
-    need(f, ['this', 'before', 'runs-this', 'runs-before', 'inbox']);
-    result = audit({ thisWeek: f.this, weekBefore: f.before, runsThisWeek: f['runs-this'], runsWeekBefore: f['runs-before'], inbox: f.inbox });
-  } else {
-    throw new Error('usage: health.mjs windows <now> | chase … | audit …');
-  }
-  process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+  run(process.argv.slice(2), process.env).then(
+    (result) => { process.stdout.write(`${JSON.stringify(result, null, 2)}\n`); },
+    (error) => { process.stderr.write(`${error.message}\n`); process.exit(1); },
+  );
 }

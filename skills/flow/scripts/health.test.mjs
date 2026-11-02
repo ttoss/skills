@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { audit, chase, mismatches, nameOf, spendOf, windows } from './health.mjs';
+import { audit, chase, mismatches, nameOf, readFlow, spendOf, spendPair, windows } from './health.mjs';
 
 // Shapes and edge cases taken from OneClick Ads' answers in November 2026.
 const row = (status, state, on, open, entered, left, p90 = 1, p50 = 0) => {
@@ -149,10 +149,12 @@ test('audit: groups in order, incubated rows and exits named with `on`, passes i
     runsWeekBefore: { totals: { runs: 342, unpriced: 319, cost_usd: 159.869 }, groups: [{ key: 'dropped', totals: { runs: 12, unpriced: 10, cost_usd: 19.9987 } }] },
     inbox: { captures: [{ inbox_age_ms: 3947732332 }], total: 60 },
   });
-  assert.equal(lines[0], 'Spend, dropped (tasks closed without completing): 2 runs, all unpriced · no tokens reported (12 runs · at least $20.00 (10 unpriced) the week before)');
-  assert.equal(lines[1], 'Spend, open (tasks still open): no group (no group the week before)');
-  assert.match(lines[3], /^Spend, no task: 232 runs, all unpriced · 8,490,000 input, 550,000 output \(no group the week before\)$/);
-  assert.match(lines[4], /^Spend, every run: 783 runs, all unpriced/);
+  // One unit for both weeks: this week has no cost, so both are in tokens, never dollars beside tokens.
+  assert.equal(lines[0], 'Spend, dropped (tasks closed without completing): 2 runs, no tokens reported (12 runs, no tokens reported the week before), in tokens because a week has no cost reported');
+  assert.equal(lines[1], 'Spend, open (tasks still open): no group (no group the week before), in tokens because a week has no cost reported');
+  assert.match(lines[3], /^Spend, no task: 232 runs · 8,490,000 input, 550,000 output \(no group the week before\)/);
+  assert.match(lines[4], /^Spend, every run: 783 runs · 22,112,377 input, 1,388,000 output \(342 runs · input not reported, output not reported the week before\)/);
+  assert.doesNotMatch(lines.slice(0, 5).join('\n'), /\$/);
   assert.ok(lines.includes('Out of incubated (incubated · ready) → a person (waiting · blocked:external · on): 23 (0 the week before)'));
   assert.ok(lines.includes('Out of incubated (incubated · ready) → the gates (waiting · blocked:external): 4 (0 the week before)'));
   assert.ok(lines.includes('Out of incubated (incubated · ready) → discarded: 42 (9 the week before)'));
@@ -173,4 +175,70 @@ test('the command line reads one file per answer and writes JSON', () => {
   assert.deepEqual(out, digest);
   assert.deepEqual(JSON.parse(execFileSync('node', [script, 'windows', '2026-11-02T17:00:00Z'], { encoding: 'utf8' })), windows('2026-11-02T17:00:00Z'));
   assert.throws(() => { return execFileSync('node', [script, 'chase', '--this', file('t2', thisWeek)], { stdio: 'pipe' }); });
+});
+
+test('spend: cost for both weeks when both are priced, and a token a week did not report is said', () => {
+  assert.equal(
+    spendPair({ now: { runs: 3, unpriced: 1, cost_usd: 4 }, before: { runs: 2, unpriced: 0, cost_usd: 1 } }),
+    '3 runs · at least $4.00 (1 unpriced) (2 runs · $1.00 the week before)',
+  );
+  assert.equal(
+    spendPair({ now: { runs: 5, unpriced: 5, input_tokens: 90000 }, before: { runs: 4, unpriced: 2, cost_usd: 20, input_tokens: 10, cache_read_tokens: 99 } }),
+    '5 runs · 90,000 input, cache reads not reported (4 runs · 10 input, 99 cache reads the week before), in tokens because a week has no cost reported',
+  );
+});
+
+const fakeFlow = (answers) => {
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    calls.push({ url: String(url), auth: init.headers.authorization });
+    const u = new URL(url);
+    const body = answers(u);
+    return body === 404
+      ? { ok: false, status: 404, json: async () => { return {}; } }
+      : { ok: true, status: 200, json: async () => { return body; } };
+  };
+  return { calls, fetchImpl };
+};
+
+test('with a key, the chase reads the four windows itself, GET only, and gives the same lines as from files', async () => {
+  const { calls, fetchImpl } = fakeFlow((u) => {
+    const tag = u.searchParams.get('tag');
+    const recent = u.searchParams.get('until') === '2026-11-02T17:00:00.000Z';
+    return tag ? (recent ? bugThis : bugBefore) : recent ? thisWeek : before;
+  });
+  const answers = await readFlow({ routine: 'chase', project: 'proj_1m5wbbbf1x', now: '2026-11-02T17:00:00Z', key: 'flow_k', base: 'https://flow.example', fetchImpl });
+  assert.deepEqual(chase(answers), digest);
+  assert.equal(calls.length, 4);
+  assert.ok(calls.every((c) => { return c.auth === 'Bearer flow_k' && c.url.startsWith('https://flow.example/api/v1/projects/proj_1m5wbbbf1x/metrics?since='); }));
+});
+
+test('with a key restricted to projects, the inbox answers 404 and the audit says so instead of failing', async () => {
+  const runsAnswer = { totals: { runs: 1, unpriced: 0, cost_usd: 1 }, groups: [] };
+  const { calls, fetchImpl } = fakeFlow((u) => {
+    if (u.pathname === '/api/v1/captures') {
+      return 404;
+    }
+    if (u.pathname === '/api/v1/agent-runs') {
+      assert.equal(u.searchParams.get('group_by'), 'outcome');
+      assert.equal(u.searchParams.get('limit'), '0');
+      return runsAnswer;
+    }
+    return u.searchParams.get('until') === '2026-11-02T17:00:00.000Z' ? thisWeek : before;
+  });
+  const answers = await readFlow({ routine: 'audit', project: 'proj_1m5wbbbf1x', now: '2026-11-02T17:00:00Z', key: 'flow_k', fetchImpl });
+  assert.equal(calls.length, 5);
+  assert.equal(audit(answers).lines.at(-1), 'Untriaged inbox: not readable with this credential (a key restricted to projects is not given the inbox)');
+});
+
+test('a project the key cannot reach fails loudly, never as empty lines', async () => {
+  const { fetchImpl } = fakeFlow(() => { return 404; });
+  await assert.rejects(readFlow({ routine: 'chase', project: 'proj_xxxxxxxxxx', now: '2026-11-02T17:00:00Z', key: 'k', fetchImpl }), /answered 404: the key cannot reach it/);
+});
+
+test('--project without a key refuses rather than reading nothing', () => {
+  const script = join(dirname(fileURLToPath(import.meta.url)), 'health.mjs');
+  assert.throws(() => {
+    return execFileSync('node', [script, 'chase', '--project', 'proj_1m5wbbbf1x'], { stdio: 'pipe', env: { ...process.env, FLOW_API_KEY: '' } });
+  }, /needs FLOW_API_KEY/);
 });
