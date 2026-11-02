@@ -14,6 +14,9 @@ import { fileURLToPath } from 'node:url';
 //   now: ISO date,
 //   params: { maxRuns, staleAfterHours, autoRounds, reviewByAgent,
 //             agentsMayIntegrate, focus: null | { task } | { tag } },
+//   defaults: [{ repo, sha,                   // each repo's default branch head
+//                red: bool | null,            // its required checks or integration pipeline red there
+//                repairTask: id | null }],    // the open task tagged `repair` for that repo
 //   children: [{ run, tasks: [id], startedAt, byMe,
 //                runtime: 'working' | 'idle' | 'failed' | 'gone' | null,
 //                handoff: bool }],          // its task closed or waits on gates or a person
@@ -24,9 +27,11 @@ import { fileURLToPath } from 'node:url';
 //             brief: 'ready' | 'short' | 'split' | null,
 //             leaves: 'close' | 'release' | 'check' | null, // what the body says integrating leaves
 //             rounds: number,
-//             change: null | { url, draft, headSha,
+//             repairs: repo | null,           // the repo whose red default branch this task repairs
+//             change: null | { url, repo, draft, headSha,
 //                               checks: 'pending' | 'green' | 'red' | null,
 //                               redOnDefault, conflict, merged, closed,
+//                               checksBeforeRepair,   // its checks last ran before the repo's latest repair integrated
 //                               pipelineRedAfterMerge,
 //                               verdict: null | { sha, result: 'CLEAN' | 'FINDINGS' },
 //                               reviewRunActive, touchesOwnGates, reservedToPerson } }]
@@ -35,10 +40,13 @@ import { fileURLToPath } from 'node:url';
 
 const HOUR = 3600 * 1000;
 
-// Process rule 3: what ages fastest goes first. A bug at very_high, then high,
-// precedes every stage; the stage order holds below that. A release step is
-// its own task, delegated as new work once written.
-const STAGES = ['conflict', 'integratedCheck', 'round', 'review', 'otherCheck', 'new'];
+const NONE = { acts: [], item: null };
+
+// Process rule 3: what ages fastest goes first. A red default branch holds every
+// change in its repo, so its repair precedes all; then a bug at very_high, then
+// high, precedes every other stage; the stage order holds below that. A release
+// step is its own task, delegated as new work once written.
+const STAGES = ['repair', 'conflict', 'integratedCheck', 'round', 'review', 'otherCheck', 'new'];
 
 const bugTier = (task) => {
   if (!(task.tags || []).includes('bug')) {
@@ -116,7 +124,16 @@ const LEAVES = {
   },
 };
 
-const advanceMerged = ({ task, change }) => {
+// A red default branch: one repair task per repo, never a round on each change
+// that landed there, and nothing else integrates in that repo until it is green.
+const isHeldByRepair = ({ task, change, underRepair }) => {
+  return !task.repairs && underRepair.has(change.repo);
+};
+
+const advanceMerged = ({ task, change, underRepair }) => {
+  if (change.pipelineRedAfterMerge && isHeldByRepair({ task, change, underRepair })) {
+    return NONE;
+  }
   if (change.pipelineRedAfterMerge) {
     return {
       acts: [{ act: 'move_task', task: task.id, status: 'active', reason: 'the integration pipeline is red' }],
@@ -144,8 +161,6 @@ const gatesPassed = ({ task, change, params }) => {
   return { act: 'integrate', task: task.id, url: change.url, reason: 'gates passed' };
 };
 
-const NONE = { acts: [], item: null };
-
 const advanceGreen = ({ task, change, params }) => {
   const verdict = change.verdict && change.verdict.sha === change.headSha ? change.verdict.result : null;
   if (verdict === 'FINDINGS') {
@@ -157,22 +172,33 @@ const advanceGreen = ({ task, change, params }) => {
   return { acts: [gatesPassed({ task, change, params })], item: null };
 };
 
-const advanceOpen = ({ task, change, params }) => {
+const advanceOpen = ({ task, change, params, underRepair }) => {
   if (change.conflict) {
     return {
       acts: [{ act: 'move_task', task: task.id, status: 'active', reason: 'a conflict with the default branch' }],
       item: { stage: 'conflict', kind: 'conflict' },
     };
   }
+  if (isHeldByRepair({ task, change, underRepair })) {
+    return NONE;
+  }
+  if (change.checks === 'red' && change.checksBeforeRepair) {
+    // Red on a base the repair has since fixed says nothing about the change.
+    return {
+      acts: [{ act: 'move_task', task: task.id, status: 'active', reason: 'the default branch was repaired after its checks ran: update the branch onto it, no round counted' }],
+      item: { stage: 'round', kind: 'round' },
+    };
+  }
   if (change.checks === 'red') {
-    // Red on the default branch too is caused outside the change: no round counted.
-    return change.redOnDefault ? NONE : roundOrPerson({ task, params, why: 'checks red' });
+    // Red on the default branch too is caused outside the change: no round
+    // counted. A repair's own change is never that: it is the fix.
+    return change.redOnDefault && !task.repairs ? NONE : roundOrPerson({ task, params, why: 'checks red' });
   }
   return change.checks === 'green' ? advanceGreen({ task, change, params }) : NONE;
 };
 
 // Section 3: the transitions on one task's change, in the process's order.
-const advance = ({ task, params }) => {
+const advance = ({ task, params, underRepair }) => {
   const { change } = task;
   if (change.draft) {
     return NONE;
@@ -186,7 +212,9 @@ const advance = ({ task, params }) => {
       item: null,
     };
   }
-  return change.merged ? advanceMerged({ task, change }) : advanceOpen({ task, change, params });
+  return change.merged
+    ? advanceMerged({ task, change, underRepair })
+    : advanceOpen({ task, change, params, underRepair });
 };
 
 const isCheck = (task) => {
@@ -194,14 +222,18 @@ const isCheck = (task) => {
 };
 
 // One task's acts and the work items it adds for section 4.
-const taskWork = ({ task, params }) => {
+const taskWork = ({ task, params, underRepair }) => {
   if (task.change) {
-    const advanced = advance({ task, params });
-    const items = advanced.item ? [{ ...advanced.item, task }] : [];
+    const advanced = advance({ task, params, underRepair });
+    const stage = task.repairs ? { stage: 'repair' } : {};
+    const items = advanced.item ? [{ ...advanced.item, ...stage, task }] : [];
     if (task.change.merged && isCheck(task)) {
       items.push({ stage: 'integratedCheck', kind: 'check', task });
     }
     return { acts: advanced.acts, items };
+  }
+  if (task.repairs && underRepair.has(task.repairs)) {
+    return { acts: [], items: [{ stage: 'repair', kind: 'repair', task }] };
   }
   if (isCheck(task)) {
     return { acts: [], items: [{ stage: 'otherCheck', kind: 'check', task }] };
@@ -217,6 +249,7 @@ const taskWork = ({ task, params }) => {
 
 const byPriority = (a, b) => {
   return (
+    (b.stage === 'repair') - (a.stage === 'repair') ||
     bugTier(a.task) - bugTier(b.task) ||
     STAGES.indexOf(a.stage) - STAGES.indexOf(b.stage) ||
     (a.task.rank ?? Infinity) - (b.task.rank ?? Infinity) ||
@@ -298,10 +331,42 @@ const planLine = ({ acts, runsByMe, cap, free, freeReason }) => {
   return `plan: ${acts.length} acts${kinds ? ` (${kinds})` : ''} · runs ${runsByMe}/${cap} by me${slots}`;
 };
 
-export const plan = ({ now, params, children = [], tasks = [] }) => {
+// Each repo whose default branch is red with no repair task open yet: the tick
+// opens one, blocking every task whose change there it holds, and plans again.
+const repairActs = ({ defaults, tasks }) => {
+  return defaults
+    .filter((d) => {
+      return d.red === true && !d.repairTask;
+    })
+    .map((d) => {
+      const held = tasks.filter((t) => {
+        return t.change && t.change.repo === d.repo && !t.change.closed;
+      });
+      return {
+        act: 'repair_default',
+        repo: d.repo,
+        sha: d.sha,
+        blocks: held.map((t) => {
+          return t.id;
+        }),
+        reason: 'the default branch is red: open its one repair task, then run the planner again',
+      };
+    });
+};
+
+export const plan = ({ now, params, children = [], tasks = [], defaults = [] }) => {
   const reconciled = reconcileChildren({ children, params, now });
+  const underRepair = new Set(
+    defaults
+      .filter((d) => {
+        return d.red === true;
+      })
+      .map((d) => {
+        return d.repo;
+      }),
+  );
   const work = tasks.map((task) => {
-    return taskWork({ task, params });
+    return taskWork({ task, params, underRepair });
   });
   const items = work.flatMap((w) => {
     return w.items;
@@ -316,7 +381,7 @@ export const plan = ({ now, params, children = [], tasks = [] }) => {
   const anyNew = items.some((i) => {
     return i.stage === 'new' && i.task.inFocus !== false;
   });
-  const acted = [...reconciled.acts, ...work.flatMap((w) => {
+  const acted = [...reconciled.acts, ...repairActs({ defaults, tasks }), ...work.flatMap((w) => {
     return w.acts;
   }), ...delegated.acts];
   const freeReason =
