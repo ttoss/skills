@@ -19,10 +19,12 @@ const params = {
 };
 const change = (over = {}) => { return {
   url: 'https://github.com/o/r/pull/1',
+  repo: 'o/r',
   draft: false,
   headSha: 'h',
   checks: 'green',
   redOnDefault: false,
+  checksBeforeRepair: false,
   conflict: false,
   merged: false,
   closed: false,
@@ -47,6 +49,7 @@ const task = (over = {}) => { return {
   brief: 'ready',
   leaves: 'close',
   rounds: 0,
+  repairs: null,
   change: null,
   ...over,
 } };
@@ -116,6 +119,70 @@ test('red caused on the default branch counts no round', () => {
     out.filter((a) => { return ['start_child', 'move_task', 'wait_on_person'].includes(a.act) }).length,
     0,
   );
+});
+
+const red = { repo: 'o/r', sha: 'bad', red: true, repairTask: null };
+
+test('a red default branch opens one repair task, blocking the changes it holds', () => {
+  const out = plan({
+    now,
+    params,
+    defaults: [red, { repo: 'o/other', sha: 'ok', red: false, repairTask: null }],
+    tasks: [
+      task({ id: 'task_merged', status: 'calendar', change: change({ merged: true, pipelineRedAfterMerge: true }) }),
+      task({ id: 'task_open', change: change({ url: 'https://github.com/o/r/pull/2' }) }),
+      task({ id: 'task_elsewhere', change: change({ repo: 'o/other', url: 'https://github.com/o/other/pull/1' }) }),
+    ],
+  });
+  const repair = out.filter((a) => { return a.act === 'repair_default' });
+  assert.deepEqual(repair.map((a) => { return [a.repo, a.sha, a.blocks] }), [['o/r', 'bad', ['task_merged', 'task_open']]]);
+  // Nothing lands on a red branch, and no change that landed there gets a round
+  // of its own: the repair task is the one fix.
+  assert.deepEqual(
+    out.filter((a) => { return a.act === 'integrate' }).map((a) => { return a.task }),
+    ['task_elsewhere'],
+  );
+  assert.equal(out.filter((a) => { return a.act === 'move_task' }).length, 0);
+});
+
+test('an open repair task is never opened twice, and its child goes first', () => {
+  const out = plan({
+    now,
+    params: { ...params, maxRuns: 1 },
+    defaults: [{ ...red, repairTask: 'task_fix' }],
+    tasks: [
+      task({ id: 'task_bug', status: 'active', candidate: true, tags: ['bug'], priority: 'very_high', rank: 0 }),
+      task({ id: 'task_fix', status: 'active', candidate: true, repairs: 'o/r', brief: null, rank: 5 }),
+    ],
+  });
+  assert.equal(out.filter((a) => { return a.act === 'repair_default' }).length, 0);
+  assert.deepEqual(
+    out.filter((a) => { return a.act === 'start_child' }).map((a) => { return [a.kind, a.tasks[0]] }),
+    [['repair', 'task_fix']],
+  );
+});
+
+test("a repair's own red change takes a round; its green one integrates", () => {
+  const defaults = [{ ...red, repairTask: 'task_fix' }];
+  const fix = (over) => { return task({ id: 'task_fix', repairs: 'o/r', change: change(over) }) };
+  assert.deepEqual(
+    acts({ defaults, tasks: [fix({ checks: 'red', redOnDefault: true })] }, 'start_child').map((a) => { return a.kind }),
+    ['round'],
+  );
+  assert.deepEqual(
+    acts({ defaults, tasks: [fix({})] }, 'integrate').map((a) => { return a.task }),
+    ['task_fix'],
+  );
+});
+
+test('red checks that ran before the repair update the branch without a round', () => {
+  const out = plan({ now, params, tasks: [task({ rounds: 1, change: change({ checks: 'red', checksBeforeRepair: true }) })] });
+  assert.equal(out.filter((a) => { return a.act === 'wait_on_person' }).length, 0);
+  assert.deepEqual(
+    out.filter((a) => { return a.act === 'move_task' }).map((a) => { return a.status }),
+    ['active'],
+  );
+  assert.equal(out.find((a) => { return a.act === 'start_child' }).kind, 'round');
 });
 
 test('a conflict goes to a child before new work', () => {
