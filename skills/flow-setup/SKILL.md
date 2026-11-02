@@ -43,6 +43,7 @@ A delivery rule in the project that only restates GTF or a skill is removed: one
    - the runtime's permission rules allow each act the standing decision delegates (integrating, release steps) to the run that does it;
    - every credential the `Closing evidence` names is in the environment;
    - the Flow deployment has `upsert-agent-run` and `list-agent-runs`;
+   - for the Chase's and the Audit's health lines, a Flow API key (the console's API keys page) restricted to this project, with an expiry, held as `FLOW_API_KEY` in the environment the routines run in; never in a file or the chat. Without it the routines copy Flow's answers through the model, which costs about 50 KB of output per Chase;
    - each row of `Routines` exists in the runtime and matches it (step 11).
 
    List the parameters left at their default. In an audit, also read `list-agent-runs` with `linked=false` and with `lingering=true`, and report what each finds: spend that reached no task, and runs still open after their task closed.
