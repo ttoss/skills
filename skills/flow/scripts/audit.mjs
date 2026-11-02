@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 
 import { clientFromEnv, parseFlags } from './flow-api.mjs';
 import { audit as healthLines, readFlow, spendOf, spendPair, windows } from './health.mjs';
+import { load as loadParams } from './params.mjs';
 
 // The weekly Audit's report lines that are arithmetic (token-audit's routine,
 // step 4): spend in total and by agent, the three costliest tasks, the runs
@@ -11,7 +12,7 @@ import { audit as healthLines, readFlow, spendOf, spendPair, windows } from './h
 // API key; it writes nothing. What is waste, the fix and its saving stay with
 // the model.
 //
-// Usage: node audit.mjs --project <proj_…> [--now <ISO 8601>]
+// Usage: node audit.mjs (--root <repo dir> | --project <proj_…>) [--now <ISO 8601>]
 // Output: JSON `{ lines, mismatches }`.
 
 const weight = (totals) => {
@@ -19,8 +20,9 @@ const weight = (totals) => {
 };
 
 /** The report lines from what was read, as a pure function. */
-export const report = ({ thisWeek, weekBefore, agentsThis, agentsBefore, tasksThis, titles, unlinkedThis, unlinkedBefore, lingering }) => {
-  const lines = [`Spend, every run: ${spendPair({ now: thisWeek.totals, before: weekBefore.totals })}`];
+export const report = ({ agentsThis, agentsBefore, tasksThis, titles, unlinkedThis, unlinkedBefore, lingering }) => {
+  // The total is health.mjs's "Spend, every run" line, which follows these.
+  const lines = [];
   const before = new Map((agentsBefore.groups || []).map((g) => { return [g.key, g.totals]; }));
   for (const group of [...(agentsThis.groups || [])].sort((a, b) => { return weight(b.totals) - weight(a.totals); })) {
     lines.push(`Spend, agent ${group.key ?? 'unnamed'}: ${spendPair({ now: group.totals, before: before.get(group.key) })}`);
@@ -44,8 +46,7 @@ export const run = async ({ client, project, now = new Date().toISOString() }) =
   const runs = (win, query) => {
     return get('/agent-runs', { project, since: win.since, until: win.until, limit: 0, ...query });
   };
-  const [thisWeek, weekBefore, agentsThis, agentsBefore, tasksThis, unlinkedThis, unlinkedBefore, lingering] = await Promise.all([
-    runs(w.thisWeek), runs(w.weekBefore),
+  const [agentsThis, agentsBefore, tasksThis, unlinkedThis, unlinkedBefore, lingering] = await Promise.all([
     runs(w.thisWeek, { group_by: 'agent' }), runs(w.weekBefore, { group_by: 'agent' }),
     runs(w.thisWeek, { group_by: 'task' }),
     runs(w.thisWeek, { linked: false }), runs(w.weekBefore, { linked: false }),
@@ -57,7 +58,7 @@ export const run = async ({ client, project, now = new Date().toISOString() }) =
   })));
   const health = healthLines(await readFlow({ routine: 'audit', project, now, client }));
   return {
-    lines: [...report({ thisWeek, weekBefore, agentsThis, agentsBefore, tasksThis, titles, unlinkedThis, unlinkedBefore, lingering: lingering.runs || [] }), ...health.lines],
+    lines: [...report({ agentsThis, agentsBefore, tasksThis, titles, unlinkedThis, unlinkedBefore, lingering: lingering.runs || [] }), ...health.lines],
     mismatches: health.mismatches,
   };
 };
@@ -65,11 +66,12 @@ export const run = async ({ client, project, now = new Date().toISOString() }) =
 const isMain = process.argv[1] && realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1]);
 if (isMain) {
   const f = parseFlags(process.argv.slice(2));
-  if (!f.project) {
-    process.stderr.write('usage: audit.mjs --project <proj_…> [--now <ISO>]\n');
+  const project = f.project || (f.root ? loadParams(f.root).projectId : null);
+  if (!project) {
+    process.stderr.write('usage: audit.mjs (--root <repo dir> | --project <proj_…>) [--now <ISO>]\n');
     process.exit(2);
   }
-  run({ client: clientFromEnv(), project: f.project, now: f.now }).then(
+  run({ client: clientFromEnv(), project, now: f.now }).then(
     (result) => { process.stdout.write(`${JSON.stringify(result, null, 2)}\n`); },
     (error) => { process.stderr.write(`${error.message}\n`); process.exit(1); },
   );

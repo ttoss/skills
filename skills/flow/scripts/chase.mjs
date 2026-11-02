@@ -3,14 +3,18 @@ import { fileURLToPath } from 'node:url';
 
 import { clientFromEnv, mapLimit, parseFlags } from './flow-api.mjs';
 import { chase as healthLines, readFlow } from './health.mjs';
+import { mergedSince, readChange, readyChanges } from './host.mjs';
+import { load as loadParams } from './params.mjs';
 
 // The Chase's digest (references/chase.md): every section, its order, its
 // size and the health lines, read from Flow with the project's API key. It
 // writes nothing. The model records the run, passes what only the code host
 // knows in a small file, translates the words and delivers the digest.
 //
-// Usage: node chase.mjs --project <proj_…> [--host <file>] [--lines 5]
-//          [--stale-after-hours 4] [--now <ISO 8601>]
+// Usage: node chase.mjs --root <repo dir> [--now <ISO 8601>]
+//   reads the parameters there (project, size, Stale after, repos) and the code
+//   host with `gh`; or --project <proj_…> [--host <file>] [--lines 5]
+//   [--stale-after-hours 4] with the code host's facts in a file:
 // --host is JSON the model reads from the code host:
 //   { "integratedSinceLastChase": 3,
 //     "waitingChanges": [{ "url", "title", "task": "task_…" }],  // ready, not draft, checks and review passed
@@ -40,6 +44,15 @@ export const SECTIONS = [
   'Overdue waits',
   'Findings and due reviews',
 ];
+
+/** An external wait past its date, or with no date and untouched for a week. */
+export const isDueWait = (row, nowMs) => {
+  const wait = (row.readiness?.blocked_by || []).find((b) => { return b.via === 'wait'; });
+  if (!wait || row.kind === 'decision') {
+    return false;
+  }
+  return wait.until ? Date.parse(wait.until) <= nowMs : Boolean(row.review_due_at && Date.parse(row.review_due_at) <= nowMs);
+};
 
 const waitOf = (row) => {
   return (row.readiness?.blocked_by || []).find((b) => { return b.via === 'wait'; });
@@ -138,8 +151,7 @@ export const sections = ({ now, project, members, teams = [], bugs, runningRuns,
       continue;
     }
     const until = wait.until ? Date.parse(wait.until) : null;
-    const due = until !== null ? until <= nowMs : row.review_due_at && Date.parse(row.review_due_at) <= nowMs;
-    if (!due) {
+    if (!isDueWait(row, nowMs)) {
       continue;
     }
     const late = until !== null ? `overdue ${Math.floor((nowMs - until) / DAY)}d` : 'no chase date, untouched for a week';
@@ -243,7 +255,7 @@ export const digest = ({ date, sections: out, alert, admins, health, base, size 
 };
 
 /** Every read the digest needs, then the digest. */
-export const run = async ({ client, project, now = new Date().toISOString(), host = null, size = 5, staleAfterHours = 4 }) => {
+export const run = async ({ client, project, now = new Date().toISOString(), host = null, repos = null, gh, size = 5, staleAfterHours = 4 }) => {
   const { get, all } = client;
   const staleBefore = new Date(Date.parse(now) - staleAfterHours * HOUR).toISOString();
   const [projectAnswer, bugsHigh, veryHigh, runningRuns, waits, dateCame, decisions, staleRuns, validation, ready, chases] = await Promise.all([
@@ -259,6 +271,32 @@ export const run = async ({ client, project, now = new Date().toISOString(), hos
     get('/next', { project, limit: 1 }),
     get('/agent-runs', { project, agent: 'flow chase', limit: 5 }),
   ]);
+  // The code host's facts, read with `gh` when the repos are known and no
+  // --host file was given: ready changes, the due waits whose change is
+  // integrated, and the merges since the last Chase.
+  const last = (chases.runs || []).find((r) => { return r.status !== 'running'; });
+  let hostError = null;
+  if (!host && repos?.length) {
+    try {
+    const nowMs = Date.parse(now);
+    const due = waits.filter((w) => { return isDueWait(w, nowMs); });
+    const implemented = await mapLimit(due, 4, async (w) => {
+      const refs = ((await get(`/tasks/${w.id}`)).references || []).filter((r) => { return r.role === 'implements' && !r.retracted_at; });
+      const changes = await Promise.all(refs.map((r) => { return readChange(r.url, gh ? { gh } : {}); }));
+      return changes.some((c) => { return c?.merged; }) ? w.id : null;
+    });
+    const ready = await readyChanges(repos, gh ? { gh } : {});
+    host = {
+      waitingChanges: ready.map((c) => { return { url: c.url, title: c.title, task: c.task }; }),
+      integratedTasks: implemented.filter(Boolean),
+      integratedSinceLastChase: last ? await mergedSince(repos, last.started_at, gh ? { gh } : {}) : null,
+    };
+    } catch (error) {
+      // A repo `gh` cannot read leaves the code host out, said, never guessed.
+      host = null;
+      hostError = String(error.stderr || error.message).split('\n')[0].slice(0, 200);
+    }
+  }
   const bugIds = new Set();
   const bugs = [...bugsHigh, ...veryHigh].filter((b) => { return !bugIds.has(b.id) && bugIds.add(b.id); });
 
@@ -276,14 +314,13 @@ export const run = async ({ client, project, now = new Date().toISOString(), hos
     staleRuns: staleRuns.runs, staleTasks: tasks, findings: validation.findings, findingTasks: tasks,
     reviews, host, staleAfterHours,
   });
-  // The newest earlier Chase that finished starts "since the last Chase".
-  const last = (chases.runs || []).find((r) => { return r.status !== 'running'; });
+  // The newest earlier Chase that finished (`last`) starts "since the last Chase".
   const ticks = last ? await get('/agent-runs', { project, agent: 'flow tick', since: last.started_at, limit: 100 }) : { runs: [] };
   const noPlanner = ticks.runs.filter((r) => { return r.summary && !/^flow tick: (plan|fallback):/.test(r.summary); });
   const noSummary = ticks.runs.filter((r) => { return !r.summary && r.status !== 'running'; });
   const staleHolding = staleIds.filter((id) => { return tasks[id]?.status === 'active'; }).length;
   const base = [
-    `Integrated since the last Chase: ${host?.integratedSinceLastChase ?? 'the code host was not read'}`,
+    `Integrated since the last Chase: ${host ? (host.integratedSinceLastChase ?? 'no earlier Chase') : `the code host was not read${hostError ? ` (${hostError})` : ''}`}`,
     `Ready: ${ready.total}, ${staleHolding} of them held by a stale session`,
     `Overdue waits naming nobody: ${built.sections['No owner'].items.length}`,
     `Ticks since the last Chase: ${ticks.runs.length}${ticks.runs.length === 100 ? ' (may be short)' : ''}, ${noPlanner.length} without the planner${noPlanner.length ? ` (${noPlanner.map((r) => { return r.url; }).join(', ')})` : ''}, ${noSummary.length} without a summary${noSummary.length ? ` (${noSummary.map((r) => { return r.url; }).join(', ')})` : ''}`,
@@ -301,17 +338,22 @@ export const run = async ({ client, project, now = new Date().toISOString(), hos
 const isMain = process.argv[1] && realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1]);
 if (isMain) {
   const f = parseFlags(process.argv.slice(2));
-  if (!f.project) {
-    process.stderr.write('usage: chase.mjs --project <proj_…> [--host <file>] [--lines 5] [--stale-after-hours 4] [--now <ISO>]\n');
+  // --root reads the project's parameters (params.mjs): the project, the
+  // Chase's size, Stale after and the repos the code host is read in.
+  const p = f.root ? loadParams(f.root) : null;
+  const project = f.project || p?.projectId;
+  if (!project) {
+    process.stderr.write('usage: chase.mjs (--root <repo dir> | --project <proj_…>) [--host <file> | --no-host] [--lines 5] [--stale-after-hours 4] [--now <ISO>]\n');
     process.exit(2);
   }
   run({
     client: clientFromEnv(),
-    project: f.project,
+    project,
     now: f.now,
     host: f.host ? JSON.parse(readFileSync(f.host, 'utf8')) : null,
-    size: f.lines ? Number(f.lines) : 5,
-    staleAfterHours: f['stale-after-hours'] ? Number(f['stale-after-hours']) : 4,
+    repos: f['no-host'] ? null : p?.repos,
+    size: f.lines ? Number(f.lines) : p?.chaseLines ?? 5,
+    staleAfterHours: f['stale-after-hours'] ? Number(f['stale-after-hours']) : p?.params.staleAfterHours ?? 4,
   }).then(
     (result) => { process.stdout.write(`${JSON.stringify(result, null, 2)}\n`); },
     (error) => { process.stderr.write(`${error.message}\n`); process.exit(1); },

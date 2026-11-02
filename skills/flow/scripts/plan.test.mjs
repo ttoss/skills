@@ -241,9 +241,15 @@ test('integrated: the body decides what is left', () => {
     1,
   );
   assert.equal(
-    acts({ tasks: [task({ leaves: null, change: merged })] }, 'wait_on_person').length,
+    acts({ tasks: [task({ leaves: 'none', change: merged })] }, 'wait_on_person').length,
     1,
   );
+  // Not read yet: the planner asks, never takes silence for "says nothing".
+  assert.equal(acts({ tasks: [task({ leaves: null, change: merged })] }, 'judge')[0].about, 'leaves');
+  // Written after the merge: already advanced, left as it stands.
+  assert.equal(plan({ now, params, defaults: [], children: [], tasks: [task({ change: change({ merged: true, writtenSince: true }) })] }).filter((a) => { return a.act !== 'report'; }).length, 0);
+  // Even a red pipeline: the write after it already answered it.
+  assert.equal(plan({ now, params, defaults: [], children: [], tasks: [task({ change: change({ merged: true, writtenSince: true, pipelineRedAfterMerge: true }) })] }).filter((a) => { return a.act !== 'report'; }).length, 0);
 });
 
 test('a draft is skipped', () => {
