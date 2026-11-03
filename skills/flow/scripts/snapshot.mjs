@@ -16,7 +16,7 @@ import { load as loadParams } from './params.mjs';
 // Usage: node snapshot.mjs --root <repo dir> [--extra <file>] [--now <ISO>]
 //   (params and repos from the parameters there, the code host through `gh`),
 //   or --project <proj_…> [--extra <file>] with everything else in the file.
-// --extra JSON: { "params": { maxRuns, staleAfterHours, autoRounds, reviewByAgent, agentsMayIntegrate },
+// --extra JSON: { "params": { maxRuns, staleAfterHours, autoRounds, reviewByAgent, reviewRequired, reviewGraceMinutes, agentsMayIntegrate },
 //                 "tasks": { "task_…": { brief, leaves, rounds, repairs, change } },
 //                 "children": { "arun_…": { runtime } },
 //                 "defaults": [{ repo, sha, red, repairTask }] }
@@ -26,7 +26,7 @@ import { load as loadParams } from './params.mjs';
 
 const CLOSED = ['completed', 'cancelled', 'discarded', 'archived'];
 
-export const DEFAULT_PARAMS = { maxRuns: 2, staleAfterHours: 4, autoRounds: 1, reviewByAgent: false, agentsMayIntegrate: true, focus: null };
+export const DEFAULT_PARAMS = { maxRuns: 2, staleAfterHours: 4, autoRounds: 1, reviewByAgent: false, reviewRequired: null, reviewGraceMinutes: 30, agentsMayIntegrate: true, focus: null };
 
 const waitsOf = (row) => {
   return (row.readiness?.blocked_by || []).filter((b) => { return b.via === 'wait'; });
@@ -89,19 +89,22 @@ export const build = ({ now, candidates, slices, dueIds, children, mine, childTa
 };
 
 /** Every read, then the snapshot. */
-export const run = async ({ client, project, now = new Date().toISOString(), extra = {}, repos = null, gh }) => {
+export const run = async ({ client, project, now = new Date().toISOString(), extra = {}, repos = null, reviewers = [], gh }) => {
   const { get } = client;
   const next = await get('/next', { project, limit: 10 });
   const counts = next.counts || {};
   const slice = (name) => {
     return get('/next', { project, slice: name, assignee: 'any', limit: 20 });
   };
-  const [waiting, blocked, dateCame, holdCleared, children, mine] = await Promise.all([
+  const [waiting, blocked, dateCame, holdCleared, children, mine, running] = await Promise.all([
     slice('waiting'), slice('blocked'),
     counts.date_came ? slice('date_came') : { tasks: [] },
     counts.hold_cleared ? slice('hold_cleared') : { tasks: [] },
     get('/agent-runs', { project, status: 'running', agent: 'flow child', limit: 100 }),
     get('/agent-runs', { project, status: 'running', agent: 'flow child', by: 'me', limit: 100 }),
+    // Every running run, whoever started it: a reviewer outside the tick
+    // that recorded its run holds the task as surely as a child does.
+    repos?.length ? get('/agent-runs', { project, status: 'running', limit: 100 }) : { runs: [] },
   ]);
   const slices = [...waiting.tasks, ...blocked.tasks, ...dateCame.tasks, ...holdCleared.tasks];
   const ids = [...new Set([...slices.map((t) => { return t.id; }), ...children.runs.flatMap((r) => { return r.works_on || []; })])];
@@ -123,7 +126,7 @@ export const run = async ({ client, project, now = new Date().toISOString(), ext
   // or repo `gh` cannot read stays in `needs`, never guessed.
   const hostErrors = [];
   if (repos?.length) {
-    const opts = gh ? { gh } : {};
+    const opts = { ...(gh ? { gh } : {}), reviewers };
     const defaults = await mapLimit(repos, 2, async (repo) => {
       try {
         return await readDefault(repo, opts);
@@ -144,7 +147,8 @@ export const run = async ({ client, project, now = new Date().toISOString(), ext
     }
     extra = { ...extra, defaults: extra.defaults || defaults.filter(Boolean), tasks: { ...(extra.tasks || {}) } };
     const red = new Map((extra.defaults || []).map((d) => { return [d.repo, d.red]; }));
-    const holders = new Set(children.runs.flatMap((r) => { return r.works_on || []; }));
+    const enforced = new Map((extra.defaults || []).map((d) => { return [d.repo, d.reviewEnforced ?? null]; }));
+    const holders = new Set([...children.runs, ...running.runs].flatMap((r) => { return r.works_on || []; }));
     await mapLimit(Object.entries(implementsOf), 4, async ([task, urls]) => {
       if (extra.tasks[task]?.change) {
         return;
@@ -160,7 +164,7 @@ export const run = async ({ client, project, now = new Date().toISOString(), ext
           const updated = full[task]?.task?.updated_at;
           const settled = [mergedAt, pipelineDoneAt].filter(Boolean).map(Date.parse);
           const writtenSince = Boolean(change.merged && updated && settled.length && Date.parse(updated) > Math.max(...settled));
-          extra.tasks[task] = { ...(extra.tasks[task] || {}), change: { ...rest, writtenSince, redOnDefault: red.get(change.repo) ?? null, reviewRunActive: holders.has(task) } };
+          extra.tasks[task] = { ...(extra.tasks[task] || {}), change: { ...rest, writtenSince, redOnDefault: red.get(change.repo) ?? null, reviewEnforced: enforced.get(change.repo) ?? null, reviewRunActive: holders.has(task) } };
         }
       } catch (error) {
         hostErrors.push({ task, error: String(error.stderr || error.message).split('\n')[0].slice(0, 200) });
@@ -198,7 +202,7 @@ if (isMain) {
   if (p && !extra.params) {
     extra.params = p.params;
   }
-  run({ client: clientFromEnv(), project, now: f.now, extra, repos: p?.repos }).then(
+  run({ client: clientFromEnv(), project, now: f.now, extra, repos: p?.repos, reviewers: p?.reviewers ?? [] }).then(
     (result) => { process.stdout.write(`${JSON.stringify(result, null, 2)}\n`); },
     (error) => { process.stderr.write(`${error.message}\n`); process.exit(1); },
   );

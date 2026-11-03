@@ -46,21 +46,92 @@ export const checksOf = (all) => {
   return runs.every((r) => { return r.status === 'completed'; }) ? 'green' : 'pending';
 };
 
+/** The commit status a reviewer sets on the head it judged. */
+export const REVIEW_CONTEXT = 'flow/review';
+
+// An author GitHub lets push to the repo: only they may set a commit status,
+// and only their review or comment counts when the project names no Reviewer.
+const WRITE = ['OWNER', 'MEMBER', 'COLLABORATOR'];
+
+const MARKER = /<!--\s*flow-verdict\s+sha=([0-9a-f]{7,40})\s+result=(CLEAN|FINDINGS)\s*-->/;
+
+const allowed = ({ login, association, reviewers }) => {
+  return reviewers.length ? reviewers.includes(login) : WRITE.includes(association);
+};
+
 /**
- * The newest review verdict among a change's comments: one naming a commit
- * and saying CLEAN or FINDINGS (child-prompt.md's review child, or a
- * project's reviewer writing `Verdict: CLEAN`).
+ * The verdicts on a change, each bound to the commit it judged and to an
+ * author who may give one: the `flow/review` commit status (CLEAN on
+ * `success`, FINDINGS on `failure`, a claim while `pending`), a pull request
+ * review that approved or asked for changes, and, for reviewers that cannot
+ * set a status, a comment carrying `<!-- flow-verdict sha=… result=… -->`.
+ * Prose such as "Verdict: CLEAN" is never read: anyone can quote it.
  */
-export const verdictOf = (comments) => {
-  for (const comment of [...comments].reverse()) {
-    const body = comment.body || '';
-    const result = (/\bverdict\b\W*(CLEAN|FINDINGS)\b/i.exec(body) || /^\s*\**(CLEAN|FINDINGS)\b/m.exec(body) || [])[1];
-    const sha = (/\b([0-9a-f]{40})\b/.exec(body) || /`([0-9a-f]{7,40})`/.exec(body) || [])[1];
-    if (result && sha) {
-      return { sha, result: result.toUpperCase() };
+export const verdictsOf = ({ statuses = [], reviews = [], comments = [], reviewers = [] }) => {
+  const out = [];
+  // Statuses come newest first; the newest from an allowed creator decides.
+  const status = statuses.find((s) => {
+    return s.context === REVIEW_CONTEXT && (!reviewers.length || reviewers.includes(s.creator?.login));
+  });
+  let pendingSince = null;
+  if (status?.state === 'success' || status?.state === 'failure') {
+    out.push({ sha: status.sha ?? null, result: status.state === 'success' ? 'CLEAN' : 'FINDINGS', source: 'status' });
+  } else if (status?.state === 'pending') {
+    pendingSince = status.created_at;
+  }
+  const latest = new Map();
+  for (const review of reviews) {
+    if (['APPROVED', 'CHANGES_REQUESTED'].includes(review.state) && allowed({ login: review.user?.login, association: review.author_association, reviewers })) {
+      latest.set(review.user.login, review);
     }
   }
-  return null;
+  for (const review of latest.values()) {
+    out.push({ sha: review.commit_id, result: review.state === 'APPROVED' ? 'CLEAN' : 'FINDINGS', source: 'review' });
+  }
+  for (const comment of comments) {
+    const m = MARKER.exec(comment.body || '');
+    if (m && allowed({ login: comment.user?.login, association: comment.author_association, reviewers })) {
+      out.push({ sha: m[1], result: m[2], source: 'comment' });
+    }
+  }
+  return { verdicts: out, pendingSince };
+};
+
+/**
+ * The verdict for `head`: FINDINGS when any verdict on it says so, else
+ * CLEAN when one does, else null. A verdict on an older commit is none.
+ */
+export const verdictFor = (verdicts, head) => {
+  const onHead = verdicts.filter((v) => { return v.sha && head.startsWith(v.sha); });
+  const result = onHead.some((v) => { return v.result === 'FINDINGS'; }) ? 'FINDINGS'
+    : onHead.some((v) => { return v.result === 'CLEAN'; }) ? 'CLEAN' : null;
+  return result ? { sha: head, result } : null;
+};
+
+/**
+ * Whether the code host refuses to integrate into `branch` without a
+ * review: `flow/review` among its required status checks, or a required
+ * approving review, by branch protection or a ruleset. Null when unread.
+ */
+export const reviewEnforcedOf = ({ branch, rules }) => {
+  if (!branch && !rules) {
+    return null;
+  }
+  const protection = branch?.protection || {};
+  const contexts = [
+    ...(protection.required_status_checks?.contexts || []),
+    ...(protection.required_status_checks?.checks || []).map((c) => { return c.context; }),
+  ];
+  let approvals = protection.required_pull_request_reviews?.required_approving_review_count || 0;
+  for (const rule of rules || []) {
+    if (rule.type === 'required_status_checks') {
+      contexts.push(...(rule.parameters?.required_status_checks || []).map((c) => { return c.context; }));
+    }
+    if (rule.type === 'pull_request') {
+      approvals = Math.max(approvals, rule.parameters?.required_approving_review_count || 0);
+    }
+  }
+  return contexts.includes(REVIEW_CONTEXT) || approvals > 0;
 };
 
 const TASK = /task_[0-9a-hjkmnp-tv-z]{10}/;
@@ -71,7 +142,7 @@ export const parseChangeUrl = (url) => {
 };
 
 /** A change as plan.mjs's snapshot holds it, from the code host. */
-export const readChange = async (url, { gh = ghApi } = {}) => {
+export const readChange = async (url, { gh = ghApi, reviewers = [] } = {}) => {
   const ref = parseChangeUrl(url);
   if (!ref) {
     return null;
@@ -82,11 +153,19 @@ export const readChange = async (url, { gh = ghApi } = {}) => {
     await new Promise((resolve) => { setTimeout(resolve, 1500); });
     pull = await gh(`repos/${ref.repo}/pulls/${ref.number}`);
   }
-  const [head, comments] = await Promise.all([
+  const [head, statuses, reviews, comments] = await Promise.all([
     gh(`repos/${ref.repo}/commits/${pull.head.sha}/check-runs?per_page=100`),
+    gh(`repos/${ref.repo}/commits/${pull.head.sha}/statuses?per_page=100`),
+    gh(`repos/${ref.repo}/pulls/${ref.number}/reviews?per_page=100`, { paginate: true }),
     gh(`repos/${ref.repo}/issues/${ref.number}/comments?per_page=100`, { paginate: true }),
   ]);
-  const verdict = verdictOf(comments);
+  const { verdicts, pendingSince } = verdictsOf({
+    statuses: statuses.map((s) => { return { ...s, sha: pull.head.sha }; }),
+    reviews,
+    comments,
+    reviewers,
+  });
+  const checks = checksOf(head.check_runs);
   const merged = Boolean(pull.merged);
   let pipelineRedAfterMerge = false;
   let pipelineDoneAt = null;
@@ -102,7 +181,9 @@ export const readChange = async (url, { gh = ghApi } = {}) => {
     task: (TASK.exec(pull.body || '') || [null])[0],
     draft: Boolean(pull.draft),
     headSha: pull.head.sha,
-    checks: checksOf(head.check_runs),
+    checks,
+    // When the head's checks last finished: a review is expected from then.
+    checksDoneAt: checks === 'green' ? head.check_runs.map((r) => { return r.completed_at; }).filter(Boolean).sort().at(-1) || null : null,
     redOnDefault: null,
     conflict: pull.mergeable === false || pull.mergeable_state === 'dirty',
     merged,
@@ -111,8 +192,12 @@ export const readChange = async (url, { gh = ghApi } = {}) => {
     closed: pull.state === 'closed' && !merged,
     checksBeforeRepair: false,
     pipelineRedAfterMerge,
-    verdict: verdict && pull.head.sha.startsWith(verdict.sha) ? { sha: pull.head.sha, result: verdict.result } : verdict,
+    verdict: verdictFor(verdicts, pull.head.sha),
+    // A reviewer's `pending` status on the head: the review is claimed.
+    reviewPendingSince: pendingSince,
     reviewRunActive: false,
+    // Set from the repo's default branch (readDefault) by the snapshot.
+    reviewEnforced: null,
     // Judgments: the planner asks for them with a `judge` act.
     touchesOwnGates: null,
     reservedToPerson: null,
@@ -123,8 +208,18 @@ export const readChange = async (url, { gh = ghApi } = {}) => {
 export const readDefault = async (repo, { gh = ghApi } = {}) => {
   const meta = await gh(`repos/${repo}`);
   const branch = await gh(`repos/${repo}/branches/${meta.default_branch}`);
-  const runs = await gh(`repos/${repo}/commits/${branch.commit.sha}/check-runs?per_page=100`);
-  return { repo, sha: branch.commit.sha, red: checksOf(runs.check_runs) === 'red', repairTask: null };
+  const [runs, rules] = await Promise.all([
+    gh(`repos/${repo}/commits/${branch.commit.sha}/check-runs?per_page=100`),
+    // Rulesets apply to everyone who can read the branch; unreadable → null.
+    gh(`repos/${repo}/rules/branches/${meta.default_branch}`).catch(() => { return null; }),
+  ]);
+  return {
+    repo,
+    sha: branch.commit.sha,
+    red: checksOf(runs.check_runs) === 'red',
+    reviewEnforced: reviewEnforcedOf({ branch, rules }),
+    repairTask: null,
+  };
 };
 
 /**
@@ -132,13 +227,13 @@ export const readDefault = async (repo, { gh = ghApi } = {}) => {
  * verdict, if any, is CLEAN on its head: what the Chase calls ready for a
  * person to integrate, once their task waits on one.
  */
-export const readyChanges = async (repos, { gh = ghApi } = {}) => {
+export const readyChanges = async (repos, { gh = ghApi, reviewers = [] } = {}) => {
   const out = [];
   for (const repo of repos) {
     const pulls = (await gh(`repos/${repo}/pulls?state=open&per_page=100`, { paginate: true })).filter((p) => { return !p.draft; });
-    const changes = await mapLimit(pulls, 4, (p) => { return readChange(p.html_url, { gh }); });
+    const changes = await mapLimit(pulls, 4, (p) => { return readChange(p.html_url, { gh, reviewers }); });
     out.push(...changes.filter((c) => {
-      return c && c.checks === 'green' && !c.conflict && (!c.verdict || (c.verdict.result === 'CLEAN' && c.verdict.sha === c.headSha));
+      return c && c.checks === 'green' && !c.conflict && c.verdict?.result !== 'FINDINGS';
     }));
   }
   return out;
