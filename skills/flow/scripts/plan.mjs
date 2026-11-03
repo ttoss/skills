@@ -35,6 +35,7 @@ import { fileURLToPath } from 'node:url';
 //                               redOnDefault, conflict, merged, closed,
 //                               checksBeforeRepair,   // its checks last ran before the repo's latest repair integrated
 //                               pipelineRedAfterMerge,
+//                               reversal: 'recorded' | 'none' | null, // the reversal path its description records (Before proposing); null: not read yet, a judge
 //                               writtenSince,         // the task was written after the change merged and its pipeline finished
 //                               checksDoneAt,         // when the head's checks finished green
 //                               verdict: null | { sha, result: 'CLEAN' | 'FINDINGS' }, // bound to its commit and an allowed author (host.mjs)
@@ -151,9 +152,22 @@ const advanceMerged = ({ task, change, underRepair }) => {
   if (change.pipelineRedAfterMerge && isHeldByRepair({ task, change, underRepair })) {
     return NONE;
   }
+  // "The integration's pipeline red": the change is pulled by the reversal
+  // path it recorded before the task goes back a round, since a defect in
+  // effect costs by the hour and a round costs a child plus CI. A path nobody
+  // recorded is not invented: the person decides.
   if (change.pipelineRedAfterMerge) {
+    if (change.reversal === null || change.reversal === undefined) {
+      return { acts: [{ act: 'judge', about: 'reversal', task: task.id, url: change.url, reason: 'the integration pipeline is red: does the change record a reversal path (recorded, or none)?' }], item: null };
+    }
+    if (change.reversal === 'none') {
+      return { acts: [{ act: 'wait_on_person', task: task.id, reason: 'the integration pipeline is red and the change records no reversal path' }], item: null };
+    }
     return {
-      acts: [{ act: 'move_task', task: task.id, status: 'active', reason: 'the integration pipeline is red' }],
+      acts: [
+        { act: 'revert', task: task.id, url: change.url, reason: 'the integration pipeline is red: pull the change by the reversal path its description records' },
+        { act: 'move_task', task: task.id, status: 'active', reason: 'the integration pipeline is red; the change is reverted, the log and the revert in the body' },
+      ],
       item: { stage: 'round', kind: 'round' },
     };
   }

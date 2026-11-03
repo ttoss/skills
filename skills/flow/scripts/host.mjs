@@ -192,6 +192,9 @@ export const readChange = async (url, { gh = ghApi, reviewers = [] } = {}) => {
     closed: pull.state === 'closed' && !merged,
     checksBeforeRepair: false,
     pipelineRedAfterMerge,
+    // The reversal path is prose in the description (Before proposing): the
+    // tick reads it when the pipeline is red, as a judge.
+    reversal: null,
     verdict: verdictFor(verdicts, pull.head.sha),
     // A reviewer's `pending` status on the head: the review is claimed.
     reviewPendingSince: pendingSince,

@@ -288,6 +288,22 @@ test('a very_high task goes before a conflict, bug or not; a high one without th
   assert.equal(merelyHigh[0].tasks[0], 'task_c');
 });
 
+test('a red integration pipeline reverts the change by its recorded path, then a round', () => {
+  const merged = (over) => { return task({ id: 'task_m', status: 'calendar', change: change({ merged: true, pipelineRedAfterMerge: true, ...over }) }) };
+  const unread = plan({ now, params, tasks: [merged({ reversal: null })] });
+  assert.deepEqual(unread.filter((a) => { return a.act === 'judge' }).map((a) => { return a.about }), ['reversal']);
+  assert.equal(unread.filter((a) => { return a.act === 'move_task' }).length, 0);
+  const none = plan({ now, params, tasks: [merged({ reversal: 'none' })] });
+  assert.equal(none.filter((a) => { return a.act === 'wait_on_person' }).length, 1);
+  assert.equal(none.filter((a) => { return a.act === 'revert' }).length, 0);
+  const recorded = plan({ now, params, tasks: [merged({ reversal: 'recorded' })] });
+  assert.deepEqual(
+    recorded.filter((a) => { return a.act === 'revert' || a.act === 'move_task' }).map((a) => { return [a.act, a.status ?? a.url] }),
+    [['revert', 'https://github.com/o/r/pull/1'], ['move_task', 'active']],
+  );
+  assert.equal(recorded.find((a) => { return a.act === 'start_child' }).kind, 'round');
+});
+
 test('closed without integrating retracts and waits on a person', () => {
   const out = plan({ now, params, tasks: [task({ change: change({ closed: true }) })] });
   assert.equal(out.filter((a) => { return a.act === 'retract_reference' }).length, 1);
