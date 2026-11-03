@@ -69,17 +69,17 @@ test('a repo’s repair task repairs it, even outside every slice: its own chang
   assert.deepEqual(plan(round).filter((a) => { return a.act === 'move_task'; }).map((a) => { return a.task; }), ['t_fix']);
 });
 
-test('whom each task waits on, its holder, open decisions and the members reach the planner’s people queue', () => {
+test('whom each task waits on reaches the planner, so a change a person validates counts in the review queue', () => {
+  const waits = { blocked_by: [{ via: 'wait', kind: 'external', on: 'user_x', until: null }] };
+  const merged = { url: 'https://gh/pr/1', repo: 'o/r', merged: true, closed: false, draft: false };
   const snap = build({
     ...base,
-    members: 1,
     candidates: [row('t_new')],
-    slices: [row('t_w', { status: 'waiting', readiness: { blocked_by: [{ via: 'wait', kind: 'external', on: 'user_x', until: null }] } })],
-    decisions: [1, 2, 3].map((i) => { return row(`t_d${i}`, { kind: 'decision', assignee: 'user_x' }); }),
+    slices: [row('t_v', { status: 'waiting', readiness: waits })],
+    extra: { params: { reviewQueue: 1 }, tasks: { t_v: { change: merged } } },
   });
-  const by = Object.fromEntries(snap.tasks.map((t) => { return [t.id, t]; }));
-  assert.deepEqual([by.t_w.waitsOn, by.t_d1.kind, by.t_d1.assignee, by.t_d1.candidate], [['user_x'], 'decision', 'user_x', false]);
+  assert.deepEqual(snap.tasks.find((t) => { return t.id === 't_v'; }).waitsOn, ['user_x']);
   const report = plan(snap).at(-1);
-  assert.deepEqual(report.wip.peopleQueue, { now: 4, limit: 4 });
-  assert.equal(report.freeReason, 'new work held upstream: people queue 4/4');
+  assert.deepEqual(report.wip.reviewQueue, { now: 1, limit: 1 });
+  assert.equal(report.freeReason, 'new work held upstream: review queue 1/1');
 });
