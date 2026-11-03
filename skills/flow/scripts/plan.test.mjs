@@ -476,10 +476,12 @@ const started = (snapshot, over = {}) => {
     .map((a) => { return a.tasks[0] });
 };
 
-test('the review queue: new work starts only up to the limit, 2 × Max runs by default', () => {
+test('the review queue: new work starts only up to the limit, 20 by default', () => {
   const queue = ['task_o1', 'task_o2', 'task_o3', 'task_o4', 'task_o5'].map((id) => { return atGates(id) });
-  assert.deepEqual(started({ tasks: [...queue, fresh('task_n1'), fresh('task_n2')] }), ['task_n1']);
-  assert.deepEqual(started({ tasks: [...queue.slice(0, 2), fresh('task_n1'), fresh('task_n2')] }), ['task_n1', 'task_n2']);
+  assert.deepEqual(started({ tasks: [...queue, fresh('task_n1'), fresh('task_n2')] }, { reviewQueue: 6 }), ['task_n1']);
+  assert.deepEqual(started({ tasks: [...queue.slice(0, 2), fresh('task_n1'), fresh('task_n2')] }, { reviewQueue: 6 }), ['task_n1', 'task_n2']);
+  const many = Array.from({ length: 19 }, (_, i) => { return atGates(`task_q${i}`) });
+  assert.deepEqual(started({ tasks: [...many, fresh('task_n1'), fresh('task_n2')] }), ['task_n1']);
   const report = plan({ now, params: { ...params, reviewQueue: 5 }, tasks: [...queue, fresh('task_n1')] }).at(-1);
   assert.equal(report.freeReason, 'new work held upstream: review queue 5/5');
   assert.deepEqual(report.skipped, [{ task: 'task_n1', reason: 'held upstream: review queue 5/5' }]);
@@ -489,9 +491,9 @@ test('an integrated change waiting on a person to validate it is in the queue; a
   const validating = (id) => { return task({ id, waitsOn: ['user_ana'], change: change({ merged: true }) }) };
   const checked = (id) => { return task({ id, status: 'calendar', change: change({ merged: true }) }) };
   const full = [atGates('task_o1'), atGates('task_o2'), validating('task_v1'), validating('task_v2')];
-  assert.deepEqual(started({ tasks: [...full, fresh('task_n1')] }, { maxRuns: 2 }), []);
+  assert.deepEqual(started({ tasks: [...full, fresh('task_n1')] }, { reviewQueue: 4 }), []);
   const light = [atGates('task_o1'), atGates('task_d1', { draft: true }), checked('task_c1'), checked('task_c2')];
-  assert.deepEqual(started({ tasks: [...light, fresh('task_n1')] }, { maxRuns: 2 }), ['task_n1']);
+  assert.deepEqual(started({ tasks: [...light, fresh('task_n1')] }, { reviewQueue: 2 }), ['task_n1']);
 });
 
 test('decisions do not hold implementation: any number of choices waiting on a person', () => {

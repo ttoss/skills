@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 //             reviewRequired: bool | null,   // `Review` names a reviewer; null: not stated, a judge
 //             reviewGraceMinutes,            // how long a review may take to start before its request is lost
 //             agentsMayIntegrate, focus: null | { task } | { tag },
-//             reviewQueue },                 // WIP limit on what waits for review or validation; null: 2 × maxRuns
+//             reviewQueue },                 // WIP limit on what waits for review or validation; null: 20
 //   defaults: [{ repo, sha,                   // each repo's default branch head
 //                red: bool | null,            // its required checks or integration pipeline red there
 //                repairTask: id | null }],    // the open task tagged `repair` for that repo
@@ -411,7 +411,7 @@ const reviewQueue = (tasks) => {
 
 // How many new tasks this tick may start, and why fewer than its free slots.
 const newWorkBudget = ({ tasks, params }) => {
-  const limit = params.reviewQueue ?? 2 * params.maxRuns;
+  const limit = params.reviewQueue ?? 20;
   const queued = reviewQueue(tasks);
   return { budget: Math.max(0, limit - queued), why: `review queue ${queued}/${limit}`, wip: { reviewQueue: { now: queued, limit } } };
 };

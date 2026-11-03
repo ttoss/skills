@@ -139,7 +139,7 @@ export const resolve = ({ file, main, runtime = {} }) => {
     ], 30),
     agentsMayIntegrate: pick('agentsMayIntegrate', [['Agents integrate', yesNo(main['Agents integrate'])]], true),
     focus: null,
-    // The WIP limit on new work; null leaves the planner's default, 2 × Max runs.
+    // The WIP limit on new work; null leaves the planner's default, 20.
     reviewQueue: pick('reviewQueue', [
       ['Review queue', intOf(main['Review queue'])],
       ['Runtime file: Review queue', intOf(runtime['Review queue'])],
