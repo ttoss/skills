@@ -223,6 +223,20 @@ test('a high bug goes before a conflict', () => {
   assert.equal(out[0].tasks[0], 'task_bug');
 });
 
+test('a very_high task goes before a conflict, bug or not; a high one without the tag does not', () => {
+  const conflict = task({ id: 'task_c', change: change({ conflict: true }) });
+  const urgent = acts(
+    { tasks: [conflict, task({ id: 'task_urgent', status: 'active', candidate: true, priority: 'very_high' })] },
+    'start_child',
+  );
+  assert.equal(urgent[0].tasks[0], 'task_urgent');
+  const merelyHigh = acts(
+    { tasks: [conflict, task({ id: 'task_high', status: 'active', candidate: true, priority: 'high' })] },
+    'start_child',
+  );
+  assert.equal(merelyHigh[0].tasks[0], 'task_c');
+});
+
 test('closed without integrating retracts and waits on a person', () => {
   const out = plan({ now, params, tasks: [task({ change: change({ closed: true }) })] });
   assert.equal(out.filter((a) => { return a.act === 'retract_reference' }).length, 1);
