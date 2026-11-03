@@ -26,14 +26,14 @@ import { load as loadParams } from './params.mjs';
 
 const CLOSED = ['completed', 'cancelled', 'discarded', 'archived'];
 
-export const DEFAULT_PARAMS = { maxRuns: 2, staleAfterHours: 4, autoRounds: 1, reviewByAgent: false, reviewRequired: null, reviewGraceMinutes: 30, agentsMayIntegrate: true, focus: null };
+export const DEFAULT_PARAMS = { maxRuns: 2, staleAfterHours: 4, autoRounds: 1, reviewByAgent: false, reviewRequired: null, reviewGraceMinutes: 30, agentsMayIntegrate: true, focus: null, openChanges: null, peopleQueue: null };
 
 const waitsOf = (row) => {
   return (row.readiness?.blocked_by || []).filter((b) => { return b.via === 'wait'; });
 };
 
 /** The snapshot from what was read, as a pure function. */
-export const build = ({ now, candidates, slices, dueIds, children, mine, childTasks, implementsOf, repairRows = [], extra = {} }) => {
+export const build = ({ now, candidates, slices, dueIds, children, mine, childTasks, implementsOf, repairRows = [], decisions = [], members = null, extra = {} }) => {
   const nowMs = Date.parse(now);
   const rank = new Map(candidates.map((t, i) => { return [t.id, i]; }));
   // Each repo's open repair task, found by its `source` commit: the task
@@ -42,7 +42,9 @@ export const build = ({ now, candidates, slices, dueIds, children, mine, childTa
   const rows = new Map();
   // A repair task is in the snapshot even when no slice holds it, since a red
   // default branch is the first thing the tick works.
-  for (const row of [...candidates, ...slices, ...repairRows.filter((r) => { return repairOf.has(r.id); })]) {
+  // Open decisions are in the snapshot as what waits on a person (the
+  // `People queue` limit), whether or not a slice holds them.
+  for (const row of [...candidates, ...slices, ...decisions, ...repairRows.filter((r) => { return repairOf.has(r.id); })]) {
     rows.set(row.id, row);
   }
   const tasks = [...rows.values()].map((row) => {
@@ -53,6 +55,9 @@ export const build = ({ now, candidates, slices, dueIds, children, mine, childTa
     return {
       id: row.id,
       status: row.status,
+      kind: row.kind ?? null,
+      assignee: row.assignee ?? null,
+      waitsOn: [...new Set(waits.map((w) => { return w.on; }).filter(Boolean))],
       priority: row.priority,
       tags: row.tags || [],
       rank: rank.has(row.id) ? rank.get(row.id) : null,
@@ -85,6 +90,7 @@ export const build = ({ now, candidates, slices, dueIds, children, mine, childTa
   });
   return {
     now,
+    members,
     params: { ...DEFAULT_PARAMS, ...(extra.params || {}) },
     defaults: extra.defaults || [],
     children: snapshotChildren,
@@ -101,10 +107,12 @@ export const run = async ({ client, project, now = new Date().toISOString(), ext
   const slice = (name) => {
     return get('/next', { project, slice: name, assignee: 'any', limit: 20 });
   };
-  const [waiting, blocked, dateCame, holdCleared, children, mine, running] = await Promise.all([
+  const [waiting, blocked, dateCame, holdCleared, decisions, projectRow, children, mine, running] = await Promise.all([
     slice('waiting'), slice('blocked'),
     counts.date_came ? slice('date_came') : { tasks: [] },
     counts.hold_cleared ? slice('hold_cleared') : { tasks: [] },
+    get('/tasks', { project, kind: 'decision', status: ['active', 'waiting'], limit: 100 }),
+    get(`/projects/${project}`),
     get('/agent-runs', { project, status: 'running', agent: 'flow child', limit: 100 }),
     get('/agent-runs', { project, status: 'running', agent: 'flow child', by: 'me', limit: 100 }),
     // Every running run, whoever started it: a reviewer outside the tick
@@ -188,6 +196,8 @@ export const run = async ({ client, project, now = new Date().toISOString(), ext
     childTasks: Object.fromEntries(Object.entries(full).map(([id, a]) => { return [id, a.task]; })),
     implementsOf,
     repairRows,
+    decisions: decisions.tasks || [],
+    members: projectRow.members?.length ?? null,
     extra,
   });
   snapshot.needs.unread = unread;

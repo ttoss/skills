@@ -467,3 +467,48 @@ test('the planner prints its acts when run through a symlinked skill directory',
   const acts = JSON.parse(out);
   assert.equal(acts.at(-1).act, 'report');
 });
+
+const fresh = (id, over = {}) => { return task({ id, status: 'active', candidate: true, rank: Number(id.slice(-1)), leaves: null, ...over }) };
+const inFlight = (id) => { return task({ id, change: change({ url: `https://github.com/o/r/pull/${id}`, checks: 'pending', verdict: null }) }) };
+const onPerson = (id, holder = 'user_ana') => { return task({ id, waitsOn: [holder] }) };
+const started = (snapshot, over = {}) => {
+  return plan({ now, params: { ...params, maxRuns: 3, ...over }, ...snapshot })
+    .filter((a) => { return a.act === 'start_child' && a.reason === 'new' })
+    .map((a) => { return a.tasks[0] });
+};
+
+test('open changes: new work starts only up to the limit, 2 × Max runs by default', () => {
+  const open = ['task_o1', 'task_o2', 'task_o3', 'task_o4', 'task_o5'].map(inFlight);
+  assert.deepEqual(started({ tasks: [...open, fresh('task_n1'), fresh('task_n2')] }), ['task_n1']);
+  assert.deepEqual(started({ tasks: [...open, fresh('task_n1')] }, { openChanges: 5 }), []);
+  const report = plan({ now, params: { ...params, openChanges: 5 }, tasks: [...open, fresh('task_n1')] }).at(-1);
+  assert.equal(report.freeReason, 'new work held upstream: open changes 5/5');
+  assert.deepEqual(report.skipped, [{ task: 'task_n1', reason: 'held upstream: open changes 5/5' }]);
+});
+
+test('the people queue: one new start a tick from half the limit, none at it, 4 per member by default', () => {
+  const queue = (n) => { return Array.from({ length: n }, (_, i) => { return onPerson(`task_w${i}`, i % 2 ? 'user_ana' : 'team_ops') }) };
+  const news = [fresh('task_n1'), fresh('task_n2')];
+  assert.deepEqual(started({ tasks: [...queue(1), ...news] }), ['task_n1', 'task_n2']);
+  assert.deepEqual(started({ tasks: [...queue(2), ...news] }), ['task_n1']);
+  assert.deepEqual(started({ tasks: [...queue(4), ...news] }), []);
+  assert.equal(plan({ now, params, tasks: [...queue(4), ...news] }).at(-1).freeReason, 'new work held upstream: people queue 4/4');
+  assert.deepEqual(started({ tasks: [...queue(4), ...news], members: 2 }), ['task_n1']);
+  assert.deepEqual(started({ tasks: [...queue(4), ...news] }, { peopleQueue: 10 }), ['task_n1', 'task_n2']);
+});
+
+test('every open decision is in the people queue, held or not; a blocked one is not yet', () => {
+  const decisions = (assignee, status = 'active') => { return [0, 1, 2, 3].map((i) => { return task({ id: `task_d${i}`, status, kind: 'decision', assignee }) }) };
+  assert.deepEqual(started({ tasks: [...decisions('user_bia'), fresh('task_n1')] }), []);
+  assert.deepEqual(started({ tasks: [...decisions(null), fresh('task_n1')] }), []);
+  assert.deepEqual(started({ tasks: [...decisions('user_bia', 'blocked'), fresh('task_n1')] }), ['task_n1']);
+});
+
+test('the limits hold only new work: very_high, a high bug, rounds and checks go on', () => {
+  const full = [0, 1, 2, 3].map((i) => { return onPerson(`task_w${i}`) });
+  const urgent = fresh('task_n1', { priority: 'very_high' });
+  const bug = fresh('task_n2', { priority: 'high', tags: ['bug'] });
+  const round = task({ id: 'task_r1', status: 'active', change: change({ checks: 'red', verdict: null }) });
+  const acted = plan({ now, params: { ...params, maxRuns: 4 }, tasks: [...full, urgent, bug, round, fresh('task_n3')] });
+  assert.deepEqual(acted.filter((a) => { return a.act === 'start_child' }).map((a) => { return a.tasks[0] }).sort(), ['task_n1', 'task_n2', 'task_r1']);
+});
