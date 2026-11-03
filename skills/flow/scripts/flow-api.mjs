@@ -64,14 +64,23 @@ export const clientFromEnv = (env = process.env) => {
   return createClient({ key: env.FLOW_API_KEY, base: env.FLOW_URL || DEFAULT_BASE });
 };
 
-/** `--name value` pairs, as every script here takes them. */
+/**
+ * `--name value` pairs, as every script here takes them; a flag with no value
+ * after it (`--no-host`) is `true`.
+ */
 export const parseFlags = (args) => {
   const out = {};
-  for (let i = 0; i < args.length; i += 2) {
-    if (!args[i].startsWith('--') || args[i + 1] === undefined) {
-      throw new Error(`expected --name <value>, got ${args[i]}`);
+  for (let i = 0; i < args.length; i += 1) {
+    if (!args[i].startsWith('--')) {
+      throw new Error(`expected --name [<value>], got ${args[i]}`);
     }
-    out[args[i].slice(2)] = args[i + 1];
+    const next = args[i + 1];
+    if (next === undefined || next.startsWith('--')) {
+      out[args[i].slice(2)] = true;
+    } else {
+      out[args[i].slice(2)] = next;
+      i += 1;
+    }
   }
   return out;
 };

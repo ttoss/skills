@@ -33,11 +33,16 @@ const waitsOf = (row) => {
 };
 
 /** The snapshot from what was read, as a pure function. */
-export const build = ({ now, candidates, slices, dueIds, children, mine, childTasks, implementsOf, extra = {} }) => {
+export const build = ({ now, candidates, slices, dueIds, children, mine, childTasks, implementsOf, repairRows = [], extra = {} }) => {
   const nowMs = Date.parse(now);
   const rank = new Map(candidates.map((t, i) => { return [t.id, i]; }));
+  // Each repo's open repair task, found by its `source` commit: the task
+  // repairs that repo, so its own change is never held by the red it fixes.
+  const repairOf = new Map((extra.defaults || []).filter((d) => { return d.repairTask; }).map((d) => { return [d.repairTask, d.repo]; }));
   const rows = new Map();
-  for (const row of [...candidates, ...slices]) {
+  // A repair task is in the snapshot even when no slice holds it, since a red
+  // default branch is the first thing the tick works.
+  for (const row of [...candidates, ...slices, ...repairRows.filter((r) => { return repairOf.has(r.id); })]) {
     rows.set(row.id, row);
   }
   const tasks = [...rows.values()].map((row) => {
@@ -59,7 +64,7 @@ export const build = ({ now, candidates, slices, dueIds, children, mine, childTa
       brief: own.brief ?? null,
       leaves: own.leaves ?? null,
       rounds: own.rounds ?? 0,
-      repairs: own.repairs ?? null,
+      repairs: own.repairs ?? repairOf.get(row.id) ?? null,
       change: own.change ?? null,
     };
   });
@@ -125,6 +130,7 @@ export const run = async ({ client, project, now = new Date().toISOString(), ext
   // implements, each repo's default branch and its open repair task. A change
   // or repo `gh` cannot read stays in `needs`, never guessed.
   const hostErrors = [];
+  let repairRows = [];
   if (repos?.length) {
     const opts = { ...(gh ? { gh } : {}), reviewers };
     const defaults = await mapLimit(repos, 2, async (repo) => {
@@ -136,6 +142,7 @@ export const run = async ({ client, project, now = new Date().toISOString(), ext
       }
     });
     const repairs = await get('/tasks', { project, tag: 'repair', status: ['active', 'waiting', 'blocked'], limit: 100 });
+    repairRows = repairs.tasks || [];
     for (const d of defaults.filter(Boolean)) {
       for (const task of repairs.tasks || []) {
         const refs = (await get(`/tasks/${task.id}`)).references || [];
@@ -180,6 +187,7 @@ export const run = async ({ client, project, now = new Date().toISOString(), ext
     mine: new Set(mine.runs.map((r) => { return r.id; })),
     childTasks: Object.fromEntries(Object.entries(full).map(([id, a]) => { return [id, a.task]; })),
     implementsOf,
+    repairRows,
     extra,
   });
   snapshot.needs.unread = unread;
