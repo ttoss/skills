@@ -8,12 +8,17 @@ import { load as loadParams } from './params.mjs';
 // The weekly Audit's report lines that are arithmetic (token-audit's routine,
 // step 4): spend in total and by agent, the three costliest tasks, the runs
 // that reached no task or stayed open, this week against the week before,
-// then what feeds and drains the graph (health.mjs). Read with the project's
-// API key; it writes nothing. What is waste, the fix and its saving stay with
-// the model.
+// then what feeds and drains the graph (health.mjs), then the decisions a
+// person answered over the last four weeks, as data for the model to read for
+// an answer given more than once (token-audit's routine, step 5). Read with the
+// project's API key; it writes nothing. What is waste, the fix and its saving,
+// and which answers are the same answer, stay with the model.
 //
 // Usage: node audit.mjs (--root <repo dir> | --project <proj_…>) [--now <ISO 8601>]
-// Output: JSON `{ lines, mismatches }`.
+// Output: JSON `{ lines, mismatches, answers }`.
+
+const DAY = 24 * 3600 * 1000;
+const ANSWER_WEEKS = 4;
 
 const weight = (totals) => {
   return totals.cost_usd ?? (totals.input_tokens || 0) + (totals.output_tokens || 0);
@@ -39,6 +44,35 @@ export const report = ({ agentsThis, agentsBefore, tasksThis, titles, unlinkedTh
   return lines;
 };
 
+// When a decision was answered: the change that closed it, else its last write.
+const answeredAt = (task) => {
+  const closing = [...(task.changes || [])].reverse().find((c) => { return c.status && c.status.to === task.status; });
+  return closing ? closing.at : task.updated_at;
+};
+
+/**
+ * The decisions a person closed over the last ANSWER_WEEKS weeks, newest
+ * first, each with its answer: what the model reads for an answer given more
+ * than once to the same kind of choice (GTF-E9). Closed decisions only: a
+ * one-task wait a person answered recurs as the same question raised again,
+ * which GTF-N6 already makes a decision the second time. Pure over what
+ * `get-task` answered.
+ */
+export const answers = ({ decisions, now }) => {
+  const since = Date.parse(now) - ANSWER_WEEKS * 7 * DAY;
+  return decisions
+    .map((task) => { return { id: task.id, url: task.url, title: task.title, outcome: task.outcome ?? null, at: answeredAt(task) }; })
+    .filter((a) => { return Date.parse(a.at) >= since; })
+    .sort((a, b) => { return Date.parse(b.at) - Date.parse(a.at); });
+};
+
+/** The line beside the data: how many were answered this week and the week before. */
+export const answersLine = ({ answers: list, now }) => {
+  const w = windows(now);
+  const within = (win) => { return list.filter((a) => { return a.at >= win.since && a.at < win.until; }).length; };
+  return `Decisions a person answered: ${within(w.thisWeek)} this week (${within(w.weekBefore)} the week before), ${list.length} over the last ${ANSWER_WEEKS} weeks`;
+};
+
 /** Every read, then the lines. */
 export const run = async ({ client, project, now = new Date().toISOString() }) => {
   const { get } = client;
@@ -57,9 +91,18 @@ export const run = async ({ client, project, now = new Date().toISOString() }) =
     return [g.key, (await get(`/tasks/${g.key}`)).task];
   })));
   const health = healthLines(await readFlow({ routine: 'audit', project, now, client }));
+  // Closed decisions, newest write first; the summary carries no outcome, so
+  // each within the window is read whole. The list is cut at the first one
+  // older than the window, since `updated_at` never precedes the close.
+  const since = Date.parse(now) - ANSWER_WEEKS * 7 * DAY;
+  const closed = await get('/tasks', { project, kind: 'decision', status: ['completed', 'cancelled'], limit: 100 });
+  const recent = (closed.tasks || []).filter((t) => { return Date.parse(t.updated_at) >= since; });
+  const decisions = await Promise.all(recent.map(async (t) => { return (await get(`/tasks/${t.id}`)).task; }));
+  const list = answers({ decisions, now });
   return {
-    lines: [...report({ agentsThis, agentsBefore, tasksThis, titles, unlinkedThis, unlinkedBefore, lingering: lingering.runs || [] }), ...health.lines],
+    lines: [...report({ agentsThis, agentsBefore, tasksThis, titles, unlinkedThis, unlinkedBefore, lingering: lingering.runs || [] }), ...health.lines, answersLine({ answers: list, now })],
     mismatches: health.mismatches,
+    answers: list,
   };
 };
 
