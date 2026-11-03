@@ -2,6 +2,7 @@ import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { clientFromEnv, parseFlags } from './flow-api.mjs';
+import { load as loadParams } from './params.mjs';
 
 // Whether this runtime can run the routines' scripts against a project: the
 // key is there, reaches the project, is restricted to it, and the deployment
@@ -60,9 +61,10 @@ export const check = async ({ project, client }) => {
 
 const isMain = process.argv[1] && realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1]);
 if (isMain) {
-  const { project } = parseFlags(process.argv.slice(2));
+  const f = parseFlags(process.argv.slice(2));
+  const project = f.project || (f.root ? loadParams(f.root).projectId : null);
   if (!project) {
-    process.stderr.write('usage: check.mjs --project <proj_…>\n');
+    process.stderr.write('usage: check.mjs (--root <repo dir> | --project <proj_…>)\n');
     process.exit(2);
   }
   const client = process.env.FLOW_API_KEY ? clientFromEnv() : null;

@@ -2,6 +2,8 @@ import { readFileSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { clientFromEnv, mapLimit, parseFlags } from './flow-api.mjs';
+import { readChange, readDefault } from './host.mjs';
+import { load as loadParams } from './params.mjs';
 
 // The tick's snapshot (flow/SKILL.md section 1), in plan.mjs's schema, read
 // from Flow with the project's API key: the candidates and their rank, the
@@ -11,13 +13,16 @@ import { clientFromEnv, mapLimit, parseFlags } from './flow-api.mjs';
 // runtime's view of each child, the judgments (brief, leaves) and the rounds.
 // `needs` lists the changes the model must read on the code host.
 //
-// Usage: node snapshot.mjs --project <proj_…> [--extra <file>] [--now <ISO>]
+// Usage: node snapshot.mjs --root <repo dir> [--extra <file>] [--now <ISO>]
+//   (params and repos from the parameters there, the code host through `gh`),
+//   or --project <proj_…> [--extra <file>] with everything else in the file.
 // --extra JSON: { "params": { maxRuns, staleAfterHours, autoRounds, reviewByAgent, agentsMayIntegrate },
 //                 "tasks": { "task_…": { brief, leaves, rounds, repairs, change } },
 //                 "children": { "arun_…": { runtime } },
 //                 "defaults": [{ repo, sha, red, repairTask }] }
 // Output: the snapshot plan.mjs reads, plus `needs: { changes: [{ task, url }],
-// unread: [{ task, error }] }`: a task Flow could not answer is named, never guessed.
+// unread: [{ task, error }], host: [{ repo | task, error }] }`: what could not
+// be read is named, never guessed.
 
 const CLOSED = ['completed', 'cancelled', 'discarded', 'archived'];
 
@@ -84,7 +89,7 @@ export const build = ({ now, candidates, slices, dueIds, children, mine, childTa
 };
 
 /** Every read, then the snapshot. */
-export const run = async ({ client, project, now = new Date().toISOString(), extra = {} }) => {
+export const run = async ({ client, project, now = new Date().toISOString(), extra = {}, repos = null, gh }) => {
   const { get } = client;
   const next = await get('/next', { project, limit: 10 });
   const counts = next.counts || {};
@@ -113,6 +118,55 @@ export const run = async ({ client, project, now = new Date().toISOString(), ext
   const implementsOf = Object.fromEntries(Object.entries(full).map(([id, answer]) => {
     return [id, (answer.references || []).filter((r) => { return r.role === 'implements' && !r.retracted_at; }).map((r) => { return r.url; })];
   }).filter(([, urls]) => { return urls.length; }));
+  // With the repos known, the code host is read with `gh`: each change a task
+  // implements, each repo's default branch and its open repair task. A change
+  // or repo `gh` cannot read stays in `needs`, never guessed.
+  const hostErrors = [];
+  if (repos?.length) {
+    const opts = gh ? { gh } : {};
+    const defaults = await mapLimit(repos, 2, async (repo) => {
+      try {
+        return await readDefault(repo, opts);
+      } catch (error) {
+        hostErrors.push({ repo, error: String(error.stderr || error.message).split('\n')[0].slice(0, 200) });
+        return null;
+      }
+    });
+    const repairs = await get('/tasks', { project, tag: 'repair', status: ['active', 'waiting', 'blocked'], limit: 100 });
+    for (const d of defaults.filter(Boolean)) {
+      for (const task of repairs.tasks || []) {
+        const refs = (await get(`/tasks/${task.id}`)).references || [];
+        if (refs.some((r) => { return r.url.includes(`github.com/${d.repo}/`); })) {
+          d.repairTask = task.id;
+          break;
+        }
+      }
+    }
+    extra = { ...extra, defaults: extra.defaults || defaults.filter(Boolean), tasks: { ...(extra.tasks || {}) } };
+    const red = new Map((extra.defaults || []).map((d) => { return [d.repo, d.red]; }));
+    const holders = new Set(children.runs.flatMap((r) => { return r.works_on || []; }));
+    await mapLimit(Object.entries(implementsOf), 4, async ([task, urls]) => {
+      if (extra.tasks[task]?.change) {
+        return;
+      }
+      try {
+        const changes = (await Promise.all(urls.map((u) => { return readChange(u, opts); }))).filter(Boolean);
+        // The open change when there is one, else the last integrated.
+        const change = changes.find((c) => { return !c.merged && !c.closed; }) || changes.at(-1);
+        if (change) {
+          const { title, task: named, mergedAt, pipelineDoneAt, ...rest } = change;
+          // Written after the merge and after its pipeline finished: the tick
+          // (or a person) already applied what integrating left.
+          const updated = full[task]?.task?.updated_at;
+          const settled = [mergedAt, pipelineDoneAt].filter(Boolean).map(Date.parse);
+          const writtenSince = Boolean(change.merged && updated && settled.length && Date.parse(updated) > Math.max(...settled));
+          extra.tasks[task] = { ...(extra.tasks[task] || {}), change: { ...rest, writtenSince, redOnDefault: red.get(change.repo) ?? null, reviewRunActive: holders.has(task) } };
+        }
+      } catch (error) {
+        hostErrors.push({ task, error: String(error.stderr || error.message).split('\n')[0].slice(0, 200) });
+      }
+    });
+  }
   const snapshot = build({
     now,
     candidates: next.tasks || [],
@@ -125,17 +179,26 @@ export const run = async ({ client, project, now = new Date().toISOString(), ext
     extra,
   });
   snapshot.needs.unread = unread;
+  snapshot.needs.host = hostErrors;
   return snapshot;
 };
 
 const isMain = process.argv[1] && realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1]);
 if (isMain) {
   const f = parseFlags(process.argv.slice(2));
-  if (!f.project) {
-    process.stderr.write('usage: snapshot.mjs --project <proj_…> [--extra <file>] [--now <ISO>]\n');
+  // --root reads the project's parameters (params.mjs) into `params`, and the
+  // code host in their repos with `gh`.
+  const p = f.root ? loadParams(f.root) : null;
+  const project = f.project || p?.projectId;
+  if (!project) {
+    process.stderr.write('usage: snapshot.mjs (--root <repo dir> | --project <proj_…>) [--extra <file>] [--now <ISO>]\n');
     process.exit(2);
   }
-  run({ client: clientFromEnv(), project: f.project, now: f.now, extra: f.extra ? JSON.parse(readFileSync(f.extra, 'utf8')) : {} }).then(
+  const extra = f.extra ? JSON.parse(readFileSync(f.extra, 'utf8')) : {};
+  if (p && !extra.params) {
+    extra.params = p.params;
+  }
+  run({ client: clientFromEnv(), project, now: f.now, extra, repos: p?.repos }).then(
     (result) => { process.stdout.write(`${JSON.stringify(result, null, 2)}\n`); },
     (error) => { process.stderr.write(`${error.message}\n`); process.exit(1); },
   );

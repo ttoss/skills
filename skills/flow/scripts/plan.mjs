@@ -25,7 +25,7 @@ import { fileURLToPath } from 'node:url';
 //             due: bool,                      // date_came, hold_cleared, or an external wait past until
 //             dueKind: 'check' | 'other' | null,
 //             brief: 'ready' | 'short' | 'split' | null,
-//             leaves: 'close' | 'release' | 'check' | null, // what the body says integrating leaves
+//             leaves: 'close' | 'release' | 'check' | 'none' | null, // what the body says integrating leaves; null: not read yet, a judge
 //             rounds: number,
 //             repairs: repo | null,           // the repo whose red default branch this task repairs
 //             change: null | { url, repo, draft, headSha,
@@ -33,6 +33,7 @@ import { fileURLToPath } from 'node:url';
 //                               redOnDefault, conflict, merged, closed,
 //                               checksBeforeRepair,   // its checks last ran before the repo's latest repair integrated
 //                               pipelineRedAfterMerge,
+//                               writtenSince,         // the task was written after the change merged and its pipeline finished
 //                               verdict: null | { sha, result: 'CLEAN' | 'FINDINGS' },
 //                               reviewRunActive, touchesOwnGates, reservedToPerson } }]
 // }
@@ -131,6 +132,11 @@ const isHeldByRepair = ({ task, change, underRepair }) => {
 };
 
 const advanceMerged = ({ task, change, underRepair }) => {
+  // "The change integrated, nothing written since": a task written after the
+  // merge and its pipeline was already advanced, and is left as it stands.
+  if (change.writtenSince) {
+    return { acts: [], item: null };
+  }
   if (change.pipelineRedAfterMerge && isHeldByRepair({ task, change, underRepair })) {
     return NONE;
   }
@@ -142,6 +148,9 @@ const advanceMerged = ({ task, change, underRepair }) => {
   }
   if (task.status !== 'waiting') {
     return { acts: [], item: null };
+  }
+  if (task.leaves === null || task.leaves === undefined) {
+    return { acts: [{ act: 'judge', about: 'leaves', task: task.id, url: change.url, reason: 'integrated: what does the body say integrating leaves (close, release, check, or none)?' }], item: null };
   }
   const leaves = LEAVES[task.leaves];
   const act = leaves

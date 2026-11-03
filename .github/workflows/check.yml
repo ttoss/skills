@@ -39,4 +39,4 @@ jobs:
       # The planner decides the tick's transitions; each row of the process's
       # transition table has a fixture here.
       - name: Planner tests
-        run: node --test "skills/flow/scripts/*.test.mjs"
+        run: node --test "skills/*/scripts/*.test.mjs"

@@ -44,6 +44,19 @@ A list, one parameter per item, each a pointer or a short rule:
 - **Delivery kinds**: help-center articles (a person approves, an agent publishes, the live page proves it).
 ```
 
+The `flow` skill's scripts read this file (`scripts/params.mjs`): the project and decision ids, the backticked `owner/repo` items of **Repos**, and these values, each from an item of its own when there is one, here or in the file **Runtime** points to, else from the prose that states it ("max runs 3", "one automatic round", the Chase's "8 lines"), else the default. An item of its own is the one way to set **Review child** (`yes` when the tick starts a review child) and **Agents integrate** (`no` when a person integrates every change):
+
+```markdown
+- **Max runs**: 2.
+- **Stale after**: 4 hours.
+- **Rounds**: 1.
+- **Review child**: no.
+- **Agents integrate**: yes.
+- **Chase lines**: 5.
+```
+
+`node <flow skill>/scripts/params.mjs --root .` prints what the scripts read and where each value came from (`sources`).
+
 ## The entry section
 
 [`flow-setup`](SKILL.md) step 6 writes it, filled, into the repo's always-loaded entry file. It is what a session started without `/flow` knows about Flow, so it stays short: pointers, never the rules they point to.
