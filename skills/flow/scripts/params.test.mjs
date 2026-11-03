@@ -26,15 +26,15 @@ test('items: one per top-level item, continuation lines joined', () => {
 test('each value from its own item, else the prose that states it, else the default, and says which', () => {
   const r = resolve({ file: 'f', main: items(FILE), runtime: { 'Stale after': '6 hours.' } });
   assert.deepEqual([r.projectId, r.standingDecision, r.repos], ['proj_1m5wbbbf1x', 'task_8gzt6adhhp', ['acme/api', 'acme/web']]);
-  assert.deepEqual(r.params, { maxRuns: 3, staleAfterHours: 6, autoRounds: 1, reviewByAgent: false, reviewRequired: null, reviewGraceMinutes: 30, agentsMayIntegrate: true, focus: null, openChanges: null, personQueue: null });
+  assert.deepEqual(r.params, { maxRuns: 3, staleAfterHours: 6, autoRounds: 1, reviewByAgent: false, reviewRequired: null, reviewGraceMinutes: 30, agentsMayIntegrate: true, focus: null, openChanges: null, peopleQueue: null });
   assert.equal(r.chaseLines, 8);
   assert.equal(r.sources.maxRuns, 'Runtime: "max runs N"');
   assert.equal(r.sources.staleAfterHours, 'Runtime file: Stale after');
   assert.equal(r.sources.reviewByAgent, 'default');
   const own = resolve({ file: 'f', main: { ...items(FILE), 'Max runs': '4', 'Review child': 'yes', 'Agents integrate': 'no', 'Stale after': '90 minutes' } });
   assert.deepEqual([own.params.maxRuns, own.params.reviewByAgent, own.params.agentsMayIntegrate, own.params.staleAfterHours], [4, true, false, 1.5]);
-  const wip = resolve({ file: 'f', main: { 'Open changes': '6' }, runtime: { 'Person queue': '3 items.' } });
-  assert.deepEqual([wip.params.openChanges, wip.params.personQueue, wip.sources.personQueue], [6, 3, 'Runtime file: Person queue']);
+  const wip = resolve({ file: 'f', main: { 'Open changes': '6' }, runtime: { 'People queue': '12 items.' } });
+  assert.deepEqual([wip.params.openChanges, wip.params.peopleQueue, wip.sources.peopleQueue], [6, 12, 'Runtime file: People queue']);
 });
 
 test('load: the file by precedence, a section of AGENTS.md, and a refusal naming what is missing', () => {

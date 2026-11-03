@@ -140,14 +140,14 @@ export const resolve = ({ file, main, runtime = {} }) => {
     agentsMayIntegrate: pick('agentsMayIntegrate', [['Agents integrate', yesNo(main['Agents integrate'])]], true),
     focus: null,
     // The WIP limits on new work; null leaves the planner's defaults
-    // (2 × Max runs changes in flight, 4 items waiting on one person).
+    // (2 × Max runs changes in flight, 4 items per member waiting on people).
     openChanges: pick('openChanges', [
       ['Open changes', intOf(main['Open changes'])],
       ['Runtime file: Open changes', intOf(runtime['Open changes'])],
     ], null),
-    personQueue: pick('personQueue', [
-      ['Person queue', intOf(main['Person queue'])],
-      ['Runtime file: Person queue', intOf(runtime['Person queue'])],
+    peopleQueue: pick('peopleQueue', [
+      ['People queue', intOf(main['People queue'])],
+      ['Runtime file: People queue', intOf(runtime['People queue'])],
     ], null),
   };
   const chaseLines = pick('chaseLines', [

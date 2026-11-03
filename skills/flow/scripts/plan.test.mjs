@@ -486,21 +486,22 @@ test('open changes: new work starts only up to the limit, 2 × Max runs by defau
   assert.deepEqual(report.skipped, [{ task: 'task_n1', reason: 'held upstream: open changes 5/5' }]);
 });
 
-test('a person queue: one new start a tick from half the limit, none at it', () => {
-  const queue = (n) => { return Array.from({ length: n }, (_, i) => { return onPerson(`task_w${i}`) }) };
+test('the people queue: one new start a tick from half the limit, none at it, 4 per member by default', () => {
+  const queue = (n) => { return Array.from({ length: n }, (_, i) => { return onPerson(`task_w${i}`, i % 2 ? 'user_ana' : 'team_ops') }) };
   const news = [fresh('task_n1'), fresh('task_n2')];
   assert.deepEqual(started({ tasks: [...queue(1), ...news] }), ['task_n1', 'task_n2']);
   assert.deepEqual(started({ tasks: [...queue(2), ...news] }), ['task_n1']);
   assert.deepEqual(started({ tasks: [...queue(4), ...news] }), []);
-  assert.equal(plan({ now, params, tasks: [...queue(4), ...news] }).at(-1).freeReason, "new work held upstream: user_ana's queue 4/4");
+  assert.equal(plan({ now, params, tasks: [...queue(4), ...news] }).at(-1).freeReason, 'new work held upstream: people queue 4/4');
+  assert.deepEqual(started({ tasks: [...queue(4), ...news], members: 2 }), ['task_n1']);
+  assert.deepEqual(started({ tasks: [...queue(4), ...news] }, { peopleQueue: 10 }), ['task_n1', 'task_n2']);
 });
 
-test('an open decision is in its holder’s queue; one nobody holds is a queue of its own', () => {
-  const decisions = (assignee) => { return [0, 1, 2, 3].map((i) => { return task({ id: `task_d${i}`, status: 'active', kind: 'decision', assignee }) }) };
+test('every open decision is in the people queue, held or not; a blocked one is not yet', () => {
+  const decisions = (assignee, status = 'active') => { return [0, 1, 2, 3].map((i) => { return task({ id: `task_d${i}`, status, kind: 'decision', assignee }) }) };
   assert.deepEqual(started({ tasks: [...decisions('user_bia'), fresh('task_n1')] }), []);
-  assert.equal(plan({ now, params, tasks: [...decisions(null), fresh('task_n1')] }).at(-1).wip.personQueue.holder, 'nobody');
-  const blocked = decisions('user_bia').map((d) => { return { ...d, status: 'blocked' } });
-  assert.deepEqual(started({ tasks: [...blocked, fresh('task_n1')] }), ['task_n1']);
+  assert.deepEqual(started({ tasks: [...decisions(null), fresh('task_n1')] }), []);
+  assert.deepEqual(started({ tasks: [...decisions('user_bia', 'blocked'), fresh('task_n1')] }), ['task_n1']);
 });
 
 test('the limits hold only new work: very_high, a high bug, rounds and checks go on', () => {
