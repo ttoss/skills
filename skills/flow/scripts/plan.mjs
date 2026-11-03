@@ -12,21 +12,18 @@ import { fileURLToPath } from 'node:url';
 // depends on it):
 // {
 //   now: ISO date,
-//   members: number | null,                   // the project's members, which size the people queue's default
 //   params: { maxRuns, staleAfterHours, autoRounds, reviewByAgent,
 //             reviewRequired: bool | null,   // `Review` names a reviewer; null: not stated, a judge
 //             reviewGraceMinutes,            // how long a review may take to start before its request is lost
 //             agentsMayIntegrate, focus: null | { task } | { tag },
-//             openChanges,                   // WIP limit on changes in flight; null: 2 × maxRuns
-//             peopleQueue },                 // WIP limit on what waits on the project's people; null: 4 × members
+//             reviewQueue },                 // WIP limit on what waits for review or validation; null: 2 × maxRuns
 //   defaults: [{ repo, sha,                   // each repo's default branch head
 //                red: bool | null,            // its required checks or integration pipeline red there
 //                repairTask: id | null }],    // the open task tagged `repair` for that repo
 //   children: [{ run, tasks: [id], startedAt, byMe,
 //                runtime: 'working' | 'idle' | 'failed' | 'gone' | null,
 //                handoff: bool }],          // its task closed or waits on gates or a person
-//   tasks: [{ id, status, kind, priority, tags, rank, heldByPerson, inFocus,
-//             assignee,                       // its holder: a member's user_…, a team_…, or null
+//   tasks: [{ id, status, priority, tags, rank, heldByPerson, inFocus,
 //             waitsOn: [holder],              // whom its waits are `on`
 //             candidate: bool,                // in get-next's ready candidates
 //             due: bool,                      // date_came, hold_cleared, or an external wait past until
@@ -380,7 +377,7 @@ const delegate = ({ items, free, newWork }) => {
     if (left === 0) {
       break;
     }
-    // New work beyond the WIP limits waits upstream, where waiting is cheap;
+    // New work beyond the WIP limit waits upstream, where waiting is cheap;
     // what the person said cannot wait (very_high, a high bug) starts anyway.
     if (item.stage === 'new' && urgencyTier(item.task) === 2) {
       if (budget === 0) {
@@ -396,33 +393,27 @@ const delegate = ({ items, free, newWork }) => {
   return { acts, skipped, free: left, held };
 };
 
-// The two WIP limits that hold new work upstream (W1, W21): changes in flight,
-// read from the tasks' open changes, and what waits on the project's people as
-// one queue, since their attention is shared: each task with a wait `on` a
-// member or a team, and each open decision, whoever holds it or nobody.
-const peopleQueue = (tasks) => {
-  return tasks.filter((task) => {
-    return (task.waitsOn || []).length > 0 || (task.kind === 'decision' && task.status === 'active');
+// The WIP limit that holds new work upstream (W1, W21): the review queue, what
+// waits to be reviewed or validated after an implementation. That is each open
+// change past draft, at its gates or with a person to integrate it, and each
+// integrated change whose task waits on a person to see it in effect. Every new
+// start lands in it, so the headroom is exact. Decisions are not in it: one
+// holds only the work it blocks, so a thousand open choices never stop the work
+// nobody has to choose about.
+const reviewQueue = (tasks) => {
+  return tasks.filter(({ change, waitsOn }) => {
+    if (!change || change.closed) {
+      return false;
+    }
+    return change.merged ? (waitsOn || []).length > 0 : !change.draft;
   }).length;
 };
 
 // How many new tasks this tick may start, and why fewer than its free slots.
-// Changes: each new start opens one, so the headroom is exact. A person: new
-// work reaches their queue only later, so it throttles progressively (W17):
-// one start a tick from half the limit, none at it, which keeps a tick from
-// flipping between full speed and none.
-const newWorkBudget = ({ tasks, params, members }) => {
-  const openLimit = params.openChanges ?? 2 * params.maxRuns;
-  const peopleLimit = params.peopleQueue ?? 4 * Math.max(1, members ?? 1);
-  const open = tasks.filter((t) => {
-    return t.change && !t.change.merged && !t.change.closed;
-  }).length;
-  const queued = peopleQueue(tasks);
-  const byChanges = Math.max(0, openLimit - open);
-  const byPeople = queued >= peopleLimit ? 0 : queued * 2 >= peopleLimit ? 1 : Infinity;
-  const budget = Math.min(byChanges, byPeople);
-  const why = byChanges <= byPeople ? `open changes ${open}/${openLimit}` : `people queue ${queued}/${peopleLimit}`;
-  return { budget, why, wip: { openChanges: { now: open, limit: openLimit }, peopleQueue: { now: queued, limit: peopleLimit } } };
+const newWorkBudget = ({ tasks, params }) => {
+  const limit = params.reviewQueue ?? 2 * params.maxRuns;
+  const queued = reviewQueue(tasks);
+  return { budget: Math.max(0, limit - queued), why: `review queue ${queued}/${limit}`, wip: { reviewQueue: { now: queued, limit } } };
 };
 
 // `plan: <n> acts (<kind> <count>, …) · runs <n>/<cap> by me (<free> free: <why>)`
@@ -463,7 +454,7 @@ const repairActs = ({ defaults, tasks }) => {
     });
 };
 
-export const plan = ({ now, params, children = [], tasks = [], defaults = [], members = null }) => {
+export const plan = ({ now, params, children = [], tasks = [], defaults = [] }) => {
   const reconciled = reconcileChildren({ children, params, now });
   const underRepair = new Set(
     defaults
@@ -483,7 +474,7 @@ export const plan = ({ now, params, children = [], tasks = [], defaults = [], me
   const running = children.filter((c) => {
     return c.byMe && !reconciled.closed.has(c.run);
   }).length;
-  const newWork = newWorkBudget({ tasks, params, members });
+  const newWork = newWorkBudget({ tasks, params });
   const delegated = delegate({ items, free: Math.max(0, params.maxRuns - running), newWork });
   const started = delegated.acts.filter((a) => {
     return a.act === 'start_child';
