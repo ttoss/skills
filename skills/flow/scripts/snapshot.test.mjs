@@ -57,3 +57,14 @@ test('needs lists each implements change the model has not given; extra fills ju
   const acts = plan(snap);
   assert.deepEqual(acts.filter((a) => { return a.act === 'start_child'; }).map((a) => { return a.tasks ?? a.task; }).flat(), ['t_new']);
 });
+
+test('a repo’s repair task repairs it, even outside every slice: its own change is never held by the red it fixes', () => {
+  const defaults = [{ repo: 'o/r', sha: 's', red: true, repairTask: 't_fix' }];
+  const red = { url: 'https://github.com/o/r/pull/9', repo: 'o/r', draft: false, headSha: 'h', checks: 'red', redOnDefault: true, conflict: false, merged: false, closed: false };
+  const ready = build({ ...base, repairRows: [row('t_fix', { tags: ['bug', 'repair'] }), row('t_other')], extra: { defaults } });
+  assert.deepEqual(ready.tasks.map((t) => { return [t.id, t.repairs]; }), [['t_fix', 'o/r']]);
+  const start = plan(ready).filter((a) => { return a.act === 'start_child'; });
+  assert.deepEqual(start.map((a) => { return [a.kind, a.tasks]; }), [['repair', ['t_fix']]]);
+  const round = build({ ...base, slices: [row('t_fix', { status: 'waiting' })], extra: { defaults, tasks: { t_fix: { change: red } } } });
+  assert.deepEqual(plan(round).filter((a) => { return a.act === 'move_task'; }).map((a) => { return a.task; }), ['t_fix']);
+});
