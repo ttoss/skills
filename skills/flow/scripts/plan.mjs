@@ -43,17 +43,22 @@ const HOUR = 3600 * 1000;
 
 const NONE = { acts: [], item: null };
 
-// Process rule 3: what ages fastest goes first. A red default branch holds every
-// change in its repo, so its repair precedes all; then a bug at very_high, then
-// high, precedes every other stage; the stage order holds below that. A release
-// step is its own task, delegated as new work once written.
+// Process rule 3: what ages fastest goes first, read from a fixed proxy and
+// never estimated per task. A red default branch holds every change in its
+// repo, so its repair precedes all; then any task at very_high, bug or not,
+// since that priority is the person's word that waiting costs most; then a bug
+// at high; the stage order holds below that. A release step is its own task,
+// delegated as new work once written.
 const STAGES = ['repair', 'conflict', 'integratedCheck', 'round', 'review', 'otherCheck', 'new'];
 
-const bugTier = (task) => {
-  if (!(task.tags || []).includes('bug')) {
-    return 2;
+const urgencyTier = (task) => {
+  if (task.priority === 'very_high') {
+    return 0;
   }
-  return { very_high: 0, high: 1 }[task.priority] ?? 2;
+  if ((task.tags || []).includes('bug') && task.priority === 'high') {
+    return 1;
+  }
+  return 2;
 };
 
 // Section 2: what to do with one child, or null to leave it.
@@ -259,7 +264,7 @@ const taskWork = ({ task, params, underRepair }) => {
 const byPriority = (a, b) => {
   return (
     (b.stage === 'repair') - (a.stage === 'repair') ||
-    bugTier(a.task) - bugTier(b.task) ||
+    urgencyTier(a.task) - urgencyTier(b.task) ||
     STAGES.indexOf(a.stage) - STAGES.indexOf(b.stage) ||
     (a.task.rank ?? Infinity) - (b.task.rank ?? Infinity) ||
     a.task.id.localeCompare(b.task.id)
