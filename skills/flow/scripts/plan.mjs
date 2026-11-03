@@ -15,14 +15,18 @@ import { fileURLToPath } from 'node:url';
 //   params: { maxRuns, staleAfterHours, autoRounds, reviewByAgent,
 //             reviewRequired: bool | null,   // `Review` names a reviewer; null: not stated, a judge
 //             reviewGraceMinutes,            // how long a review may take to start before its request is lost
-//             agentsMayIntegrate, focus: null | { task } | { tag } },
+//             agentsMayIntegrate, focus: null | { task } | { tag },
+//             openChanges,                   // WIP limit on changes in flight; null: 2 × maxRuns
+//             personQueue },                 // WIP limit on what waits on one person; null: 4
 //   defaults: [{ repo, sha,                   // each repo's default branch head
 //                red: bool | null,            // its required checks or integration pipeline red there
 //                repairTask: id | null }],    // the open task tagged `repair` for that repo
 //   children: [{ run, tasks: [id], startedAt, byMe,
 //                runtime: 'working' | 'idle' | 'failed' | 'gone' | null,
 //                handoff: bool }],          // its task closed or waits on gates or a person
-//   tasks: [{ id, status, priority, tags, rank, heldByPerson, inFocus,
+//   tasks: [{ id, status, kind, priority, tags, rank, heldByPerson, inFocus,
+//             assignee,                       // its holder: a member's user_…, a team_…, or null
+//             waitsOn: [holder],              // whom its waits are `on`
 //             candidate: bool,                // in get-next's ready candidates
 //             due: bool,                      // date_came, hold_cleared, or an external wait past until
 //             dueKind: 'check' | 'other' | null,
@@ -355,10 +359,12 @@ const slotAct = (item) => {
 };
 
 // Section 4: fill this person's free slots, what ages fastest first.
-const delegate = ({ items, free }) => {
+const delegate = ({ items, free, newWork }) => {
   const acts = [];
   const skipped = [];
   let left = free;
+  let budget = newWork.budget;
+  let held = 0;
   for (const item of [...items].sort(byPriority)) {
     const skip = itemSkip(item);
     if (skip) {
@@ -373,10 +379,63 @@ const delegate = ({ items, free }) => {
     if (left === 0) {
       break;
     }
+    // New work beyond the WIP limits waits upstream, where waiting is cheap;
+    // what the person said cannot wait (very_high, a high bug) starts anyway.
+    if (item.stage === 'new' && urgencyTier(item.task) === 2) {
+      if (budget === 0) {
+        held += 1;
+        skipped.push({ task: item.task.id, reason: `held upstream: ${newWork.why}` });
+        continue;
+      }
+      budget -= 1;
+    }
     acts.push(slotAct(item));
     left -= 1;
   }
-  return { acts, skipped, free: left };
+  return { acts, skipped, free: left, held };
+};
+
+// The two WIP limits that hold new work upstream (W1, W21): changes in flight,
+// read from the tasks' open changes, and what waits on one person, a wait
+// `on` them or an open decision they hold. A decision nobody holds is the
+// project admins' (the Chase's "waits that name nobody"), one queue of its own.
+const personQueues = (tasks) => {
+  const queues = new Map();
+  const add = (holder) => {
+    queues.set(holder, (queues.get(holder) ?? 0) + 1);
+  };
+  for (const task of tasks) {
+    const on = task.waitsOn || [];
+    if (on.length) {
+      on.forEach(add);
+    } else if (task.kind === 'decision' && task.status === 'active') {
+      add(task.assignee ?? 'nobody');
+    }
+  }
+  return queues;
+};
+
+// How many new tasks this tick may start, and why fewer than its free slots.
+// Changes: each new start opens one, so the headroom is exact. A person: new
+// work reaches their queue only later, so it throttles progressively (W17):
+// one start a tick from half the limit, none at it, which keeps a tick from
+// flipping between full speed and none.
+const newWorkBudget = ({ tasks, params }) => {
+  const openLimit = params.openChanges ?? 2 * params.maxRuns;
+  const personLimit = params.personQueue ?? 4;
+  const open = tasks.filter((t) => {
+    return t.change && !t.change.merged && !t.change.closed;
+  }).length;
+  const [holder, queued] = [...personQueues(tasks)].sort((a, b) => {
+    return b[1] - a[1] || a[0].localeCompare(b[0]);
+  })[0] ?? [null, 0];
+  const byChanges = Math.max(0, openLimit - open);
+  const byPerson = queued >= personLimit ? 0 : queued * 2 >= personLimit ? 1 : Infinity;
+  const budget = Math.min(byChanges, byPerson);
+  const why = byChanges <= byPerson
+    ? `open changes ${open}/${openLimit}`
+    : `${holder}'s queue ${queued}/${personLimit}`;
+  return { budget, why, wip: { openChanges: { now: open, limit: openLimit }, personQueue: { holder, now: queued, limit: personLimit } } };
 };
 
 // `plan: <n> acts (<kind> <count>, …) · runs <n>/<cap> by me (<free> free: <why>)`
@@ -437,7 +496,8 @@ export const plan = ({ now, params, children = [], tasks = [], defaults = [] }) 
   const running = children.filter((c) => {
     return c.byMe && !reconciled.closed.has(c.run);
   }).length;
-  const delegated = delegate({ items, free: Math.max(0, params.maxRuns - running) });
+  const newWork = newWorkBudget({ tasks, params });
+  const delegated = delegate({ items, free: Math.max(0, params.maxRuns - running), newWork });
   const started = delegated.acts.filter((a) => {
     return a.act === 'start_child';
   }).length;
@@ -447,8 +507,11 @@ export const plan = ({ now, params, children = [], tasks = [], defaults = [] }) 
   const acted = [...reconciled.acts, ...repairActs({ defaults, tasks }), ...work.flatMap((w) => {
     return w.acts;
   }), ...delegated.acts];
-  const freeReason =
-    delegated.free > 0 ? (anyNew ? 'every candidate left was skipped' : 'no candidate left in the focus') : null;
+  const freeReason = delegated.free === 0
+    ? null
+    : delegated.held > 0
+      ? `new work held upstream: ${newWork.why}`
+      : anyNew ? 'every candidate left was skipped' : 'no candidate left in the focus';
   const report = {
     act: 'report',
     started,
@@ -457,6 +520,7 @@ export const plan = ({ now, params, children = [], tasks = [], defaults = [] }) 
     freeSlots: delegated.free,
     freeReason,
     skipped: delegated.skipped,
+    wip: newWork.wip,
     // The tick's report line opens with this, quoted exactly, so a tick that
     // never ran the planner is visible in its own report.
     line: planLine({ acts: acted, runsByMe: running + started, cap: params.maxRuns, free: delegated.free, freeReason }),
