@@ -13,7 +13,7 @@ import { parseFlags } from './flow-api.mjs';
 // it, else the default; `sources` says which, so nothing is silently guessed.
 //
 // Usage: node params.mjs [--root <repo dir>]
-// Output: JSON `{ file, projectId, standingDecision, repos, params, chaseLines, sources, items }`.
+// Output: JSON `{ file, projectId, standingDecision, repos, reviewers, params, chaseLines, sources, items }`.
 
 export const LOCATIONS = ['.agents/flow.md', '.claude/flow.md', 'AGENTS.md', 'CLAUDE.md'];
 
@@ -84,6 +84,15 @@ const yesNo = (value) => {
   return /^\s*(no|false|off|none)\b/i.test(value || '') ? false : null;
 };
 
+// `Review`: none → false; any reviewer named → true; not stated → null.
+const reviewNamed = (value) => {
+  const text = (value || '').replace(/[`*.]/g, '').trim();
+  if (!text) {
+    return null;
+  }
+  return !/^(none|no)\b/i.test(text);
+};
+
 /** What the scripts need, from the items of the parameters and runtime files. */
 export const resolve = ({ file, main, runtime = {} }) => {
   const sources = {};
@@ -119,6 +128,15 @@ export const resolve = ({ file, main, runtime = {} }) => {
       })()],
     ], 1),
     reviewByAgent: pick('reviewByAgent', [['Review child', yesNo(main['Review child'])]], false),
+    // A gate's parameter fails closed: a `Review` the file does not state is
+    // null, which the planner asks about, never "no review".
+    reviewRequired: pick('reviewRequired', [
+      ['Review child', yesNo(main['Review child']) === true ? true : null],
+      ['Review', reviewNamed(main.Review)],
+    ], null),
+    reviewGraceMinutes: pick('reviewGraceMinutes', [
+      ['Review grace', (() => { const h = hours(main['Review grace']); return h === null ? null : Math.round(h * 60); })()],
+    ], 30),
     agentsMayIntegrate: pick('agentsMayIntegrate', [['Agents integrate', yesNo(main['Agents integrate'])]], true),
     focus: null,
   };
@@ -129,7 +147,10 @@ export const resolve = ({ file, main, runtime = {} }) => {
   const projectId = (/proj_[0-9a-hjkmnp-tv-z]{10}/.exec(main['Flow project id'] || '') || [null])[0];
   const standingDecision = (/task_[0-9a-hjkmnp-tv-z]{10}/.exec(main['Standing-decision task id'] || '') || [null])[0];
   const repos = [...(main.Repos || '').matchAll(/`([\w.-]+\/[\w.-]+)`/g)].map((m) => { return m[1]; });
-  return { file, projectId, standingDecision, repos, params, chaseLines, sources, items: main };
+  // The code-host identities whose verdict counts; none named → any identity
+  // with write access to the repo.
+  const reviewers = [...(main.Reviewer || main.Reviewers || '').matchAll(/`([^`\s]+)`/g)].map((m) => { return m[1]; });
+  return { file, projectId, standingDecision, repos, reviewers, params, chaseLines, sources, items: main };
 };
 
 /** The parameters of the repo at `root`, or an error naming what is missing. */

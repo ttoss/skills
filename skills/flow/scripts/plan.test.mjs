@@ -14,6 +14,8 @@ const params = {
   staleAfterHours: 4,
   autoRounds: 1,
   reviewByAgent: true,
+  reviewRequired: true,
+  reviewGraceMinutes: 30,
   agentsMayIntegrate: true,
   focus: null,
 };
@@ -29,8 +31,11 @@ const change = (over = {}) => { return {
   merged: false,
   closed: false,
   pipelineRedAfterMerge: false,
+  checksDoneAt: '2026-10-30T11:50:00Z',
   verdict: { sha: 'h', result: 'CLEAN' },
+  reviewPendingSince: null,
   reviewRunActive: false,
+  reviewEnforced: true,
   touchesOwnGates: false,
   reservedToPerson: false,
   ...over,
@@ -81,6 +86,52 @@ test('a review already running starts no second one', () => {
     ).length,
     0,
   );
+});
+
+// Gates fail closed: a missing verdict never reads as the gates passed.
+const external = { ...params, reviewByAgent: false };
+const noVerdict = (over = {}) => { return task({ change: change({ verdict: null, ...over }) }) };
+const kinds = (out) => { return out.filter((a) => { return a.act !== 'report' }).map((a) => { return a.act }) };
+
+test('a reviewer outside the tick: no verdict waits, never integrates, while the request is fresh', () => {
+  assert.deepEqual(kinds(plan({ now, params: external, tasks: [noVerdict()] })), []);
+});
+
+test('a reviewer outside the tick: past the grace with no claim, the request is lost', () => {
+  const out = plan({ now, params: external, tasks: [noVerdict({ checksDoneAt: '2026-10-30T11:00:00Z' })] });
+  assert.deepEqual(kinds(out), ['review_lost']);
+});
+
+test('a reviewer outside the tick: a claim past the grace with no run holding the task is lost too', () => {
+  const stale = noVerdict({ checksDoneAt: '2026-10-30T10:00:00Z', reviewPendingSince: '2026-10-30T11:00:00Z' });
+  assert.deepEqual(kinds(plan({ now, params: external, tasks: [stale] })), ['review_lost']);
+  const held = noVerdict({ checksDoneAt: '2026-10-30T10:00:00Z', reviewRunActive: true });
+  assert.deepEqual(kinds(plan({ now, params: external, tasks: [held] })), []);
+});
+
+test('Review none: the gates are the checks, and no verdict integrates', () => {
+  const out = plan({ now, params: { ...external, reviewRequired: false }, tasks: [noVerdict({ reviewEnforced: null })] });
+  assert.deepEqual(kinds(out), ['integrate']);
+});
+
+test('Review not stated: no verdict is a judge, never an integration', () => {
+  const out = plan({ now, params: { ...external, reviewRequired: null }, tasks: [noVerdict()] });
+  assert.deepEqual(out.filter((a) => { return a.act === 'judge' }).map((a) => { return a.about }), ['review']);
+  assert.equal(out.filter((a) => { return a.act === 'integrate' }).length, 0);
+});
+
+test('a review child is not started while a reviewer’s claim on the head is fresh', () => {
+  const fresh = noVerdict({ reviewPendingSince: '2026-10-30T11:55:00Z' });
+  assert.equal(acts({ tasks: [fresh] }, 'start_child').length, 0);
+  const stale = noVerdict({ reviewPendingSince: '2026-10-30T10:00:00Z' });
+  assert.deepEqual(acts({ tasks: [stale] }, 'start_child').map((a) => { return a.kind }), ['review']);
+});
+
+test('a CLEAN verdict the code host does not enforce waits on a person to integrate', () => {
+  for (const reviewEnforced of [false, null]) {
+    const out = plan({ now, params, tasks: [task({ change: change({ reviewEnforced }) })] });
+    assert.deepEqual(kinds(out), ['wait_on_person']);
+  }
 });
 
 test('a change to its own gates waits on a person', () => {

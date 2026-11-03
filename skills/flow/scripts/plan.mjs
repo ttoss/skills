@@ -13,6 +13,8 @@ import { fileURLToPath } from 'node:url';
 // {
 //   now: ISO date,
 //   params: { maxRuns, staleAfterHours, autoRounds, reviewByAgent,
+//             reviewRequired: bool | null,   // `Review` names a reviewer; null: not stated, a judge
+//             reviewGraceMinutes,            // how long a review may take to start before its request is lost
 //             agentsMayIntegrate, focus: null | { task } | { tag } },
 //   defaults: [{ repo, sha,                   // each repo's default branch head
 //                red: bool | null,            // its required checks or integration pipeline red there
@@ -34,8 +36,12 @@ import { fileURLToPath } from 'node:url';
 //                               checksBeforeRepair,   // its checks last ran before the repo's latest repair integrated
 //                               pipelineRedAfterMerge,
 //                               writtenSince,         // the task was written after the change merged and its pipeline finished
-//                               verdict: null | { sha, result: 'CLEAN' | 'FINDINGS' },
-//                               reviewRunActive, touchesOwnGates, reservedToPerson } }]
+//                               checksDoneAt,         // when the head's checks finished green
+//                               verdict: null | { sha, result: 'CLEAN' | 'FINDINGS' }, // bound to its commit and an allowed author (host.mjs)
+//                               reviewPendingSince,   // a reviewer's pending flow/review status on the head
+//                               reviewRunActive,      // a running run holds the task
+//                               reviewEnforced,       // the code host refuses to integrate without the review
+//                               touchesOwnGates, reservedToPerson } }]
 // }
 
 
@@ -166,6 +172,11 @@ const advanceMerged = ({ task, change, underRepair }) => {
 
 // Gates passed: integrate, wait on a person, or ask what the Merge rule reserves.
 const gatesPassed = ({ task, change, params }) => {
+  // The planner's reading is never the only guard on the one act the next
+  // tick cannot undo: a review the code host does not enforce, a person merges.
+  if (params.reviewRequired && change.reviewEnforced !== true) {
+    return { act: 'wait_on_person', task: task.id, reason: `ready for a person to integrate ${change.url}: the code host does not require the review (flow/review) on its default branch` };
+  }
   if (change.touchesOwnGates === null || change.reservedToPerson === null) {
     return { act: 'judge', about: 'merge_rule', task: task.id, url: change.url, reason: 'gates passed: does the change alter its own gates, or need what the Merge rule reserves to a person?' };
   }
@@ -175,18 +186,42 @@ const gatesPassed = ({ task, change, params }) => {
   return { act: 'integrate', task: task.id, url: change.url, reason: 'gates passed' };
 };
 
-const advanceGreen = ({ task, change, params }) => {
+const minutesSince = (when, now) => {
+  return when ? (Date.parse(now) - Date.parse(when)) / 60000 : null;
+};
+
+// Gates fail closed: no verdict for the head never means the gates passed,
+// unless `Review` says there is no review.
+const advanceGreen = ({ task, change, params, now }) => {
   const verdict = change.verdict && change.verdict.sha === change.headSha ? change.verdict.result : null;
   if (verdict === 'FINDINGS') {
     return roundOrPerson({ task, params, why: 'review findings' });
   }
-  if (verdict === null && params.reviewByAgent) {
-    return { acts: [], item: change.reviewRunActive ? null : { stage: 'review', kind: 'review' } };
+  if (verdict === 'CLEAN' || params.reviewRequired === false) {
+    return { acts: [gatesPassed({ task, change, params })], item: null };
   }
-  return { acts: [gatesPassed({ task, change, params })], item: null };
+  if (params.reviewRequired !== true) {
+    return { acts: [{ act: 'judge', about: 'review', task: task.id, url: change.url, reason: 'no verdict, and the parameters do not state Review: does a reviewer judge this change? Write the Review item to stop asking' }], item: null };
+  }
+  const grace = params.reviewGraceMinutes ?? 30;
+  const claimed = minutesSince(change.reviewPendingSince, now);
+  const active = change.reviewRunActive || (claimed !== null && claimed < grace);
+  if (params.reviewByAgent) {
+    return { acts: [], item: active ? null : { stage: 'review', kind: 'review' } };
+  }
+  // A reviewer outside the tick: wait while the request is fresh or claimed;
+  // past the grace with neither, the request is lost.
+  const asked = minutesSince(change.checksDoneAt, now);
+  if (active || asked === null || asked < grace) {
+    return NONE;
+  }
+  return {
+    acts: [{ act: 'review_lost', task: task.id, url: change.url, reason: `no verdict for the head ${Math.round(asked)} min after its checks passed, and no reviewer holds it: apply the Review fallback` }],
+    item: null,
+  };
 };
 
-const advanceOpen = ({ task, change, params, underRepair }) => {
+const advanceOpen = ({ task, change, params, underRepair, now }) => {
   if (change.conflict) {
     return {
       acts: [{ act: 'move_task', task: task.id, status: 'active', reason: 'a conflict with the default branch' }],
@@ -208,11 +243,11 @@ const advanceOpen = ({ task, change, params, underRepair }) => {
     // counted. A repair's own change is never that: it is the fix.
     return change.redOnDefault && !task.repairs ? NONE : roundOrPerson({ task, params, why: 'checks red' });
   }
-  return change.checks === 'green' ? advanceGreen({ task, change, params }) : NONE;
+  return change.checks === 'green' ? advanceGreen({ task, change, params, now }) : NONE;
 };
 
 // Section 3: the transitions on one task's change, in the process's order.
-const advance = ({ task, params, underRepair }) => {
+const advance = ({ task, params, underRepair, now }) => {
   const { change } = task;
   if (change.draft) {
     return NONE;
@@ -228,7 +263,7 @@ const advance = ({ task, params, underRepair }) => {
   }
   return change.merged
     ? advanceMerged({ task, change, underRepair })
-    : advanceOpen({ task, change, params, underRepair });
+    : advanceOpen({ task, change, params, underRepair, now });
 };
 
 const isCheck = (task) => {
@@ -236,9 +271,9 @@ const isCheck = (task) => {
 };
 
 // One task's acts and the work items it adds for section 4.
-const taskWork = ({ task, params, underRepair }) => {
+const taskWork = ({ task, params, underRepair, now }) => {
   if (task.change) {
-    const advanced = advance({ task, params, underRepair });
+    const advanced = advance({ task, params, underRepair, now });
     const stage = task.repairs ? { stage: 'repair' } : {};
     const items = advanced.item ? [{ ...advanced.item, ...stage, task }] : [];
     if (task.change.merged && isCheck(task)) {
@@ -380,7 +415,7 @@ export const plan = ({ now, params, children = [], tasks = [], defaults = [] }) 
       }),
   );
   const work = tasks.map((task) => {
-    return taskWork({ task, params, underRepair });
+    return taskWork({ task, params, underRepair, now });
   });
   const items = work.flatMap((w) => {
     return w.items;

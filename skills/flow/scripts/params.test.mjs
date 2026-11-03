@@ -26,7 +26,7 @@ test('items: one per top-level item, continuation lines joined', () => {
 test('each value from its own item, else the prose that states it, else the default, and says which', () => {
   const r = resolve({ file: 'f', main: items(FILE), runtime: { 'Stale after': '6 hours.' } });
   assert.deepEqual([r.projectId, r.standingDecision, r.repos], ['proj_1m5wbbbf1x', 'task_8gzt6adhhp', ['acme/api', 'acme/web']]);
-  assert.deepEqual(r.params, { maxRuns: 3, staleAfterHours: 6, autoRounds: 1, reviewByAgent: false, agentsMayIntegrate: true, focus: null });
+  assert.deepEqual(r.params, { maxRuns: 3, staleAfterHours: 6, autoRounds: 1, reviewByAgent: false, reviewRequired: null, reviewGraceMinutes: 30, agentsMayIntegrate: true, focus: null });
   assert.equal(r.chaseLines, 8);
   assert.equal(r.sources.maxRuns, 'Runtime: "max runs N"');
   assert.equal(r.sources.staleAfterHours, 'Runtime file: Stale after');
@@ -44,4 +44,15 @@ test('load: the file by precedence, a section of AGENTS.md, and a refusal naming
   writeFileSync(join(root, '.claude/flow.md'), '# Flow\n\n- **Flow project id**: `proj_1m5wbbbf1x`.\n');
   assert.throws(() => { return load(root); }, /names no standing-decision task id/);
   assert.throws(() => { return load(mkdtempSync(join(tmpdir(), 'none-'))); }, /no parameters/);
+});
+
+test('Review fails closed: none is no review, a reviewer named is one, unstated is null; a review child implies one', () => {
+  const review = (main) => { return resolve({ file: 'f', main }).params.reviewRequired; };
+  assert.equal(review({ Review: 'none.' }), false);
+  assert.equal(review({ Review: '`none`: the gates are the checks.' }), false);
+  assert.equal(review({ Review: 'an agent reviewer, asked by CI (`docs/agents/review.md`).' }), true);
+  assert.equal(review({}), null);
+  assert.equal(review({ 'Review child': 'yes' }), true);
+  const r = resolve({ file: 'f', main: { 'Review grace': '10 minutes', Reviewer: '`acme-reviewer[bot]`, `ana`' } });
+  assert.deepEqual([r.params.reviewGraceMinutes, r.reviewers], [10, ['acme-reviewer[bot]', 'ana']]);
 });

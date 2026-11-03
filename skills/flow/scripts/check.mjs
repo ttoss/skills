@@ -2,6 +2,7 @@ import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { clientFromEnv, parseFlags } from './flow-api.mjs';
+import { readDefault } from './host.mjs';
 import { load as loadParams } from './params.mjs';
 
 // Whether this runtime can run the routines' scripts against a project: the
@@ -9,10 +10,32 @@ import { load as loadParams } from './params.mjs';
 // answers what the scripts read. flow-setup runs it as a prerequisite and each
 // routine at its start. It never prints the key.
 //
-// Usage: node check.mjs --project <proj_…>
+// With --root, it also reads each repo's default branch on the code host:
+// a `Review` that names a reviewer the host does not require leaves every
+// change to a person to integrate, since the planner never integrates on its
+// own reading of a verdict.
+//
+// Usage: node check.mjs --project <proj_…> | --root <repo dir>
 // Output: JSON `{ ok, checks: [{ name, ok, detail }] }`; `ok` is false when a
 // check the scripts cannot run without fails. A warning is a check with
 // `ok: true` and a detail to act on.
+
+/** Whether each repo's default branch requires the review `Review` names. */
+export const hostChecks = async ({ repos = [], reviewRequired, gh }) => {
+  if (!reviewRequired) {
+    return [];
+  }
+  return Promise.all(repos.map(async (repo) => {
+    try {
+      const { reviewEnforced } = await readDefault(repo, gh ? { gh } : {});
+      return { name: `review-enforced ${repo}`, ok: true, detail: reviewEnforced
+        ? `${repo}'s default branch requires the review`
+        : `warning: ${repo}'s default branch does not require the review, so the tick integrates nothing there and waits on a person: add the \`flow/review\` status to its required checks (branch protection or a ruleset)` };
+    } catch (error) {
+      return { name: `review-enforced ${repo}`, ok: true, detail: `warning: ${repo} could not be read with gh (${String(error.stderr || error.message).split('\n')[0].slice(0, 120)}), so the tick integrates nothing there` };
+    }
+  }));
+};
 
 /** Every check, in order; stops at the first one the rest depend on. */
 export const check = async ({ project, client }) => {
@@ -62,14 +85,16 @@ export const check = async ({ project, client }) => {
 const isMain = process.argv[1] && realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1]);
 if (isMain) {
   const f = parseFlags(process.argv.slice(2));
-  const project = f.project || (f.root ? loadParams(f.root).projectId : null);
+  const p = f.root ? loadParams(f.root) : null;
+  const project = f.project || p?.projectId;
   if (!project) {
     process.stderr.write('usage: check.mjs (--root <repo dir> | --project <proj_…>)\n');
     process.exit(2);
   }
   const client = process.env.FLOW_API_KEY ? clientFromEnv() : null;
-  check({ project, client }).then(
-    (result) => {
+  Promise.all([check({ project, client }), hostChecks({ repos: p?.repos, reviewRequired: p?.params.reviewRequired })]).then(
+    ([flow, host]) => {
+      const result = { ok: flow.ok, checks: [...flow.checks, ...host] };
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
       process.exit(result.ok ? 0 : 1);
     },

@@ -255,7 +255,7 @@ export const digest = ({ date, sections: out, alert, admins, health, base, size 
 };
 
 /** Every read the digest needs, then the digest. */
-export const run = async ({ client, project, now = new Date().toISOString(), host = null, repos = null, gh, size = 5, staleAfterHours = 4 }) => {
+export const run = async ({ client, project, now = new Date().toISOString(), host = null, repos = null, reviewers = [], gh, size = 5, staleAfterHours = 4 }) => {
   const { get, all } = client;
   const staleBefore = new Date(Date.parse(now) - staleAfterHours * HOUR).toISOString();
   const [projectAnswer, bugsHigh, veryHigh, runningRuns, waits, dateCame, decisions, staleRuns, validation, ready, chases] = await Promise.all([
@@ -285,7 +285,7 @@ export const run = async ({ client, project, now = new Date().toISOString(), hos
       const changes = await Promise.all(refs.map((r) => { return readChange(r.url, gh ? { gh } : {}); }));
       return changes.some((c) => { return c?.merged; }) ? w.id : null;
     });
-    const ready = await readyChanges(repos, gh ? { gh } : {});
+    const ready = await readyChanges(repos, { ...(gh ? { gh } : {}), reviewers });
     host = {
       waitingChanges: ready.map((c) => { return { url: c.url, title: c.title, task: c.task }; }),
       integratedTasks: implemented.filter(Boolean),
@@ -352,6 +352,7 @@ if (isMain) {
     now: f.now,
     host: f.host ? JSON.parse(readFileSync(f.host, 'utf8')) : null,
     repos: f['no-host'] ? null : p?.repos,
+    reviewers: p?.reviewers ?? [],
     size: f.lines ? Number(f.lines) : p?.chaseLines ?? 5,
     staleAfterHours: f['stale-after-hours'] ? Number(f['stale-after-hours']) : p?.params.staleAfterHours ?? 4,
   }).then(
