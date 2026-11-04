@@ -32,6 +32,7 @@ const ACTIONS = {
   canonical_memory_or_view: 'cite the source it was derived from instead of a memory or a view',
   self_basis: 'retract the edge that cites itself and name a real cause',
   calendar_without_date: 'give the date: it is on calendar with no scheduled wait carrying one',
+  wait_without_until: 'say when to chase: it waits on somebody with no date to ask them again',
 };
 
 export const SECTIONS = [
@@ -45,13 +46,17 @@ export const SECTIONS = [
   'Findings and due reviews',
 ];
 
-/** An external wait past its date, or with no date and untouched for a week. */
+/**
+ * An external wait past its date. One with no date is Flow's finding
+ * (`wait_without_on`, `wait_without_until`), named from the day it is
+ * written rather than once the review clock runs out.
+ */
 export const isDueWait = (row, nowMs) => {
   const wait = (row.readiness?.blocked_by || []).find((b) => { return b.via === 'wait'; });
   if (!wait || row.kind === 'decision') {
     return false;
   }
-  return wait.until ? Date.parse(wait.until) <= nowMs : Boolean(row.review_due_at && Date.parse(row.review_due_at) <= nowMs);
+  return Boolean(wait.until) && Date.parse(wait.until) <= nowMs;
 };
 
 const waitOf = (row) => {
@@ -150,12 +155,11 @@ export const sections = ({ now, project, members, teams = [], bugs, runningRuns,
     if (!wait) {
       continue;
     }
-    const until = wait.until ? Date.parse(wait.until) : null;
     if (!isDueWait(row, nowMs)) {
       continue;
     }
-    const late = until !== null ? `overdue ${Math.floor((nowMs - until) / DAY)}d` : 'no chase date, untouched for a week';
-    const item = { id: row.id, title: row.title, url: row.url, unblocks: row.unblocks, since: wait.until || row.review_due_at };
+    const late = `overdue ${Math.floor((nowMs - Date.parse(wait.until)) / DAY)}d`;
+    const item = { id: row.id, title: row.title, url: row.url, unblocks: row.unblocks, since: wait.until };
     if (!wait.on) {
       put('No owner', { ...item, who: who(null), what: `name whom this waits on (${late}): ${wait.reason}` });
     } else if (integrated.has(row.id)) {
@@ -182,6 +186,15 @@ export const sections = ({ now, project, members, teams = [], bugs, runningRuns,
       if (task && OPEN.includes(task.status)) {
         put('Stale sessions', { id, title: task.title, url: task.url, who: who(run.by), what: `end or hand back the session holding it since ${run.started_at}: ${run.url}`, unblocks: 0, since: run.started_at });
       }
+    }
+  }
+
+  // A wait on nobody is No owner's whatever its date: Flow's finding names it.
+  const byId = new Map(waits.map((w) => { return [w.id, w]; }));
+  for (const finding of findings.filter((f) => { return f.check === 'wait_without_on'; })) {
+    const row = byId.get(finding.task) || findingTasks[finding.task];
+    if (row) {
+      put('No owner', { id: row.id, title: row.title, url: row.url, unblocks: row.unblocks, since: null, who: who(null), what: `name whom this waits on${waitOf(row) ? `: ${waitOf(row).reason}` : ''}` });
     }
   }
 
@@ -301,7 +314,8 @@ export const run = async ({ client, project, now = new Date().toISOString(), hos
   const bugs = [...bugsHigh, ...veryHigh].filter((b) => { return !bugIds.has(b.id) && bugIds.add(b.id); });
 
   const staleIds = [...new Set(staleRuns.runs.filter((r) => { return !AGENTS.includes(r.agent); }).flatMap((r) => { return r.works_on || []; }))];
-  const findingIds = [...new Set(validation.findings.filter((f) => { return f.check !== 'wait_without_on'; }).map((f) => { return f.task || f.to || f.record || (f.records || [])[0]; }))];
+  const waitIds = new Set(waits.map((w) => { return w.id; }));
+  const findingIds = [...new Set(validation.findings.map((f) => { return f.task || f.to || f.record || (f.records || [])[0]; }).filter((id) => { return !waitIds.has(id); }))];
   const tasks = Object.fromEntries(await mapLimit([...new Set([...staleIds, ...findingIds])], 4, async (id) => {
     return [id, (await get(`/tasks/${id}`)).task];
   }));
@@ -326,7 +340,12 @@ export const run = async ({ client, project, now = new Date().toISOString(), hos
     `Ticks since the last Chase: ${ticks.runs.length}${ticks.runs.length === 100 ? ' (may be short)' : ''}, ${noPlanner.length} without the planner${noPlanner.length ? ` (${noPlanner.map((r) => { return r.url; }).join(', ')})` : ''}, ${noSummary.length} without a summary${noSummary.length ? ` (${noSummary.map((r) => { return r.url; }).join(', ')})` : ''}`,
   ];
 
-  const health = healthLines(await readFlow({ routine: 'chase', project, now, client }));
+  // A person by their email, as every line names them; a team by its name,
+  // since the line counts the team's queue rather than asking its members.
+  const emails = new Map(projectAnswer.members.map((m) => { return [m.user_id, m.email]; }));
+  const teamNames = new Map((projectAnswer.teams || []).map((t) => { return [t.id, `the ${t.name} team`]; }));
+  const nameOfHolder = (key) => { return emails.get(key) || teamNames.get(key) || key; };
+  const health = healthLines({ ...(await readFlow({ routine: 'chase', project, now, client })), nameOfHolder });
   return {
     digest: digest({ date: now.slice(0, 10), sections: built.sections, alert: health.alert, admins: built.admins, health: health.lines, base, size }),
     sections: Object.fromEntries(SECTIONS.map((name) => { return [name, built.sections[name].items.length]; })),

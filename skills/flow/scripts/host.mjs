@@ -180,6 +180,8 @@ export const readChange = async (url, { gh = ghApi, reviewers = [] } = {}) => {
     title: pull.title,
     task: (TASK.exec(pull.body || '') || [null])[0],
     draft: Boolean(pull.draft),
+    // When the change was opened: a fix run is a child started after it.
+    createdAt: pull.created_at,
     headSha: pull.head.sha,
     checks,
     // When the head's checks last finished: a review is expected from then.

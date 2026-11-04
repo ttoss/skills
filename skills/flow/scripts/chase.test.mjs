@@ -54,7 +54,19 @@ test('external waits split into no owner, overdue checks (integrated or date cam
   assert.equal(out['No owner'].items[0].who, 'pedro@example.com');
   // Oldest first when they hold as many tasks: t_came's review came due 10-20, t_check's wait 10-31.
   assert.deepEqual(out['Overdue checks'].items.map((i) => { return i.id; }), ['t_came', 't_check']);
-  assert.deepEqual(out['Overdue waits'].items.map((i) => { return [i.id, i.what]; }), [['t_late', 'no chase date, untouched for a week: r']]);
+  // An undated wait is Flow's finding to name, not an overdue wait.
+  assert.deepEqual(out['Overdue waits'].items, []);
+});
+
+test('an undated wait on nobody is No owner from Flow’s finding; one on somebody is a finding to give the date', () => {
+  const out = sections({
+    ...empty,
+    waits: [task('t_nobody', wait({})), task('t_ana', wait({ on: 'user_ana' }))],
+    findings: [{ check: 'wait_without_on', task: 't_nobody' }, { check: 'wait_without_until', task: 't_ana' }],
+    findingTasks: { t_ana: task('t_ana', { assignee: 'user_ana' }) },
+  }).sections;
+  assert.deepEqual(out['No owner'].items.map((i) => { return [i.id, i.who, i.what]; }), [['t_nobody', 'pedro@example.com', 'name whom this waits on: r']]);
+  assert.deepEqual(out['Findings and due reviews'].items.map((i) => { return [i.id, i.who, i.what]; }), [['t_ana', 'ana@example.com', 'say when to chase: it waits on somebody with no date to ask them again']]);
 });
 
 test('a change waits on a person only when its task does; without the code host the section says so', () => {
@@ -64,7 +76,7 @@ test('a change waits on a person only when its task does; without the code host 
   assert.equal(sections(empty).sections['Changes waiting to be integrated by a person'].note, 'the code host was not read');
 });
 
-test('stale sessions are people’s runs only, each open task they hold; findings skip wait_without_on', () => {
+test('stale sessions are people’s runs only, each open task they hold; a finding on a wait not read lands nowhere', () => {
   const out = sections({
     ...empty,
     staleRuns: [

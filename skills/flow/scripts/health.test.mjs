@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { audit, chase, mismatches, nameOf, readFlow, spendOf, spendPair, windows } from './health.mjs';
+import { audit, chase, holderLines, mismatches, nameOf, readFlow, spendOf, spendPair, windows } from './health.mjs';
 
 // Shapes and edge cases taken from OneClick Ads' answers in November 2026.
 const row = (status, state, on, open, entered, left, p90 = 1, p50 = 0) => {
@@ -228,7 +228,22 @@ test('with a key restricted to projects, the inbox answers 404 and the audit say
   });
   const answers = await readFlow({ routine: 'audit', project: 'proj_1m5wbbbf1x', now: '2026-11-02T17:00:00Z', key: 'flow_k', fetchImpl });
   assert.equal(calls.length, 5);
-  assert.equal(audit(answers).lines.at(-1), 'Untriaged inbox: not readable with this credential (a key restricted to projects is not given the inbox)');
+  assert.equal(audit(answers).lines.at(-1), 'Untriaged inbox: not readable with this credential (a key restricted to projects is not given the inbox; pass the session\'s list-captures answer as --inbox)');
+});
+
+test('the inbox the session read is the line, and the key is never asked for it', async () => {
+  const runsAnswer = { totals: { runs: 1, unpriced: 0, cost_usd: 1 }, groups: [] };
+  const { calls, fetchImpl } = fakeFlow((u) => {
+    assert.notEqual(u.pathname, '/api/v1/captures');
+    if (u.pathname === '/api/v1/agent-runs') {
+      return runsAnswer;
+    }
+    return u.searchParams.get('until') === '2026-11-02T17:00:00.000Z' ? thisWeek : before;
+  });
+  const inbox = { captures: [{ inbox_age_ms: 2 * 86_400_000 }], total: 3 };
+  const answers = await readFlow({ routine: 'audit', project: 'proj_1m5wbbbf1x', now: '2026-11-02T17:00:00Z', key: 'flow_k', fetchImpl, inbox });
+  assert.equal(calls.length, 4);
+  assert.equal(audit(answers).lines.at(-1), 'Untriaged inbox, now (the account\'s, across every project): 3 captures, the oldest 2.0d old');
 });
 
 test('a project the key cannot reach fails loudly, never as empty lines', async () => {
@@ -241,4 +256,24 @@ test('--project without a key refuses rather than reading nothing', () => {
   assert.throws(() => {
     return execFileSync('node', [script, 'chase', '--project', 'proj_1m5wbbbf1x'], { stdio: 'pipe', env: { ...process.env, FLOW_API_KEY: '' } });
   }, /needs FLOW_API_KEY/);
+});
+
+test('a line per holder and row, named, nobody last; a holder only the week before keeps its line', () => {
+  const rowOn = (open, entered, left) => { return row('waiting', 'blocked:external', true, open, entered, left); };
+  const lines = holderLines({
+    thisWeek: { groups: [
+      { key: 'user_b', states: [rowOn(2, 2, 0)] },
+      { key: null, states: [row('waiting', 'blocked:external', false, 1, 1, 0)] },
+    ] },
+    weekBefore: { groups: [{ key: 'user_a', states: [rowOn(0, 0, 3)] }] },
+    nameOfHolder: (key) => { return { user_a: 'ana@x', user_b: 'bruno@x' }[key]; },
+  });
+  assert.deepEqual(lines.map((l) => { return l.split(':')[0]; }), [
+    'Waiting on ana@x, a person (waiting · blocked',
+    'Waiting on bruno@x, a person (waiting · blocked',
+    'Waiting on nobody, the gates (waiting · blocked',
+  ]);
+  assert.match(lines[1], /2 open · 2 in, 0 out \(no row the week before\)/);
+  assert.match(lines[0], /no row this week \(0 in, 3 out the week before\)/);
+  assert.deepEqual(holderLines({ thisWeek, weekBefore: before }), []);
 });
