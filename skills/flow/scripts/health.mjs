@@ -15,12 +15,13 @@ import { createClient, DEFAULT_BASE } from './flow-api.mjs';
 // Usage, reading Flow itself with the API key in FLOW_API_KEY (and FLOW_URL,
 // default https://flow.ttoss.dev), so no answer passes through the model:
 //   node health.mjs chase --project <proj_…> [--now <ISO 8601>]
-//   node health.mjs audit --project <proj_…> [--now <ISO 8601>]
+//   node health.mjs audit --project <proj_…> [--now <ISO 8601>] [--inbox <captures>]
 // or, with no key, from answers the model saved verbatim, one file each:
 //   node health.mjs windows <ISO 8601>
 //   node health.mjs chase --this <metrics> --before <metrics> --bug-this <metrics> --bug-before <metrics>
 //   node health.mjs audit --this <metrics> --before <metrics> --runs-this <runs> --runs-before <runs> --inbox <captures>
-// where each file is one tool answer: `get-project-metrics`, `list-agent-runs`
+// where each file is one tool answer: `get-project-metrics` (`group_by: on` for
+// the Chase's plain weeks, which adds a line per holder), `list-agent-runs`
 // with `group_by: outcome` and `limit: 0`, `list-captures` with `triaged: false`
 // and `limit: 1`. Output: JSON `{ alert, lines, mismatches }`.
 
@@ -178,8 +179,32 @@ export const mismatches = ({ now, before }) => {
     .map((r) => { return nameOf(r.key); });
 };
 
+/**
+ * Each holder's rows, this week beside the week before: whose answer the
+ * person queue waits on, with arrivals against departures. One line per row,
+ * never a holder's rows added together. A holder only one week has keeps a
+ * line, so a queue that just emptied still shows what left it.
+ */
+export const holderLines = ({ thisWeek, weekBefore, nameOfHolder = (key) => { return key; } }) => {
+  const groupsOf = (answer) => {
+    return new Map((answer.groups || []).map((g) => { return [g.key, g]; }));
+  };
+  const now = groupsOf(thisWeek);
+  const was = groupsOf(weekBefore);
+  const keys = [...new Set([...now.keys(), ...was.keys()])].sort((a, b) => {
+    return a === null ? 1 : b === null ? -1 : String(nameOfHolder(a)).localeCompare(String(nameOfHolder(b)));
+  });
+  return keys.flatMap((key) => {
+    const label = key === null ? 'Waiting on nobody' : `Waiting on ${nameOfHolder(key)}`;
+    return pair({ now: now.get(key) || { states: [] }, before: was.get(key) || { states: [] } })
+      .filter((r) => { return active(r.now) || active(r.before); })
+      .sort(byOpen)
+      .map((r) => { return `${label}, ${queueLine(r)}`; });
+  });
+};
+
 /** The Chase's health lines and, when a person's row grew both weeks, the alert. */
-export const chase = ({ thisWeek, weekBefore, bugThisWeek, bugWeekBefore }) => {
+export const chase = ({ thisWeek, weekBefore, bugThisWeek, bugWeekBefore, nameOfHolder }) => {
   const rows = pair({ now: thisWeek, before: weekBefore }).filter((r) => {
     return r.key.status !== 'incubated';
   });
@@ -200,6 +225,8 @@ export const chase = ({ thisWeek, weekBefore, bugThisWeek, bugWeekBefore }) => {
   const alert = growingPerson.length
     ? `The person queue grew in both weeks: ${growingPerson.map((r) => { return nameOf(r.key); }).join('; ')}. Work only somebody's answer frees entered it more than it left, and more agents or tasks will not help. The lines per person below name whom each wait is on.`
     : null;
+
+  lines.push(...holderLines({ thisWeek, weekBefore, nameOfHolder }));
 
   lines.push(completedLine({ label: 'Delivery', now: thisWeek, before: weekBefore }));
 
@@ -350,15 +377,17 @@ export const audit = ({ thisWeek, weekBefore, runsThisWeek, runsWeekBefore, inbo
  * Flow's answers for one routine, read with an API key through `client`
  * (flow-api.mjs), or a client built from `key`, `base` and `fetchImpl`.
  */
-export const readFlow = async ({ routine, project, now, client, key, base = DEFAULT_BASE, fetchImpl = fetch }) => {
+export const readFlow = async ({ routine, project, now, client, key, base = DEFAULT_BASE, fetchImpl = fetch, inbox = null }) => {
   const w = windows(now);
   const { get } = client || createClient({ key, base, fetchImpl });
-  const metrics = (win, tag) => {
-    return get(`/projects/${project}/metrics`, { since: win.since, until: win.until, tag });
+  const metrics = (win, tag, groupBy) => {
+    return get(`/projects/${project}/metrics`, { since: win.since, until: win.until, tag, group_by: groupBy });
   };
   if (routine === 'chase') {
+    // Grouped by holder: the rows are the same, and `groups` names whose
+    // answer each person-queue row waits on.
     const [thisWeek, weekBefore, bugThisWeek, bugWeekBefore] = await Promise.all([
-      metrics(w.thisWeek), metrics(w.weekBefore), metrics(w.thisWeek, 'bug'), metrics(w.weekBefore, 'bug'),
+      metrics(w.thisWeek, undefined, 'on'), metrics(w.weekBefore, undefined, 'on'), metrics(w.thisWeek, 'bug'), metrics(w.weekBefore, 'bug'),
     ]);
     return { thisWeek, weekBefore, bugThisWeek, bugWeekBefore };
   }
@@ -368,15 +397,17 @@ export const readFlow = async ({ routine, project, now, client, key, base = DEFA
   const [thisWeek, weekBefore, runsThisWeek, runsWeekBefore] = await Promise.all([
     metrics(w.thisWeek), metrics(w.weekBefore), runs(w.thisWeek), runs(w.weekBefore),
   ]);
-  // A key restricted to projects is never given the inbox, which is in no
-  // project: Flow answers 404, and the line says so instead of failing.
-  const inbox = await get('/captures', { triaged: false, limit: 1 }).catch((error) => {
+  // The inbox is the account's, in no project, so a key restricted to one is
+  // never given it: the session reads it through its own connection and
+  // passes the answer as `inbox`. Without that, the key is asked, and a 404
+  // is said in the line instead of failing.
+  const captures = inbox ?? await get('/captures', { triaged: false, limit: 1 }).catch((error) => {
     if (error.status === 404 || error.status === 403) {
-      return { unreadable: 'a key restricted to projects is not given the inbox' };
+      return { unreadable: 'a key restricted to projects is not given the inbox; pass the session\'s list-captures answer as --inbox' };
     }
     throw error;
   });
-  return { thisWeek, weekBefore, runsThisWeek, runsWeekBefore, inbox };
+  return { thisWeek, weekBefore, runsThisWeek, runsWeekBefore, inbox: captures };
 };
 
 const flags = (args) => {
@@ -422,6 +453,7 @@ const run = async (argv, env) => {
       now: opts.now || new Date().toISOString(),
       key: env.FLOW_API_KEY,
       base: env.FLOW_URL || 'https://flow.ttoss.dev',
+      inbox: opts.inbox ? JSON.parse(readFileSync(opts.inbox, 'utf8')) : null,
     });
     return mode === 'chase' ? chase(answers) : audit(answers);
   }

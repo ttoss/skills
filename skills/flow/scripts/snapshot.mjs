@@ -10,7 +10,8 @@ import { load as loadParams } from './params.mjs';
 // slices the tick acts on, the children and which are this person's, what
 // holds each task and what came due. What Flow cannot know stays with the
 // model and comes in `--extra`: the code host's view of each change, the
-// runtime's view of each child, the judgments (brief, leaves) and the rounds.
+// runtime's view of each child and the brief. What integrating leaves is the
+// task's `after_integration`, and the rounds are counted from Flow's runs.
 // `needs` lists the changes the model must read on the code host.
 //
 // Usage: node snapshot.mjs --root <repo dir> [--extra <file>] [--now <ISO>]
@@ -32,8 +33,24 @@ const waitsOf = (row) => {
   return (row.readiness?.blocked_by || []).filter((b) => { return b.via === 'wait'; });
 };
 
+/**
+ * How many fix rounds a change has had: the closed `flow child` runs on its
+ * task that started after the change was opened and list it as `produced`.
+ * The child that opened it started before it; a review or check child pushes
+ * nothing to it, so neither counts.
+ */
+export const roundsOf = ({ runs, change }) => {
+  const opened = Date.parse(change.createdAt);
+  if (Number.isNaN(opened)) {
+    return 0;
+  }
+  return runs.filter((r) => {
+    return r.status !== 'running' && Date.parse(r.started_at) > opened && (r.produced || []).includes(change.url);
+  }).length;
+};
+
 /** The snapshot from what was read, as a pure function. */
-export const build = ({ now, candidates, slices, dueIds, children, mine, childTasks, implementsOf, repairRows = [], extra = {} }) => {
+export const build = ({ now, candidates, slices, dueIds, children, mine, childTasks, implementsOf, handoffs = {}, repairRows = [], extra = {} }) => {
   const nowMs = Date.parse(now);
   const rank = new Map(candidates.map((t, i) => { return [t.id, i]; }));
   // Each repo's open repair task, found by its `source` commit: the task
@@ -50,6 +67,9 @@ export const build = ({ now, candidates, slices, dueIds, children, mine, childTa
     const pastWait = waits.some((w) => { return w.kind === 'external' && w.until && Date.parse(w.until) <= nowMs; });
     const due = dueIds.has(row.id) || pastWait;
     const own = extra.tasks?.[row.id] || {};
+    // What integrating leaves is the handoff's field; a judge reads the body
+    // only for a task handed off before the field existed.
+    const handoff = handoffs[row.id] || null;
     return {
       id: row.id,
       status: row.status,
@@ -63,7 +83,8 @@ export const build = ({ now, candidates, slices, dueIds, children, mine, childTa
       due,
       dueKind: due ? (row.status === 'calendar' ? 'check' : 'other') : null,
       brief: own.brief ?? null,
-      leaves: own.leaves ?? null,
+      leaves: own.leaves ?? handoff?.leaves ?? null,
+      check: handoff?.check ?? null,
       rounds: own.rounds ?? 0,
       repairs: own.repairs ?? repairOf.get(row.id) ?? null,
       change: own.change ?? null,
@@ -166,13 +187,19 @@ export const run = async ({ client, project, now = new Date().toISOString(), ext
         // The open change when there is one, else the last integrated.
         const change = changes.find((c) => { return !c.merged && !c.closed; }) || changes.at(-1);
         if (change) {
-          const { title, task: named, mergedAt, pipelineDoneAt, ...rest } = change;
+          const { title, task: named, mergedAt, pipelineDoneAt, createdAt, ...rest } = change;
           // Written after the merge and after its pipeline finished: the tick
           // (or a person) already applied what integrating left.
           const updated = full[task]?.task?.updated_at;
           const settled = [mergedAt, pipelineDoneAt].filter(Boolean).map(Date.parse);
           const writtenSince = Boolean(change.merged && updated && settled.length && Date.parse(updated) > Math.max(...settled));
-          extra.tasks[task] = { ...(extra.tasks[task] || {}), change: { ...rest, writtenSince, redOnDefault: red.get(change.repo) ?? null, reviewEnforced: enforced.get(change.repo) ?? null, reviewRunActive: holders.has(task) } };
+          // Rounds are Flow's answer, from the runs on the task, never a count
+          // the model carries between ticks.
+          const rounds = extra.tasks[task]?.rounds ?? roundsOf({
+            runs: (await get('/agent-runs', { project, task, agent: 'flow child', limit: 100 })).runs || [],
+            change: { url: change.url, createdAt },
+          });
+          extra.tasks[task] = { ...(extra.tasks[task] || {}), rounds, change: { ...rest, writtenSince, redOnDefault: red.get(change.repo) ?? null, reviewEnforced: enforced.get(change.repo) ?? null, reviewRunActive: holders.has(task) } };
         }
       } catch (error) {
         hostErrors.push({ task, error: String(error.stderr || error.message).split('\n')[0].slice(0, 200) });
@@ -188,6 +215,7 @@ export const run = async ({ client, project, now = new Date().toISOString(), ext
     mine: new Set(mine.runs.map((r) => { return r.id; })),
     childTasks: Object.fromEntries(Object.entries(full).map(([id, a]) => { return [id, a.task]; })),
     implementsOf,
+    handoffs: Object.fromEntries(Object.entries(full).map(([id, a]) => { return [id, a.task?.after_integration ?? null]; })),
     repairRows,
     extra,
   });

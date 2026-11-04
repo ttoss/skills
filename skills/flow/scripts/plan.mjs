@@ -29,7 +29,8 @@ import { fileURLToPath } from 'node:url';
 //             due: bool,                      // date_came, hold_cleared, or an external wait past until
 //             dueKind: 'check' | 'other' | null,
 //             brief: 'ready' | 'short' | 'split' | null,
-//             leaves: 'close' | 'release' | 'check' | 'none' | null, // what the body says integrating leaves; null: not read yet, a judge
+//             leaves: 'close' | 'release' | 'check' | 'none' | null, // the task's after_integration; null: not handed off, a judge reads the body
+//             check: null | { observe, where, visible_at }, // with leaves check: what the check's wait names, and its date
 //             rounds: number,
 //             repairs: repo | null,           // the repo whose red default branch this task repairs
 //             change: null | { url, repo, draft, headSha,
@@ -134,8 +135,12 @@ const LEAVES = {
   release: (task) => {
     return { act: 'release_step', task: task.id, reason: 'integrated: write its release step by the Release procedure, a task that blocks it (GTF-N4)' };
   },
+  // The handoff's date becomes the wait's: `calendar` asserts a date holds
+  // the work, and Flow refuses one without it.
   check: (task) => {
-    return { act: 'move_task', task: task.id, status: 'calendar', reason: "integrated: the check's wait the body names" };
+    return task.check
+      ? { act: 'move_task', task: task.id, status: 'calendar', until: task.check.visible_at, reason: `integrated: check ${task.check.observe}, at ${task.check.where}` }
+      : { act: 'move_task', task: task.id, status: 'calendar', until: null, reason: "integrated: the check's wait the body names" };
   },
 };
 

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { plan } from './plan.mjs';
-import { build, DEFAULT_PARAMS } from './snapshot.mjs';
+import { build, DEFAULT_PARAMS, roundsOf } from './snapshot.mjs';
 
 const now = '2026-11-02T12:00:00Z';
 const row = (id, over = {}) => {
@@ -82,4 +82,37 @@ test('whom each task waits on reaches the planner, so a change a person validate
   const report = plan(snap).at(-1);
   assert.deepEqual(report.wip.reviewQueue, { now: 1, limit: 1 });
   assert.equal(report.freeReason, 'new work held upstream: review queue 1/1');
+});
+
+test('the handoff field is what integrating leaves, and its check carries the date the planner moves the task to', () => {
+  const merged = { url: 'https://gh/pr/3', repo: 'o/r', merged: true, closed: false, draft: false, writtenSince: false };
+  const check = { observe: 'the total matches', where: 'production', visible_at: '2026-11-06T15:00:00.000Z' };
+  const snap = build({
+    ...base,
+    slices: [row('t_c', { status: 'waiting' }), row('t_old', { status: 'waiting' })],
+    handoffs: { t_c: { leaves: 'check', check }, t_old: null },
+    extra: { tasks: { t_c: { change: merged }, t_old: { change: { ...merged, url: 'https://gh/pr/4' } } } },
+  });
+  const by = Object.fromEntries(snap.tasks.map((t) => { return [t.id, t]; }));
+  assert.deepEqual([by.t_c.leaves, by.t_c.check], ['check', check]);
+  assert.equal(by.t_old.leaves, null);
+  const acts = plan(snap);
+  assert.deepEqual(acts.filter((a) => { return a.act === 'move_task'; }).map((a) => { return [a.task, a.status, a.until]; }), [['t_c', 'calendar', check.visible_at]]);
+  assert.deepEqual(acts.filter((a) => { return a.act === 'judge'; }).map((a) => { return [a.task, a.about]; }), [['t_old', 'leaves']]);
+});
+
+test('rounds are the closed child runs that pushed to the change after it was opened', () => {
+  const change = { url: 'https://gh/pr/5', createdAt: '2026-11-02T10:00:00Z' };
+  const run = (started_at, over = {}) => { return { status: 'completed', started_at, produced: [change.url], ...over }; };
+  assert.equal(roundsOf({
+    change,
+    runs: [
+      run('2026-11-02T09:00:00Z'),
+      run('2026-11-02T11:00:00Z'),
+      run('2026-11-02T12:00:00Z', { produced: [] }),
+      run('2026-11-02T13:00:00Z', { status: 'running' }),
+      run('2026-11-02T14:00:00Z', { status: 'failed' }),
+    ],
+  }), 2);
+  assert.equal(roundsOf({ change: { url: change.url, createdAt: null }, runs: [run('2026-11-02T11:00:00Z')] }), 0);
 });

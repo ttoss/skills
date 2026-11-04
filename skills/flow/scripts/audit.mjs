@@ -1,4 +1,4 @@
-import { realpathSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { clientFromEnv, parseFlags } from './flow-api.mjs';
@@ -14,7 +14,9 @@ import { load as loadParams } from './params.mjs';
 // project's API key; it writes nothing. What is waste, the fix and its saving,
 // and which answers are the same answer, stay with the model.
 //
-// Usage: node audit.mjs (--root <repo dir> | --project <proj_…>) [--now <ISO 8601>]
+// Usage: node audit.mjs (--root <repo dir> | --project <proj_…>) [--now <ISO 8601>] [--inbox <file>]
+//   --inbox: the session's `list-captures` answer (`triaged: false`, `limit: 1`),
+//   saved verbatim; a key restricted to the project is never given the inbox.
 // Output: JSON `{ lines, mismatches, answers }`.
 
 const DAY = 24 * 3600 * 1000;
@@ -74,7 +76,7 @@ export const answersLine = ({ answers: list, now }) => {
 };
 
 /** Every read, then the lines. */
-export const run = async ({ client, project, now = new Date().toISOString() }) => {
+export const run = async ({ client, project, now = new Date().toISOString(), inbox = null }) => {
   const { get } = client;
   const w = windows(now);
   const runs = (win, query) => {
@@ -90,7 +92,7 @@ export const run = async ({ client, project, now = new Date().toISOString() }) =
   const titles = Object.fromEntries(await Promise.all(top.map(async (g) => {
     return [g.key, (await get(`/tasks/${g.key}`)).task];
   })));
-  const health = healthLines(await readFlow({ routine: 'audit', project, now, client }));
+  const health = healthLines(await readFlow({ routine: 'audit', project, now, client, inbox }));
   // Closed decisions, newest write first; the summary carries no outcome, so
   // each within the window is read whole. The list is cut at the first one
   // older than the window, since `updated_at` never precedes the close.
@@ -114,7 +116,7 @@ if (isMain) {
     process.stderr.write('usage: audit.mjs (--root <repo dir> | --project <proj_…>) [--now <ISO>]\n');
     process.exit(2);
   }
-  run({ client: clientFromEnv(), project, now: f.now }).then(
+  run({ client: clientFromEnv(), project, now: f.now, inbox: f.inbox ? JSON.parse(readFileSync(f.inbox, 'utf8')) : null }).then(
     (result) => { process.stdout.write(`${JSON.stringify(result, null, 2)}\n`); },
     (error) => { process.stderr.write(`${error.message}\n`); process.exit(1); },
   );
