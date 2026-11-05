@@ -11,6 +11,12 @@ The tick and each child run in a cloud session of their own, through the `claude
 | End | Close the Flow run (`upsert-agent-run` `status`, `usage` from the session), then `archive_session`. A closed run with a live session is not ended |
 | Message | `send_message` |
 
+**The code host** is GitHub, through the GitHub MCP tools; `gh` in these sessions is for search only, and the session's permission policy may refuse a write through it.
+
+| Act | How |
+| --- | --- |
+| Integrate | `merge_pull_request` with `merge_method` the `Merge rule`'s and `expectedHeadSha` the head the verdict is for |
+
 A session's `usage` is its `external_metadata.usage`, with `peak_context` its `context_usage.used_tokens`, and a session reports it only after its turn ends, so a tick never knows its own.
 
 **Each run**, last in § 2 of a tick and last before any other routine's run closes: the last run under its `agent` (§ 0) and, for a tick, that run's children (`list-agent-runs` with `parent`), each closed with no `usage` and addressed by a session URL with no query, get `usage` from `get_session` on that session, then `archive_session`. A child the tick ends is archived by End. A session without `get_session` and `archive_session`, as a routine fires with only the trigger tools, `send_later` and `add_repo`, skips this step: those runs keep no `usage` until a session that has them runs it, and a child it cannot read is left alone, as § 2 says.
