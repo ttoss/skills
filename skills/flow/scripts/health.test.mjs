@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { audit, chase, holderLines, mismatches, nameOf, readFlow, spendOf, spendPair, windows } from './health.mjs';
+import { audit, flowHealth, holderLines, mismatches, nameOf, readFlow, spendOf, spendPair, windows } from './health.mjs';
 
 // Shapes and edge cases taken from OneClick Ads' answers in November 2026.
 const row = (status, state, on, open, entered, left, p90 = 1, p50 = 0) => {
@@ -72,7 +72,7 @@ const bugThis = {
   completed: { count: 38, days: { p50: 7.2, p90: 21.9 } },
 };
 
-const digest = chase({ thisWeek, weekBefore: before, bugThisWeek: bugThis, bugWeekBefore: bugBefore });
+const digest = flowHealth({ thisWeek, weekBefore: before, bugThisWeek: bugThis, bugWeekBefore: bugBefore });
 
 test('windows are the 7 days ending now and the 7 before, adjacent', () => {
   assert.deepEqual(windows('2026-11-02T17:00:00Z'), {
@@ -106,7 +106,7 @@ test('a person row growing in both weeks raises the alert, which never calls it 
 });
 
 test('no alert when no person row grew in both weeks', () => {
-  const calm = chase({ thisWeek: { ...thisWeek, states: thisWeek.states.filter((r) => { return !r.on; }) }, weekBefore: before, bugThisWeek: bugThis, bugWeekBefore: bugBefore });
+  const calm = flowHealth({ thisWeek: { ...thisWeek, states: thisWeek.states.filter((r) => { return !r.on; }) }, weekBefore: before, bugThisWeek: bugThis, bugWeekBefore: bugBefore });
   assert.equal(calm.alert, null);
 });
 
@@ -171,10 +171,10 @@ test('the command line reads one file per answer and writes JSON', () => {
     return path;
   };
   const script = join(dirname(fileURLToPath(import.meta.url)), 'health.mjs');
-  const out = JSON.parse(execFileSync('node', [script, 'chase', '--this', file('t', thisWeek), '--before', file('b', before), '--bug-this', file('bt', bugThis), '--bug-before', file('bb', bugBefore)], { encoding: 'utf8' }));
+  const out = JSON.parse(execFileSync('node', [script, 'flow', '--this', file('t', thisWeek), '--before', file('b', before), '--bug-this', file('bt', bugThis), '--bug-before', file('bb', bugBefore)], { encoding: 'utf8' }));
   assert.deepEqual(out, digest);
   assert.deepEqual(JSON.parse(execFileSync('node', [script, 'windows', '2026-11-02T17:00:00Z'], { encoding: 'utf8' })), windows('2026-11-02T17:00:00Z'));
-  assert.throws(() => { return execFileSync('node', [script, 'chase', '--this', file('t2', thisWeek)], { stdio: 'pipe' }); });
+  assert.throws(() => { return execFileSync('node', [script, 'flow', '--this', file('t2', thisWeek)], { stdio: 'pipe' }); });
 });
 
 test('spend: cost for both weeks when both are priced, and a token a week did not report is said', () => {
@@ -201,14 +201,14 @@ const fakeFlow = (answers) => {
   return { calls, fetchImpl };
 };
 
-test('with a key, the chase reads the four windows itself, GET only, and gives the same lines as from files', async () => {
+test('with a key, the flow health reads the four windows itself, GET only, and gives the same lines as from files', async () => {
   const { calls, fetchImpl } = fakeFlow((u) => {
     const tag = u.searchParams.get('tag');
     const recent = u.searchParams.get('until') === '2026-11-02T17:00:00.000Z';
     return tag ? (recent ? bugThis : bugBefore) : recent ? thisWeek : before;
   });
-  const answers = await readFlow({ routine: 'chase', project: 'proj_1m5wbbbf1x', now: '2026-11-02T17:00:00Z', key: 'flow_k', base: 'https://flow.example', fetchImpl });
-  assert.deepEqual(chase(answers), digest);
+  const answers = await readFlow({ routine: 'flow', project: 'proj_1m5wbbbf1x', now: '2026-11-02T17:00:00Z', key: 'flow_k', base: 'https://flow.example', fetchImpl });
+  assert.deepEqual(flowHealth(answers), digest);
   assert.equal(calls.length, 4);
   assert.ok(calls.every((c) => { return c.auth === 'Bearer flow_k' && c.url.startsWith('https://flow.example/api/v1/projects/proj_1m5wbbbf1x/metrics?since='); }));
 });
@@ -248,13 +248,13 @@ test('the inbox the session read is the line, and the key is never asked for it'
 
 test('a project the key cannot reach fails loudly, never as empty lines', async () => {
   const { fetchImpl } = fakeFlow(() => { return 404; });
-  await assert.rejects(readFlow({ routine: 'chase', project: 'proj_xxxxxxxxxx', now: '2026-11-02T17:00:00Z', key: 'k', fetchImpl }), /answered 404: the key cannot reach it/);
+  await assert.rejects(readFlow({ routine: 'flow', project: 'proj_xxxxxxxxxx', now: '2026-11-02T17:00:00Z', key: 'k', fetchImpl }), /answered 404: the key cannot reach it/);
 });
 
 test('--project without a key refuses rather than reading nothing', () => {
   const script = join(dirname(fileURLToPath(import.meta.url)), 'health.mjs');
   assert.throws(() => {
-    return execFileSync('node', [script, 'chase', '--project', 'proj_1m5wbbbf1x'], { stdio: 'pipe', env: { ...process.env, FLOW_API_KEY: '' } });
+    return execFileSync('node', [script, 'flow', '--project', 'proj_1m5wbbbf1x'], { stdio: 'pipe', env: { ...process.env, FLOW_API_KEY: '' } });
   }, /needs FLOW_API_KEY/);
 });
 

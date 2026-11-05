@@ -2,13 +2,15 @@ import { readFileSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { clientFromEnv, parseFlags } from './flow-api.mjs';
-import { audit as healthLines, readFlow, spendOf, spendPair, windows } from './health.mjs';
+import { flowHealth, audit as healthLines, readFlow, spendOf, spendPair, windows } from './health.mjs';
 import { load as loadParams } from './params.mjs';
 
 // The weekly Audit's report lines that are arithmetic (token-audit's routine,
 // step 4): spend in total and by agent, the three costliest tasks, the runs
 // that reached no task or stayed open, this week against the week before,
-// then what feeds and drains the graph (health.mjs), then the decisions a
+// then the flow's health, each state's arrivals against departures with a
+// line per person the person queue waits on, and what feeds and drains the
+// graph (health.mjs), then the decisions a
 // person answered over the last four weeks, as data for the model to read for
 // an answer given more than once (token-audit's routine, step 5). Read with the
 // project's API key; it writes nothing. What is waste, the fix and its saving,
@@ -17,7 +19,7 @@ import { load as loadParams } from './params.mjs';
 // Usage: node audit.mjs (--root <repo dir> | --project <proj_…>) [--now <ISO 8601>] [--inbox <file>]
 //   --inbox: the session's `list-captures` answer (`triaged: false`, `limit: 1`),
 //   saved verbatim; a key restricted to the project is never given the inbox.
-// Output: JSON `{ lines, mismatches, answers }`.
+// Output: JSON `{ alert, lines, mismatches, answers }`.
 
 const DAY = 24 * 3600 * 1000;
 const ANSWER_WEEKS = 4;
@@ -93,6 +95,13 @@ export const run = async ({ client, project, now = new Date().toISOString(), inb
     return [g.key, (await get(`/tasks/${g.key}`)).task];
   })));
   const health = healthLines(await readFlow({ routine: 'audit', project, now, client, inbox }));
+  // A person by their email, as the Chase names them; a team by its name,
+  // since the line counts the team's queue rather than asking its members.
+  const projectAnswer = await get(`/projects/${project}`);
+  const emails = new Map((projectAnswer.members || []).map((m) => { return [m.user_id, m.email]; }));
+  const teamNames = new Map((projectAnswer.teams || []).map((t) => { return [t.id, `the ${t.name} team`]; }));
+  const nameOfHolder = (key) => { return emails.get(key) || teamNames.get(key) || key; };
+  const flow = flowHealth({ ...(await readFlow({ routine: 'flow', project, now, client })), nameOfHolder });
   // Closed decisions, newest write first; the summary carries no outcome, so
   // each within the window is read whole. The list is cut at the first one
   // older than the window, since `updated_at` never precedes the close.
@@ -102,8 +111,9 @@ export const run = async ({ client, project, now = new Date().toISOString(), inb
   const decisions = await Promise.all(recent.map(async (t) => { return (await get(`/tasks/${t.id}`)).task; }));
   const list = answers({ decisions, now });
   return {
-    lines: [...report({ agentsThis, agentsBefore, tasksThis, titles, unlinkedThis, unlinkedBefore, lingering: lingering.runs || [] }), ...health.lines, answersLine({ answers: list, now })],
-    mismatches: health.mismatches,
+    alert: flow.alert,
+    lines: [...report({ agentsThis, agentsBefore, tasksThis, titles, unlinkedThis, unlinkedBefore, lingering: lingering.runs || [] }), ...flow.lines, ...health.lines, answersLine({ answers: list, now })],
+    mismatches: [...flow.mismatches, ...health.mismatches],
     answers: list,
   };
 };

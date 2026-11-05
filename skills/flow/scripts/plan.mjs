@@ -61,7 +61,7 @@ const NONE = { acts: [], item: null };
 // delegated as new work once written.
 const STAGES = ['repair', 'conflict', 'integratedCheck', 'round', 'review', 'otherCheck', 'new'];
 
-const urgencyTier = (task) => {
+export const urgencyTier = (task) => {
   if (task.priority === 'very_high') {
     return 0;
   }
@@ -405,13 +405,15 @@ const delegate = ({ items, free, newWork }) => {
 // start lands in it, so the headroom is exact. Decisions are not in it: one
 // holds only the work it blocks, so a thousand open choices never stop the work
 // nobody has to choose about.
+export const inReviewQueue = ({ change, waitsOn }) => {
+  if (!change || change.closed) {
+    return false;
+  }
+  return change.merged ? (waitsOn || []).length > 0 : !change.draft;
+};
+
 const reviewQueue = (tasks) => {
-  return tasks.filter(({ change, waitsOn }) => {
-    if (!change || change.closed) {
-      return false;
-    }
-    return change.merged ? (waitsOn || []).length > 0 : !change.draft;
-  }).length;
+  return tasks.filter(inReviewQueue).length;
 };
 
 // How many new tasks this tick may start, and why fewer than its free slots.

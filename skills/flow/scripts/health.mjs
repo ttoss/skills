@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 
 import { createClient, DEFAULT_BASE } from './flow-api.mjs';
 
-// The flow's health lines the Chase and the Audit report: a pure function from
+// The health lines the Audit reports: a pure function from
 // Flow's answers, verbatim, to the lines. It calls nothing; the model makes the
 // reads, saves each answer to a file and runs this, so every window, label,
 // order and edge case is decided here once instead of in prose.
@@ -14,14 +14,14 @@ import { createClient, DEFAULT_BASE } from './flow-api.mjs';
 //
 // Usage, reading Flow itself with the API key in FLOW_API_KEY (and FLOW_URL,
 // default https://flow.ttoss.dev), so no answer passes through the model:
-//   node health.mjs chase --project <proj_…> [--now <ISO 8601>]
+//   node health.mjs flow --project <proj_…> [--now <ISO 8601>]
 //   node health.mjs audit --project <proj_…> [--now <ISO 8601>] [--inbox <captures>]
 // or, with no key, from answers the model saved verbatim, one file each:
 //   node health.mjs windows <ISO 8601>
-//   node health.mjs chase --this <metrics> --before <metrics> --bug-this <metrics> --bug-before <metrics>
+//   node health.mjs flow --this <metrics> --before <metrics> --bug-this <metrics> --bug-before <metrics>
 //   node health.mjs audit --this <metrics> --before <metrics> --runs-this <runs> --runs-before <runs> --inbox <captures>
 // where each file is one tool answer: `get-project-metrics` (`group_by: on` for
-// the Chase's plain weeks, which adds a line per holder), `list-agent-runs`
+// the flow's plain weeks, which adds a line per holder), `list-agent-runs`
 // with `group_by: outcome` and `limit: 0`, `list-captures` with `triaged: false`
 // and `limit: 1`. Output: JSON `{ alert, lines, mismatches }`.
 
@@ -203,8 +203,8 @@ export const holderLines = ({ thisWeek, weekBefore, nameOfHolder = (key) => { re
   });
 };
 
-/** The Chase's health lines and, when a person's row grew both weeks, the alert. */
-export const chase = ({ thisWeek, weekBefore, bugThisWeek, bugWeekBefore, nameOfHolder }) => {
+/** The flow's health lines and, when a person's row grew both weeks, the alert. */
+export const flowHealth = ({ thisWeek, weekBefore, bugThisWeek, bugWeekBefore, nameOfHolder }) => {
   const rows = pair({ now: thisWeek, before: weekBefore }).filter((r) => {
     return r.key.status !== 'incubated';
   });
@@ -383,7 +383,7 @@ export const readFlow = async ({ routine, project, now, client, key, base = DEFA
   const metrics = (win, tag, groupBy) => {
     return get(`/projects/${project}/metrics`, { since: win.since, until: win.until, tag, group_by: groupBy });
   };
-  if (routine === 'chase') {
+  if (routine === 'flow') {
     // Grouped by holder: the rows are the same, and `groups` names whose
     // answer each person-queue row waits on.
     const [thisWeek, weekBefore, bugThisWeek, bugWeekBefore] = await Promise.all([
@@ -433,8 +433,8 @@ const run = async (argv, env) => {
   if (mode === 'windows') {
     return windows(rest[0]);
   }
-  if (mode !== 'chase' && mode !== 'audit') {
-    throw new Error('usage: health.mjs windows <now> | chase … | audit …');
+  if (mode !== 'flow' && mode !== 'audit') {
+    throw new Error('usage: health.mjs windows <now> | flow … | audit …');
   }
   const opts = {};
   for (let i = 0; i < rest.length; i += 2) {
@@ -455,12 +455,12 @@ const run = async (argv, env) => {
       base: env.FLOW_URL || 'https://flow.ttoss.dev',
       inbox: opts.inbox ? JSON.parse(readFileSync(opts.inbox, 'utf8')) : null,
     });
-    return mode === 'chase' ? chase(answers) : audit(answers);
+    return mode === 'flow' ? flowHealth(answers) : audit(answers);
   }
   const f = flags(rest);
-  if (mode === 'chase') {
+  if (mode === 'flow') {
     need(f, ['this', 'before', 'bug-this', 'bug-before']);
-    return chase({ thisWeek: f.this, weekBefore: f.before, bugThisWeek: f['bug-this'], bugWeekBefore: f['bug-before'] });
+    return flowHealth({ thisWeek: f.this, weekBefore: f.before, bugThisWeek: f['bug-this'], bugWeekBefore: f['bug-before'] });
   }
   need(f, ['this', 'before', 'runs-this', 'runs-before', 'inbox']);
   return audit({ thisWeek: f.this, weekBefore: f.before, runsThisWeek: f['runs-this'], runsWeekBefore: f['runs-before'], inbox: f.inbox });

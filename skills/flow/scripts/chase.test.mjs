@@ -1,108 +1,96 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { digest, sections, SECTIONS } from './chase.mjs';
+import { digest, pick, run } from './chase.mjs';
 
-const now = '2026-11-02T12:00:00Z';
 const members = [
   { user_id: 'user_pedro', email: 'pedro@example.com', role: 'admin', pending: false },
   { user_id: 'user_ana', email: 'ana@example.com', role: 'member', pending: false },
 ];
-const wait = (over) => {
-  return { readiness: { state: 'blocked:external', blocked_by: [{ via: 'wait', kind: 'external', reason: 'r', until: null, on: null, ...over }] } };
+const open = { url: 'https://gh/pr/1', merged: false, closed: false, draft: false };
+const merged = { url: 'https://gh/pr/2', merged: true, closed: false, draft: false };
+const t = (id, over = {}) => {
+  return { id, priority: null, tags: [], waitsOn: [], change: open, ...over };
 };
-const task = (id, over = {}) => {
-  return { id, title: id, url: `https://flow/app/tasks/${id}`, status: 'waiting', kind: 'commitment', unblocks: 0, updated_at: '2026-10-01T00:00:00Z', review_due_at: '2026-10-20T00:00:00Z', assignee: null, ...over };
-};
-const empty = {
-  now, project: 'proj_x', members, bugs: [], runningRuns: [], waits: [], dateCame: [], decisions: [],
-  staleRuns: [], staleTasks: {}, findings: [], findingTasks: {}, reviews: { tasks: [], total: 0 }, host: null, staleAfterHours: 4,
+const detail = (id, reason, over = {}) => {
+  return { task: { title: `title ${id}`, url: `https://flow/app/tasks/${id}` }, unblocks: 0, readiness: { blocked_by: [{ via: 'wait', on: 'user_pedro', reason, until: null }] }, ...over };
 };
 
-test('a bug only agents hold on time is counted, not listed; any other is a line naming what holds it', () => {
-  const out = sections({
-    ...empty,
-    bugs: [task('bug_a', { status: 'active', readiness: { blocked_by: [] } }), task('bug_b', { status: 'active', readiness: { blocked_by: [] } })],
-    runningRuns: [{ agent: 'flow child', started_at: '2026-11-02T11:00:00Z', works_on: ['bug_a'], by: 'user_pedro', url: 'u' }],
-  }).sections;
-  assert.equal(out['Critical bugs'].note, '1 with agents, on time');
-  assert.deepEqual(out['Critical bugs'].items.map((i) => { return [i.id, i.what, i.who]; }), [['bug_b', 'ready, nobody took it', 'pedro@example.com']]);
-});
-
-test('each task appears once, in the first section that takes it', () => {
-  const both = task('t1', { kind: 'commitment', ...wait({ until: '2026-10-30T00:00:00Z', on: 'user_ana' }) });
-  const out = sections({ ...empty, bugs: [both], waits: [both], reviews: { tasks: [both], total: 1 } }).sections;
-  assert.equal(out['Critical bugs'].items.length, 1);
-  assert.equal(out['Overdue waits'].items.length, 0);
-  assert.equal(out['Findings and due reviews'].items.length, 0);
-});
-
-test('external waits split into no owner, overdue checks (integrated or date came) and overdue waits, decisions left to their section', () => {
-  const out = sections({
-    ...empty,
-    host: { integratedTasks: ['t_check'], waitingChanges: [] },
-    waits: [
-      task('t_none', wait({ until: '2026-10-30T00:00:00Z' })),
-      task('t_check', wait({ until: '2026-10-31T00:00:00Z', on: 'user_ana' })),
-      task('t_late', wait({ on: 'user_ana' })),
-      task('t_future', wait({ until: '2026-11-09T00:00:00Z', on: 'user_ana' })),
-      task('t_decision', { kind: 'decision', ...wait({ until: '2026-10-01T00:00:00Z', on: 'user_ana' }) }),
+test('only what waits on a person is listed: a change at its gates or the agents is left to them, and so is what is not in the queue', () => {
+  const out = pick({
+    tasks: [
+      t('t_person', { waitsOn: ['user_pedro'] }),
+      t('t_gates'),
+      t('t_draft', { waitsOn: ['user_pedro'], change: { ...open, draft: true } }),
+      t('t_merged_agents', { change: merged }),
+      t('t_no_change', { waitsOn: ['user_pedro'], change: null }),
     ],
-    dateCame: [task('t_came', { status: 'calendar' })],
-  }).sections;
-  assert.match(out['No owner'].items[0].what, /^name whom this waits on \(overdue 3d\)/);
-  assert.equal(out['No owner'].items[0].who, 'pedro@example.com');
-  // Oldest first when they hold as many tasks: t_came's review came due 10-20, t_check's wait 10-31.
-  assert.deepEqual(out['Overdue checks'].items.map((i) => { return i.id; }), ['t_came', 't_check']);
-  // An undated wait is Flow's finding to name, not an overdue wait.
-  assert.deepEqual(out['Overdue waits'].items, []);
+    details: { t_person: detail('t_person', 'merge it') },
+    members,
+  });
+  assert.deepEqual(out.queue, { now: 2, limit: 20 });
+  assert.deepEqual(out.person.map((i) => { return [i.id, i.who, i.what]; }), [['t_person', 'pedro@example.com', 'merge it']]);
 });
 
-test('an undated wait on nobody is No owner from Flow’s finding; one on somebody is a finding to give the date', () => {
-  const out = sections({
-    ...empty,
-    waits: [task('t_nobody', wait({})), task('t_ana', wait({ on: 'user_ana' }))],
-    findings: [{ check: 'wait_without_on', task: 't_nobody' }, { check: 'wait_without_until', task: 't_ana' }],
-    findingTasks: { t_ana: task('t_ana', { assignee: 'user_ana' }) },
-  }).sections;
-  assert.deepEqual(out['No owner'].items.map((i) => { return [i.id, i.who, i.what]; }), [['t_nobody', 'pedro@example.com', 'name whom this waits on: r']]);
-  assert.deepEqual(out['Findings and due reviews'].items.map((i) => { return [i.id, i.who, i.what]; }), [['t_ana', 'ana@example.com', 'say when to chase: it waits on somebody with no date to ask them again']]);
+test('the order is the tick’s: very_high, then a high bug, then open changes before integrated ones, then priority, then what it frees', () => {
+  const tasks = [
+    t('integrated', { waitsOn: ['user_ana'], change: merged, priority: 'high' }),
+    t('open_low', { waitsOn: ['user_ana'], priority: 'low' }),
+    t('open_frees', { waitsOn: ['user_ana'], priority: 'low' }),
+    t('high_bug', { waitsOn: ['user_ana'], tags: ['bug'], priority: 'high', change: merged }),
+    t('very_high', { waitsOn: ['user_ana'], priority: 'very_high', change: merged }),
+    t('open_medium', { waitsOn: ['user_ana'], priority: 'medium' }),
+  ];
+  const details = Object.fromEntries(tasks.map((x) => { return [x.id, detail(x.id, 'r', { unblocks: x.id === 'open_frees' ? 3 : 0 })]; }));
+  const out = pick({ tasks, details, members });
+  assert.deepEqual(out.person.map((i) => { return i.id; }), ['very_high', 'high_bug', 'open_medium', 'open_frees', 'open_low', 'integrated']);
 });
 
-test('a change waits on a person only when its task does; without the code host the section says so', () => {
-  const t = task('t1', wait({ on: 'user_ana', until: '2026-11-09T00:00:00Z' }));
-  const out = sections({ ...empty, waits: [t], host: { waitingChanges: [{ url: 'https://gh/pr/1', title: 'PR 1', task: 't1' }, { url: 'https://gh/pr/2', title: 'PR 2', task: 'nope' }] } }).sections;
-  assert.deepEqual(out['Changes waiting to be integrated by a person'].items.map((i) => { return [i.url, i.who]; }), [['https://gh/pr/1', 'ana@example.com']]);
-  assert.equal(sections(empty).sections['Changes waiting to be integrated by a person'].note, 'the code host was not read');
+test('over the limit, the list is capped and no decision is sent; within it, half as many decisions follow', () => {
+  const tasks = Array.from({ length: 25 }, (_, i) => { return t(`t${i}`, { waitsOn: ['user_pedro'] }); });
+  const decisions = Array.from({ length: 14 }, (_, i) => {
+    return { id: `d${i}`, title: `decide ${i}`, url: `u${i}`, readiness: { blocked_by: [{ via: 'wait', on: 'user_ana', reason: 'pick one' }] } };
+  });
+  const over = pick({ tasks, decisions, limit: 10, members });
+  assert.equal(over.person.length, 20);
+  assert.equal(over.personTotal, 25);
+  assert.equal(over.decisions, null);
+  const within = pick({ tasks, decisions, limit: 25, members });
+  assert.deepEqual([within.decisions.length, within.decisionsTotal], [10, 14]);
+  assert.deepEqual(within.decisions[0], { id: 'd0', title: 'decide 0', url: 'u0', who: 'ana@example.com', what: 'pick one' });
 });
 
-test('stale sessions are people’s runs only, each open task they hold; a finding on a wait not read lands nowhere', () => {
-  const out = sections({
-    ...empty,
-    staleRuns: [
-      { agent: 'claude', by: 'user_ana', works_on: ['t1', 't2'], started_at: '2026-11-01T00:00:00Z', url: 'https://s' },
-      { agent: 'flow child', by: 'user_ana', works_on: ['t3'], started_at: '2026-11-01T00:00:00Z', url: 'https://c' },
-    ],
-    staleTasks: { t1: task('t1', { status: 'active' }), t2: task('t2', { status: 'completed' }), t3: task('t3', { status: 'active' }) },
-    findings: [{ check: 'wait_without_on', task: 't9' }, { check: 'calendar_without_date', task: 't4' }],
-    findingTasks: { t4: task('t4', { assignee: 'user_ana' }) },
-  }).sections;
-  assert.deepEqual(out['Stale sessions'].items.map((i) => { return i.id; }), ['t1']);
-  assert.deepEqual(out['Findings and due reviews'].items.map((i) => { return [i.id, i.who]; }), [['t4', 'ana@example.com']]);
+test('the digest says where the queue stands and shows the decisions section only within the limit', () => {
+  const over = digest({ date: '2026-11-05', picked: pick({ tasks: [t('a', { waitsOn: ['user_pedro'] }), t('b')], details: { a: detail('a', 'merge it') }, limit: 1, members }) });
+  assert.match(over, /Review queue: 2, limit 1\. The tick starts no new work/);
+  assert.match(over, /## Only a person can move these \(1 of 1\)\n- \[title a\]\(https:\/\/flow\/app\/tasks\/a\) — pedro@example\.com — merge it/);
+  assert.doesNotMatch(over, /Decisions/);
+  const within = digest({ date: '2026-11-05', picked: pick({ tasks: [], limit: 10, members }) });
+  assert.match(within, /## Only a person can move these \(0 of 0\)\n- none/);
+  assert.match(within, /## Decisions the team owes \(0 of 0\)\n- none/);
 });
 
-test('the digest: alert to admins, a line per person, sections in order and capped, Critical bugs never left out', () => {
-  const out = sections({ ...empty, decisions: [1, 2, 3].map((n) => { return task(`d${n}`, { kind: 'decision', unblocks: n, ...wait({ on: 'user_ana' }) }); }) });
-  const text = digest({ date: '2026-11-02', sections: out.sections, alert: 'The person queue grew.', admins: out.admins, health: ['h1'], base: ['b1'], size: 2 });
-  const lines = text.split('\n');
-  assert.equal(lines[0], '# Chase — 2026-11-02');
-  assert.equal(lines[2], '**pedro@example.com**: The person queue grew.');
-  assert.ok(lines.includes('- ana@example.com: 2 lines (Old decisions)'));
-  assert.ok(text.indexOf('## Critical bugs\n- none') > 0);
-  assert.ok(text.indexOf('## Changes waiting to be integrated by a person\n- the code host was not read') > 0);
-  // Holding the most tasks first, capped at the size, the rest counted.
-  assert.match(text, /## Old decisions\n- \[d3\][^\n]*\n- \[d2\][^\n]*\n- and 1 more/);
-  assert.ok(!text.includes('## Stale sessions'));
-  assert.ok(text.endsWith('## Health\n- b1\n- h1'));
-  assert.equal(SECTIONS.length, 8);
+test('run reads the tick’s snapshot and asks for decisions only within the limit', async () => {
+  const asked = [];
+  const pr = (id) => { return { id, status: 'waiting', priority: null, tags: [], readiness: { blocked_by: [{ via: 'wait', kind: 'external', on: 'user_pedro', reason: 'merge it' }] } }; };
+  const get = async (path, query = {}) => {
+    asked.push([path, query]);
+    if (path === '/projects/proj_x') {
+      return { members };
+    }
+    if (path === '/next') {
+      return query.kind === 'decision' ? { tasks: [] } : { tasks: [], counts: {} };
+    }
+    if (path === '/agent-runs') {
+      return { runs: [] };
+    }
+    return { task: { title: path, url: path, status: 'waiting' }, unblocks: 0, readiness: pr('x').readiness, references: [{ url: 'https://gh/pr/9', role: 'implements' }] };
+  };
+  const all = async () => { return [pr('t_pr')]; };
+  const extra = { params: { reviewQueue: 5 }, tasks: { t_pr: { change: { url: 'https://gh/pr/9', merged: false, closed: false, draft: false } } } };
+  const out = await run({ client: { get, all }, project: 'proj_x', now: '2026-11-05T12:00:00Z', extra });
+  assert.deepEqual([out.queue, out.person, out.decisions], [{ now: 1, limit: 5 }, 1, 0]);
+  assert.ok(asked.some(([path, q]) => { return path === '/next' && q.kind === 'decision'; }));
+  const over = await run({ client: { get, all }, project: 'proj_x', now: '2026-11-05T12:00:00Z', extra: { ...extra, params: { reviewQueue: 0 } } });
+  assert.equal(over.decisions, null);
 });
