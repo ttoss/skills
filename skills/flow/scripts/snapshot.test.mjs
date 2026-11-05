@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { plan } from './plan.mjs';
-import { build, DEFAULT_PARAMS, roundsOf } from './snapshot.mjs';
+import { build, DEFAULT_PARAMS, roundsOf, run } from './snapshot.mjs';
 
 const now = '2026-11-02T12:00:00Z';
 const row = (id, over = {}) => {
@@ -115,4 +115,35 @@ test('rounds are the closed child runs that pushed to the change after it was op
     ],
   }), 2);
   assert.equal(roundsOf({ change: { url: change.url, createdAt: null }, runs: [run('2026-11-02T11:00:00Z')] }), 0);
+});
+
+test('every task whose change is out is read, past the slices’ limit; a row Flow listed without the reference stays out, named', async () => {
+  const waiting = (id) => { return row(id, { status: 'waiting' }); };
+  const tasks = {
+    t_slice: { task: { status: 'waiting' }, references: [] },
+    t_pr: { task: { status: 'waiting' }, references: [{ url: 'https://gh/pr/7', role: 'implements' }] },
+    t_retracted: { task: { status: 'waiting' }, references: [{ url: 'https://gh/pr/8', role: 'implements', retracted_at: now }] },
+  };
+  const asked = [];
+  const get = async (path, query = {}) => {
+    asked.push([path, query]);
+    if (path === '/next') {
+      return { tasks: query.slice === 'waiting' ? [waiting('t_slice')] : [], counts: {} };
+    }
+    if (path === '/agent-runs') {
+      return { runs: [] };
+    }
+    return tasks[path.replace('/tasks/', '')];
+  };
+  // The slice is full and holds neither: only the ref_role read finds them.
+  const all = async (path, query, field) => {
+    asked.push([path, query, field]);
+    return [waiting('t_pr'), waiting('t_retracted')];
+  };
+  const snap = await run({ client: { get, all }, project: 'proj_x', now });
+  const listing = asked.find(([path]) => { return path === '/tasks'; });
+  assert.deepEqual(listing[1], { project: 'proj_x', status: ['active', 'waiting', 'calendar', 'blocked'], ref_role: 'implements', limit: 100 });
+  assert.deepEqual(snap.tasks.map((t) => { return t.id; }).sort(), ['t_pr', 't_slice']);
+  assert.deepEqual(snap.needs.changes, [{ task: 't_pr', url: 'https://gh/pr/7' }]);
+  assert.deepEqual(snap.needs.unread, [{ task: 't_retracted', error: 'listed by ref_role=implements without a live implements reference' }]);
 });

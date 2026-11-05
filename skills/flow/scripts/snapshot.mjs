@@ -7,7 +7,8 @@ import { load as loadParams } from './params.mjs';
 
 // The tick's snapshot (flow/SKILL.md section 1), in plan.mjs's schema, read
 // from Flow with the project's API key: the candidates and their rank, the
-// slices the tick acts on, the children and which are this person's, what
+// slices the tick acts on, every task whose change is out (`ref_role`, every
+// page), the children and which are this person's, what
 // holds each task and what came due. What Flow cannot know stays with the
 // model and comes in `--extra`: the code host's view of each change, the
 // runtime's view of each child and the brief. What integrating leaves is the
@@ -26,6 +27,8 @@ import { load as loadParams } from './params.mjs';
 // be read is named, never guessed.
 
 const CLOSED = ['completed', 'cancelled', 'discarded', 'archived'];
+// The statuses a task with a change in flight can hold.
+const WORKED = ['active', 'waiting', 'calendar', 'blocked'];
 
 export const DEFAULT_PARAMS = { maxRuns: 2, staleAfterHours: 4, autoRounds: 1, reviewByAgent: false, reviewRequired: null, reviewGraceMinutes: 30, agentsMayIntegrate: true, focus: null, reviewQueue: null };
 
@@ -117,24 +120,27 @@ export const build = ({ now, candidates, slices, dueIds, children, mine, childTa
 
 /** Every read, then the snapshot. */
 export const run = async ({ client, project, now = new Date().toISOString(), extra = {}, repos = null, reviewers = [], gh }) => {
-  const { get } = client;
+  const { get, all } = client;
   const next = await get('/next', { project, limit: 10 });
   const counts = next.counts || {};
   const slice = (name) => {
     return get('/next', { project, slice: name, assignee: 'any', limit: 20 });
   };
-  const [waiting, blocked, dateCame, holdCleared, children, mine, running] = await Promise.all([
+  const [waiting, blocked, dateCame, holdCleared, implemented, children, mine, running] = await Promise.all([
     slice('waiting'), slice('blocked'),
     counts.date_came ? slice('date_came') : { tasks: [] },
     counts.hold_cleared ? slice('hold_cleared') : { tasks: [] },
+    // Every task whose change is out, every page: the review queue is counted
+    // from these, and a slice's limit would hide all but its first rows.
+    all('/tasks', { project, status: WORKED, ref_role: 'implements', limit: 100 }, 'tasks'),
     get('/agent-runs', { project, status: 'running', agent: 'flow child', limit: 100 }),
     get('/agent-runs', { project, status: 'running', agent: 'flow child', by: 'me', limit: 100 }),
     // Every running run, whoever started it: a reviewer outside the tick
     // that recorded its run holds the task as surely as a child does.
     repos?.length ? get('/agent-runs', { project, status: 'running', limit: 100 }) : { runs: [] },
   ]);
-  const slices = [...waiting.tasks, ...blocked.tasks, ...dateCame.tasks, ...holdCleared.tasks];
-  const ids = [...new Set([...slices.map((t) => { return t.id; }), ...children.runs.flatMap((r) => { return r.works_on || []; })])];
+  const sliced = [...waiting.tasks, ...blocked.tasks, ...dateCame.tasks, ...holdCleared.tasks];
+  const ids = [...new Set([...sliced, ...implemented].map((t) => { return t.id; }).concat(children.runs.flatMap((r) => { return r.works_on || []; })))];
   // A task Flow cannot answer right now is named in `needs.unread`, never guessed.
   const unread = [];
   const full = Object.fromEntries((await mapLimit(ids, 4, async (id) => {
@@ -148,6 +154,16 @@ export const run = async ({ client, project, now = new Date().toISOString(), ext
   const implementsOf = Object.fromEntries(Object.entries(full).map(([id, answer]) => {
     return [id, (answer.references || []).filter((r) => { return r.role === 'implements' && !r.retracted_at; }).map((r) => { return r.url; })];
   }).filter(([, urls]) => { return urls.length; }));
+  // A row listed by `ref_role` with no live `implements` reference means Flow
+  // did not apply the filter: it stays out, named, rather than widening the tick.
+  const listed = implemented.filter((t) => {
+    if (implementsOf[t.id] || !full[t.id]) {
+      return true;
+    }
+    unread.push({ task: t.id, error: 'listed by ref_role=implements without a live implements reference' });
+    return false;
+  });
+  const slices = [...sliced, ...listed];
   // With the repos known, the code host is read with `gh`: each change a task
   // implements, each repo's default branch and its open repair task. A change
   // or repo `gh` cannot read stays in `needs`, never guessed.
