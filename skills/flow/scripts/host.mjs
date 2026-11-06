@@ -206,6 +206,7 @@ export const readChange = async (url, { gh = ghApi, reviewers = [] } = {}) => {
     // Judgments: the planner asks for them with a `judge` act.
     touchesOwnGates: null,
     reservedToPerson: null,
+    findingsToPerson: null,
   };
 };
 

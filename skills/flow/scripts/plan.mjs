@@ -45,7 +45,8 @@ import { fileURLToPath } from 'node:url';
 //                               reviewPendingSince,   // a reviewer's pending flow/review status on the head
 //                               reviewRunActive,      // a running run holds the task
 //                               reviewEnforced,       // the code host refuses to integrate without the review
-//                               touchesOwnGates, reservedToPerson } }]
+//                               touchesOwnGates, reservedToPerson,
+//                               findingsToPerson } }]  // a FINDINGS the Merge rule gives to a person, not a round; null: a judge
 // }
 
 
@@ -125,6 +126,23 @@ const roundOrPerson = ({ task, params, why }) => {
     acts: [{ act: 'wait_on_person', task: task.id, reason: `${why}, and the ${params.autoRounds} automatic round(s) are spent` }],
     item: null,
   };
+};
+
+// Findings get a round only when an agent can fix them: what the Merge rule
+// reserves to a person (a gate it names, a finding only a person can act on)
+// goes to them at once, since a round there spends a child and CI to arrive
+// at the same person.
+const findingsRound = ({ task, change, params }) => {
+  if (task.rounds >= params.autoRounds) {
+    return roundOrPerson({ task, params, why: 'review findings' });
+  }
+  if (change.reservedToPerson === true || change.findingsToPerson === true) {
+    return { acts: [{ act: 'wait_on_person', task: task.id, reason: `review findings on ${change.url} that the Merge rule gives to a person, with no automatic round` }], item: null };
+  }
+  if (change.findingsToPerson === null || change.findingsToPerson === undefined) {
+    return { acts: [{ act: 'judge', about: 'findings', task: task.id, url: change.url, reason: 'review findings: does the Merge rule give any of them, or the change, to a person rather than a round?' }], item: null };
+  }
+  return roundOrPerson({ task, params, why: 'review findings' });
 };
 
 // What the task's body says integrating leaves.
@@ -216,7 +234,7 @@ const minutesSince = (when, now) => {
 const advanceGreen = ({ task, change, params, now }) => {
   const verdict = change.verdict && change.verdict.sha === change.headSha ? change.verdict.result : null;
   if (verdict === 'FINDINGS') {
-    return roundOrPerson({ task, params, why: 'review findings' });
+    return findingsRound({ task, change, params });
   }
   if (verdict === 'CLEAN' || params.reviewRequired === false) {
     return { acts: [gatesPassed({ task, change, params })], item: null };
