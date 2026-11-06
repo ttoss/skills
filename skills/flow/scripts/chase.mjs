@@ -69,7 +69,7 @@ const waitOn = (detail, holders) => {
  * as many lines as the release queue's limit, the size the project set for what
  * may wait on a person. `tasks` is
  * the snapshot's; `details` each task's `get-task` answer, by id, for those
- * waiting on a person; `decisions` the decision rows `get-next` ranked.
+ * waiting on a person; `decisions` the `waiting` rows `get-next` ranked.
  */
 export const pick = ({ tasks, details = {}, decisions = [], limit = DEFAULT_LIMIT, members = [], teams = [] }) => {
   const who = whoOf({ members, teams });
@@ -92,24 +92,51 @@ export const pick = ({ tasks, details = {}, decisions = [], limit = DEFAULT_LIMI
       since: wait?.until || null,
     };
   }).sort(byTickOrder);
-  // Decisions hold only the work they block, and new work waits while the
-  // queue is over its limit, so they are worth a person's time only within it.
+  // The decision queue: what waits on a person's answer before it can start,
+  // a `decision` or a task whose brief needs one; a task with its change out
+  // is the release queue's. Decisions hold only the work they block, and new
+  // work waits while the queue is over its limit, so they are worth a person's
+  // time only within it.
   const within = queue.length <= limit;
-  const owed = within ? decisions.slice(0, limit).map((row) => {
-    const wait = (row.readiness?.blocked_by || []).find((b) => { return b.via === 'wait'; });
-    return { id: row.id, title: row.title, url: row.url, who: who(wait?.on ? [wait.on] : []), what: wait?.reason || 'decide' };
+  const out = new Set(tasks.filter((t) => { return t.change; }).map((t) => { return t.id; }));
+  const answers = decisions.filter((row) => {
+    return !out.has(row.id) && (row.readiness?.blocked_by || []).some((b) => { return b.via === 'wait' && b.on; });
+  });
+  const owed = within ? answers.slice(0, limit).map((row) => {
+    const wait = (row.readiness?.blocked_by || []).find((b) => { return b.via === 'wait' && b.on; });
+    return { id: row.id, title: row.title, url: row.url, who: who([wait.on]), what: wait.reason || 'decide' };
   }) : null;
   return {
     queue: { now: queue.length, limit },
     person: person.slice(0, limit),
     personTotal: person.length,
     decisions: owed,
-    decisionsTotal: within ? decisions.length : null,
+    decisionsTotal: within ? answers.length : null,
   };
 };
 
+const WHAT_MAX = 280;
+
+/**
+ * What the person does, kept whole when it fits; a longer reason is cut at
+ * its last sentence that fits, else its last word, so a line never ends
+ * mid-word.
+ */
+export const shorten = (text, max = WHAT_MAX) => {
+  const flat = text.replace(/\s+/g, ' ').trim();
+  if (flat.length <= max) {
+    return flat;
+  }
+  const head = flat.slice(0, max);
+  const sentence = head.match(/^.*[.;:!?](?=\s)/);
+  if (sentence && sentence[0].length >= max / 2) {
+    return `${sentence[0]} …`;
+  }
+  return `${head.slice(0, head.lastIndexOf(' ')).replace(/[\s,;:—-]+$/, '')} …`;
+};
+
 const lineOf = (item) => {
-  return `- [${item.title}](${item.url}) — ${item.who} — ${item.what.replace(/\s+/g, ' ').slice(0, 280)}`;
+  return `- [${item.title}](${item.url}) — ${item.who} — ${shorten(item.what)}`;
 };
 
 /** The digest text: the queue against its limit, then the two lists. */
@@ -142,7 +169,7 @@ export const run = async ({ client, project, now = new Date().toISOString(), ext
   }));
   const within = snapshot.tasks.filter(inReleaseQueue).length <= queueLimit;
   const decisions = within
-    ? await get('/next', { project, kind: 'decision', status: 'waiting', assignee: 'any', limit: 100 })
+    ? await get('/next', { project, status: 'waiting', assignee: 'any', limit: 100 })
     : { tasks: [] };
   const picked = pick({
     tasks: snapshot.tasks, details, decisions: decisions.tasks || [], limit: queueLimit,

@@ -38,6 +38,7 @@ const change = (over = {}) => { return {
   reviewEnforced: true,
   touchesOwnGates: false,
   reservedToPerson: false,
+  findingsToPerson: false,
   ...over,
 } };
 const task = (over = {}) => { return {
@@ -158,6 +159,22 @@ test('red checks take one round, then wait on a person', () => {
       .length,
     1,
   );
+});
+
+test('findings take a round only when an agent can fix them: what the Merge rule gives to a person waits on one at once', () => {
+  const findings = (over) => { return change({ verdict: { sha: 'h', result: 'FINDINGS' }, ...over }); };
+  assert.deepEqual(acts({ tasks: [task({ change: findings() })] }, 'start_child').map((a) => { return a.kind }), ['round']);
+  for (const over of [{ reservedToPerson: true }, { findingsToPerson: true }]) {
+    const out = plan({ now, params, tasks: [task({ change: findings(over) })] });
+    assert.equal(out.filter((a) => { return a.act === 'start_child' || a.act === 'move_task' }).length, 0);
+    assert.match(out.find((a) => { return a.act === 'wait_on_person' }).reason, /no automatic round/);
+  }
+  const unread = plan({ now, params, tasks: [task({ change: findings({ findingsToPerson: null }) })] });
+  assert.equal(unread.find((a) => { return a.act === 'judge' }).about, 'findings');
+  assert.equal(unread.filter((a) => { return a.act === 'start_child' }).length, 0);
+  // Rounds spent: a person either way, with nothing left to judge.
+  const spent = plan({ now, params, tasks: [task({ rounds: 1, change: findings({ findingsToPerson: null }) })] });
+  assert.deepEqual(spent.filter((a) => { return a.act === 'judge' || a.act === 'wait_on_person' }).map((a) => { return a.act }), ['wait_on_person']);
 });
 
 test('red caused on the default branch counts no round', () => {

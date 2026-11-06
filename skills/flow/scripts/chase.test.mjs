@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { digest, pick, run } from './chase.mjs';
+import { digest, pick, run, shorten } from './chase.mjs';
 
 const members = [
   { user_id: 'user_pedro', email: 'pedro@example.com', role: 'admin', pending: false },
@@ -79,7 +79,7 @@ test('run reads the tick’s snapshot and asks for decisions only within the lim
       return { members };
     }
     if (path === '/next') {
-      return query.kind === 'decision' ? { tasks: [] } : { tasks: [], counts: {} };
+      return query.status === 'waiting' ? { tasks: [] } : { tasks: [], counts: {} };
     }
     if (path === '/agent-runs') {
       return { runs: [] };
@@ -90,7 +90,28 @@ test('run reads the tick’s snapshot and asks for decisions only within the lim
   const extra = { params: { releaseQueue: 5 }, tasks: { t_pr: { change: { url: 'https://gh/pr/9', merged: false, closed: false, draft: false } } } };
   const out = await run({ client: { get, all }, project: 'proj_x', now: '2026-11-05T12:00:00Z', extra });
   assert.deepEqual([out.queue, out.person, out.decisions], [{ now: 1, limit: 5 }, 1, 0]);
-  assert.ok(asked.some(([path, q]) => { return path === '/next' && q.kind === 'decision'; }));
+  assert.ok(asked.some(([path, q]) => { return path === '/next' && q.status === 'waiting'; }));
   const over = await run({ client: { get, all }, project: 'proj_x', now: '2026-11-05T12:00:00Z', extra: { ...extra, params: { releaseQueue: 0 } } });
   assert.equal(over.decisions, null);
+});
+
+test('the decision queue is what waits on a person before it starts: a decision or a task whose brief needs an answer, never a change out or a wait on nobody', () => {
+  const row = (id, on) => { return { id, title: id, url: id, readiness: { blocked_by: [{ via: 'wait', on, reason: 'answer' }] } }; };
+  const out = pick({
+    tasks: [t('t_out', { waitsOn: ['user_pedro'] })],
+    decisions: [row('d_decision', 'user_ana'), row('t_brief', 'user_pedro'), row('t_out', 'user_pedro'), row('t_gates', null)],
+    limit: 10,
+    members,
+  });
+  assert.deepEqual(out.decisions.map((d) => { return [d.id, d.who]; }), [['d_decision', 'ana@example.com'], ['t_brief', 'pedro@example.com']]);
+  assert.equal(out.decisionsTotal, 2);
+});
+
+test('a long reason is cut at a sentence or a word, never mid-word', () => {
+  assert.equal(shorten('short  reason'), 'short reason');
+  const sentences = `${'a'.repeat(200)}. ${'b'.repeat(200)}.`;
+  assert.equal(shorten(sentences), `${'a'.repeat(200)}. …`);
+  const words = 'word '.repeat(80);
+  const cut = shorten(words);
+  assert.ok(cut.length <= 282 && cut.endsWith('word …'));
 });
