@@ -1,7 +1,7 @@
 ---
 name: flow
 description: Runs a project's ttoss Agentic Workflow on Flow (Get Things Flowing applied to product development), and runs the delivery process every session in a Flow project follows — one tick reads the graph, integrates done changes by the project's merge rule, runs its release procedure and the checks that came due, delegates ready tasks to child agent runs, writes every change back to Flow and stops. Use when the user says /flow, "run a tick", "run the agentic workflow" or "run the flow"; set a project up with /flow-setup first. Not for creating, reading, moving or triaging tasks, which the Flow MCP tools and their instructions cover.
-argument-hint: "[project-id] [task-id | tag:<name>] [--max-runs N] [--chase]"
+argument-hint: "[project-id] [task-id | tag:<name>] [--max-runs N] [--chase | --health]"
 ---
 
 # Flow
@@ -12,7 +12,7 @@ You run the **tick** of a project's Agentic Workflow. You implement nothing. You
 
 One invocation is **one tick**, and every tick behaves the same whatever fires it (a recurring routine, a cron or CI job running the agent headless), because **Flow is the only memory** (GTF-S4, GTF-U4): re-read the graph every time, and know earlier ticks only from the runs recorded there. Setting a project up is [`/flow-setup`](../flow-setup/SKILL.md), which may ask the user questions; a tick never does.
 
-**`--chase` runs the Chase instead of a tick**: section 0 with `agent: flow chase`, then [chase](references/chase.md), which ends the run. The tick and the chase are two of the workflow's [standard routines](https://raw.githubusercontent.com/ttoss/ttoss/main/docs/website/docs/engineering/workflow/routines.md#standard-routines); the third, the audit, is [`token-audit`](../token-audit/SKILL.md) `--routine`.
+**`--chase` runs the Chase instead of a tick, and `--health` the Health**: section 0 with `agent: flow chase` or `agent: flow health`, then [chase](references/chase.md) or [health](references/health.md), which ends the run. The tick, the Chase and the Health are three of the workflow's [standard routines](https://raw.githubusercontent.com/ttoss/ttoss/main/docs/website/docs/engineering/workflow/routines.md#standard-routines); the fourth, the Audit, is [`token-audit`](../token-audit/SKILL.md) `--routine`.
 
 ## Hard rules of a tick
 

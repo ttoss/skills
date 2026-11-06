@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { answers, answersLine, report } from './audit.mjs';
+import { report } from './audit.mjs';
 
 test('no total of its own (health.mjs gives it); spend by agent costliest first, the three costliest tasks, runs on no task and lingering runs', () => {
   const lines = report({
@@ -25,23 +25,3 @@ test('no total of its own (health.mjs gives it); spend by agent costliest first,
   assert.equal(lines[6], 'Runs still open after every task they worked on closed: flow child https://s/1');
 });
 
-test('answers: closed decisions of the last four weeks with their outcome, newest first, dated by the closing change', () => {
-  const now = '2026-11-03T12:00:00Z';
-  const decision = (id, closedAt, over = {}) => { return {
-    id, url: `https://f/${id}`, title: id, status: 'completed', outcome: `answer ${id}`, updated_at: '2026-11-03T00:00:00Z',
-    changes: [{ at: '2026-10-01T00:00:00Z', status: { from: null, to: 'waiting' } }, { at: closedAt, status: { from: 'waiting', to: 'completed' } }],
-    ...over,
-  }; };
-  const list = answers({ now, decisions: [
-    decision('task_old', '2026-09-01T00:00:00Z'),
-    decision('task_a', '2026-10-20T00:00:00Z'),
-    decision('task_b', '2026-11-01T00:00:00Z'),
-    decision('task_c', '2026-10-30T00:00:00Z', { outcome: undefined, changes: [] }),
-  ] });
-  assert.deepEqual(list.map((a) => { return [a.id, a.at, a.outcome]; }), [
-    ['task_c', '2026-11-03T00:00:00Z', null],
-    ['task_b', '2026-11-01T00:00:00Z', 'answer task_b'],
-    ['task_a', '2026-10-20T00:00:00Z', 'answer task_a'],
-  ]);
-  assert.equal(answersLine({ answers: list, now }), 'Decisions a person answered: 2 this week (0 the week before), 3 over the last 4 weeks');
-});

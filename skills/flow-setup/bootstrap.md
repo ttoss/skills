@@ -32,7 +32,7 @@ A list, one parameter per item, each a pointer or a short rule:
 - **Standing-decision task id**: `task_xxxxxxxxxx`.
 - **Repos**: `acme/api`, `acme/web`.
 - **Runtime**: `ops/agent-runtime.md` (children, run records, max runs 2, models by exact id).
-- **Routines**: the Tick hourly on weekdays 09:00–18:00 `America/Sao_Paulo` (`/flow proj_xxxxxxxxxx`); the Chase on weekdays at 08:50 (`/flow proj_xxxxxxxxxx --chase`), to `#eng`; the Audit on Fridays at 16:50 (`/token-audit --routine`); Sentry triage on each new issue (`.agents/routines/sentry-triage.md`). Models and connectors in `ops/agent-runtime.md`.
+- **Routines**: the Tick hourly on weekdays 09:00–18:00 `America/Sao_Paulo` (`/flow proj_xxxxxxxxxx`); the Chase on weekdays at 08:50 (`/flow proj_xxxxxxxxxx --chase`), to `#eng`; the Health on Mondays at 08:40 (`/flow proj_xxxxxxxxxx --health`), to `#eng`; the Audit on Fridays at 16:50 (`/token-audit --routine`); Sentry triage on each new issue (`.agents/routines/sentry-triage.md`). Models and connectors in `ops/agent-runtime.md`.
 - **Intake**: `docs/agents/intake.md`; a pull request with no task gets one.
 - **Ready brief**: default.
 - **Decisions**: `AGENTS.md` § Decisions, tested by `docs/agents/open-questions.md`.
@@ -104,6 +104,7 @@ Blue: a routine's run acts next. Orange: a person. Grey: automation.
 | --- | --- | --- | --- |
 | Tick | moves tasks through the stages: delegates, integrates, releases, verifies | `/flow <proj id>` | <its schedule and model, or "not scheduled: someone runs it by hand"> |
 | Chase | tells each person what waits on them | `/flow <proj id> --chase` | <its schedule and model, or "not set up"> |
+| Health | reports how the work flows, and proposes a standing rule from an answer given more than once | `/flow <proj id> --health` | <its schedule and model, or "not set up"> |
 | Audit | finds where the agents spend tokens, files each fix as a task | `/token-audit --routine` | <its schedule and model, or "not set up"> |
 | <each project routine> | <what it does> | `<its file>` | <what fires it, and its model> |
 

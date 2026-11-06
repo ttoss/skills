@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { audit, flowHealth, holderLines, mismatches, nameOf, readFlow, spendOf, spendPair, windows } from './health.mjs';
+import { answers, answersLine, feeds, flowHealth, holderLines, mismatches, nameOf, readFlow, report, spend, spendOf, spendPair, windows } from './health.mjs';
 
 // Shapes and edge cases taken from OneClick Ads' answers in November 2026.
 const row = (status, state, on, open, entered, left, p90 = 1, p50 = 0) => {
@@ -141,20 +141,27 @@ test('spend: cost where priced, a lower bound when partly unpriced, tokens or no
   assert.equal(spendOf(undefined), 'no group');
 });
 
-test('audit: groups in order, incubated rows and exits named with `on`, passes inside incubated left out, the inbox now only', () => {
-  const { lines, mismatches: off } = audit({
-    thisWeek,
-    weekBefore: before,
+test('spend: by what became of the runs\' tasks in order, then every run, in one unit for both weeks', () => {
+  const { lines } = spend({
     runsThisWeek: { totals: { runs: 783, unpriced: 783, input_tokens: 22112377, output_tokens: 1388000 }, groups: [{ key: 'dropped', totals: { runs: 2, unpriced: 2 } }, { key: null, totals: { runs: 232, unpriced: 232, input_tokens: 8490000, output_tokens: 550000 } }] },
     runsWeekBefore: { totals: { runs: 342, unpriced: 319, cost_usd: 159.869 }, groups: [{ key: 'dropped', totals: { runs: 12, unpriced: 10, cost_usd: 19.9987 } }] },
-    inbox: { captures: [{ inbox_age_ms: 3947732332 }], total: 60 },
   });
   // One unit for both weeks: this week has no cost, so both are in tokens, never dollars beside tokens.
   assert.equal(lines[0], 'Spend, dropped (tasks closed without completing): 2 runs, no tokens reported (12 runs, no tokens reported the week before), in tokens because a week has no cost reported');
   assert.equal(lines[1], 'Spend, open (tasks still open): no group (no group the week before), in tokens because a week has no cost reported');
   assert.match(lines[3], /^Spend, no task: 232 runs · 8,490,000 input, 550,000 output \(no group the week before\)/);
   assert.match(lines[4], /^Spend, every run: 783 runs · 22,112,377 input, 1,388,000 output \(342 runs · input not reported, output not reported the week before\)/);
-  assert.doesNotMatch(lines.slice(0, 5).join('\n'), /\$/);
+  assert.equal(lines.length, 5);
+  assert.doesNotMatch(lines.join('\n'), /\$/);
+});
+
+test('feeds: incubated rows and exits named with `on`, passes inside incubated left out, the inbox now only', () => {
+  const { lines, mismatches: off } = feeds({
+    thisWeek,
+    weekBefore: before,
+    inbox: { captures: [{ inbox_age_ms: 3947732332 }], total: 60 },
+  });
+  assert.ok(!lines.some((l) => { return l.startsWith('Spend'); }));
   assert.ok(lines.includes('Out of incubated (incubated · ready) → a person (waiting · blocked:external · on): 23 (0 the week before)'));
   assert.ok(lines.includes('Out of incubated (incubated · ready) → the gates (waiting · blocked:external): 4 (0 the week before)'));
   assert.ok(lines.includes('Out of incubated (incubated · ready) → discarded: 42 (9 the week before)'));
@@ -213,37 +220,40 @@ test('with a key, the flow health reads the four windows itself, GET only, and g
   assert.ok(calls.every((c) => { return c.auth === 'Bearer flow_k' && c.url.startsWith('https://flow.example/api/v1/projects/proj_1m5wbbbf1x/metrics?since='); }));
 });
 
-test('with a key restricted to projects, the inbox answers 404 and the audit says so instead of failing', async () => {
+test('spend reads the two weeks of runs by outcome, and nothing else', async () => {
   const runsAnswer = { totals: { runs: 1, unpriced: 0, cost_usd: 1 }, groups: [] };
+  const { calls, fetchImpl } = fakeFlow((u) => {
+    assert.equal(u.pathname, '/api/v1/agent-runs');
+    assert.equal(u.searchParams.get('group_by'), 'outcome');
+    assert.equal(u.searchParams.get('limit'), '0');
+    return runsAnswer;
+  });
+  const got = await readFlow({ routine: 'spend', project: 'proj_1m5wbbbf1x', now: '2026-11-02T17:00:00Z', key: 'flow_k', fetchImpl });
+  assert.equal(calls.length, 2);
+  assert.equal(spend(got).lines.at(-1).split(';')[0], 'Spend, every run: 1 run · $1.00 (1 run · $1.00 the week before)');
+});
+
+test('with a key restricted to projects, the inbox answers 404 and the Health says so instead of failing', async () => {
   const { calls, fetchImpl } = fakeFlow((u) => {
     if (u.pathname === '/api/v1/captures') {
       return 404;
     }
-    if (u.pathname === '/api/v1/agent-runs') {
-      assert.equal(u.searchParams.get('group_by'), 'outcome');
-      assert.equal(u.searchParams.get('limit'), '0');
-      return runsAnswer;
-    }
     return u.searchParams.get('until') === '2026-11-02T17:00:00.000Z' ? thisWeek : before;
   });
-  const answers = await readFlow({ routine: 'audit', project: 'proj_1m5wbbbf1x', now: '2026-11-02T17:00:00Z', key: 'flow_k', fetchImpl });
-  assert.equal(calls.length, 5);
-  assert.equal(audit(answers).lines.at(-1), 'Untriaged inbox: not readable with this credential (a key restricted to projects is not given the inbox; pass the session\'s list-captures answer as --inbox)');
+  const answers = await readFlow({ routine: 'feeds', project: 'proj_1m5wbbbf1x', now: '2026-11-02T17:00:00Z', key: 'flow_k', fetchImpl });
+  assert.equal(calls.length, 3);
+  assert.equal(feeds(answers).lines.at(-1), 'Untriaged inbox: not readable with this credential (a key restricted to projects is not given the inbox; pass the session\'s list-captures answer as --inbox)');
 });
 
 test('the inbox the session read is the line, and the key is never asked for it', async () => {
-  const runsAnswer = { totals: { runs: 1, unpriced: 0, cost_usd: 1 }, groups: [] };
   const { calls, fetchImpl } = fakeFlow((u) => {
     assert.notEqual(u.pathname, '/api/v1/captures');
-    if (u.pathname === '/api/v1/agent-runs') {
-      return runsAnswer;
-    }
     return u.searchParams.get('until') === '2026-11-02T17:00:00.000Z' ? thisWeek : before;
   });
   const inbox = { captures: [{ inbox_age_ms: 2 * 86_400_000 }], total: 3 };
-  const answers = await readFlow({ routine: 'audit', project: 'proj_1m5wbbbf1x', now: '2026-11-02T17:00:00Z', key: 'flow_k', fetchImpl, inbox });
-  assert.equal(calls.length, 4);
-  assert.equal(audit(answers).lines.at(-1), 'Untriaged inbox, now (the account\'s, across every project): 3 captures, the oldest 2.0d old');
+  const answers = await readFlow({ routine: 'feeds', project: 'proj_1m5wbbbf1x', now: '2026-11-02T17:00:00Z', key: 'flow_k', fetchImpl, inbox });
+  assert.equal(calls.length, 2);
+  assert.equal(feeds(answers).lines.at(-1), 'Untriaged inbox, now (the account\'s, across every project): 3 captures, the oldest 2.0d old');
 });
 
 test('a project the key cannot reach fails loudly, never as empty lines', async () => {
@@ -276,4 +286,53 @@ test('a line per holder and row, named, nobody last; a holder only the week befo
   assert.match(lines[1], /2 open · 2 in, 0 out \(no row the week before\)/);
   assert.match(lines[0], /no row this week \(0 in, 3 out the week before\)/);
   assert.deepEqual(holderLines({ thisWeek, weekBefore: before }), []);
+});
+
+test('answers: closed decisions of the last four weeks with their outcome, newest first, dated by the closing change', () => {
+  const now = '2026-11-03T12:00:00Z';
+  const decision = (id, closedAt, over = {}) => { return {
+    id, url: `https://f/${id}`, title: id, status: 'completed', outcome: `answer ${id}`, updated_at: '2026-11-03T00:00:00Z',
+    changes: [{ at: '2026-10-01T00:00:00Z', status: { from: null, to: 'waiting' } }, { at: closedAt, status: { from: 'waiting', to: 'completed' } }],
+    ...over,
+  }; };
+  const list = answers({ now, decisions: [
+    decision('task_old', '2026-09-01T00:00:00Z'),
+    decision('task_a', '2026-10-20T00:00:00Z'),
+    decision('task_b', '2026-11-01T00:00:00Z'),
+    decision('task_c', '2026-10-30T00:00:00Z', { outcome: undefined, changes: [] }),
+  ] });
+  assert.deepEqual(list.map((a) => { return [a.id, a.at, a.outcome]; }), [
+    ['task_c', '2026-11-03T00:00:00Z', null],
+    ['task_b', '2026-11-01T00:00:00Z', 'answer task_b'],
+    ['task_a', '2026-10-20T00:00:00Z', 'answer task_a'],
+  ]);
+  assert.equal(answersLine({ answers: list, now }), 'Decisions a person answered: 2 this week (0 the week before), 3 over the last 4 weeks');
+});
+
+test('report: the flow\'s lines, then what feeds and drains the graph, then the answers line, with the answers as data', async () => {
+  const now = '2026-11-02T17:00:00Z';
+  const decision = { id: 'task_d', url: 'https://f/task_d', title: 'd', status: 'completed', outcome: 'yes', updated_at: '2026-11-01T00:00:00Z', changes: [{ at: '2026-11-01T00:00:00Z', status: { from: 'waiting', to: 'completed' } }] };
+  const get = async (path, query = {}) => {
+    if (path === '/projects/proj_1m5wbbbf1x') {
+      return { members: [], teams: [] };
+    }
+    if (path === '/projects/proj_1m5wbbbf1x/metrics') {
+      const recent = query.until === windows(now).thisWeek.until;
+      return query.tag ? (recent ? bugThis : bugBefore) : recent ? thisWeek : before;
+    }
+    if (path === '/tasks') {
+      return { tasks: [{ id: 'task_d', updated_at: decision.updated_at }] };
+    }
+    if (path === '/tasks/task_d') {
+      return { task: decision };
+    }
+    throw new Error(`unexpected read ${path}`);
+  };
+  const inbox = { captures: [], total: 0 };
+  const out = await report({ client: { get }, project: 'proj_1m5wbbbf1x', now, inbox });
+  const fed = feeds({ thisWeek, weekBefore: before, inbox });
+  assert.equal(out.alert, digest.alert);
+  assert.deepEqual(out.lines, [...digest.lines, ...fed.lines, 'Decisions a person answered: 1 this week (0 the week before), 1 over the last 4 weeks']);
+  assert.deepEqual(out.answers.map((a) => { return [a.id, a.outcome]; }), [['task_d', 'yes']]);
+  assert.ok(!out.lines.some((l) => { return l.startsWith('Spend'); }));
 });
