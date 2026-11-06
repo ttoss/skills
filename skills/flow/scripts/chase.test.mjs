@@ -32,7 +32,7 @@ test('only what waits on a person is listed: a change at its gates or the agents
   assert.deepEqual(out.person.map((i) => { return [i.id, i.who, i.what]; }), [['t_person', 'pedro@example.com', 'merge it']]);
 });
 
-test('the order is the tick’s: very_high, then a high bug, then open changes before integrated ones, then priority, then what it frees', () => {
+test('the order is the tick’s: very_high, then a high bug, then integrated changes before open ones, then priority, then what it frees', () => {
   const tasks = [
     t('integrated', { waitsOn: ['user_ana'], change: merged, priority: 'high' }),
     t('open_low', { waitsOn: ['user_ana'], priority: 'low' }),
@@ -43,7 +43,7 @@ test('the order is the tick’s: very_high, then a high bug, then open changes b
   ];
   const details = Object.fromEntries(tasks.map((x) => { return [x.id, detail(x.id, 'r', { unblocks: x.id === 'open_frees' ? 3 : 0 })]; }));
   const out = pick({ tasks, details, members });
-  assert.deepEqual(out.person.map((i) => { return i.id; }), ['very_high', 'high_bug', 'open_medium', 'open_frees', 'open_low', 'integrated']);
+  assert.deepEqual(out.person.map((i) => { return i.id; }), ['very_high', 'high_bug', 'integrated', 'open_medium', 'open_frees', 'open_low']);
 });
 
 test('each list holds as many lines as the limit; over it no decision is sent, within it the decisions follow', () => {
