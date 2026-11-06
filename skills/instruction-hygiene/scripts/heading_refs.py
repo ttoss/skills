@@ -83,8 +83,8 @@ def candidates(referrer, target):
     ]
     seen, uniq = set(), []
     for c in out:
-        c = c.lstrip("./")
-        if c and c not in seen:
+        c = os.path.normpath(c)
+        if c != "." and not c.startswith("..") and c not in seen:
             seen.add(c)
             uniq.append(c)
     return uniq
