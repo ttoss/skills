@@ -55,7 +55,7 @@ The `flow` skill's scripts read this file (`scripts/params.mjs`): the project an
 - **Review grace**: 30 minutes.
 - **Reviewer**: `acme-reviewer[bot]`.
 - **Agents integrate**: yes.
-- **Chase lines**: 5.
+- **Chase lines**: 20.
 ```
 
 `node <flow skill>/scripts/params.mjs --root .` prints what the scripts read and where each value came from (`sources`).

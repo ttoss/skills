@@ -80,7 +80,7 @@ The planner is `scripts/plan.mjs` in this skill's directory: a pure function fro
 3. **Execute** the acts in the order returned. A `judge` act is yours: answer it by the rules below, put the answer in the snapshot, and run the planner again.
 4. **Two acts are guarded**, since the next tick cannot undo them: before an `integrate` or a `move_task` to `completed`, read the transition row that allows it and act only when the change, as the code host shows it now, meets the row. When it does not, follow the row and name the disagreement in the report line (`planner disagreed: <act> <task url>: <why>`).
 5. `node` missing, or the planner throws → apply the transitions by the process's table yourself, in the order of rule 3, and open the report line with `fallback: <why>`.
-6. **The report line opens with the planner's `line`** (the `report` act's last field), quoted exactly, or with `fallback:`. A line with neither is a tick that skipped the planner, and the Chase counts it.
+6. **The report line opens with the planner's `line`** (the `report` act's last field), quoted exactly, or with `fallback:`. A line with neither is a tick that skipped the planner.
 
 ### Executing an act
 

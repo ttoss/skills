@@ -148,7 +148,7 @@ export const resolve = ({ file, main, runtime = {} }) => {
   const chaseLines = pick('chaseLines', [
     ['Chase lines', intOf(main['Chase lines'])],
     ['Routines: the Chase\'s "N lines"', intOf((/(\d+) lines/i.exec(chaseText) || [])[1])],
-  ], 5);
+  ], 20);
   const projectId = (/proj_[0-9a-hjkmnp-tv-z]{10}/.exec(main['Flow project id'] || '') || [null])[0];
   const standingDecision = (/task_[0-9a-hjkmnp-tv-z]{10}/.exec(main['Standing-decision task id'] || '') || [null])[0];
   const repos = [...(main.Repos || '').matchAll(/`([\w.-]+\/[\w.-]+)`/g)].map((m) => { return m[1]; });
