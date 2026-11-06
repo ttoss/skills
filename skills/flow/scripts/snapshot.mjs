@@ -18,7 +18,7 @@ import { load as loadParams } from './params.mjs';
 // Usage: node snapshot.mjs --root <repo dir> [--extra <file>] [--now <ISO>]
 //   (params and repos from the parameters there, the code host through `gh`),
 //   or --project <proj_…> [--extra <file>] with everything else in the file.
-// --extra JSON: { "params": { maxRuns, staleAfterHours, autoRounds, reviewByAgent, reviewRequired, agentsMayIntegrate },
+// --extra JSON: { "params": { maxRuns, staleAfterHours, autoRounds, reviewByAgent, reviewRequired, agentsMayIntegrate, leavesByAgent },
 //                 "tasks": { "task_…": { brief, leaves, rounds, repairs, change } },
 //                 "children": { "arun_…": { runtime } },
 //                 "defaults": [{ repo, sha, red, repairTask }] }
@@ -30,7 +30,12 @@ const CLOSED = ['completed', 'cancelled', 'discarded', 'archived'];
 // The statuses a task with a change in flight can hold.
 const WORKED = ['active', 'waiting', 'calendar', 'blocked'];
 
-export const DEFAULT_PARAMS = { maxRuns: 2, staleAfterHours: 4, autoRounds: 1, reviewByAgent: false, reviewRequired: null, agentsMayIntegrate: true, focus: null, releaseQueue: null };
+export const DEFAULT_PARAMS = { maxRuns: 2, staleAfterHours: 4, autoRounds: 1, reviewByAgent: false, reviewRequired: null, agentsMayIntegrate: true, focus: null, releaseQueue: null, leavesByAgent: null };
+
+// The tick's own wait for a missing after_integration, by the words the
+// planner's reason carries, so a later tick can read it again when the
+// Closing evidence gives the agent that choice.
+const LEAVES_WAIT = /does not say what integrating leaves/i;
 
 const waitsOf = (row) => {
   return (row.readiness?.blocked_by || []).filter((b) => { return b.via === 'wait'; });
@@ -88,6 +93,7 @@ export const build = ({ now, candidates, slices, dueIds, children, mine, childTa
       brief: own.brief ?? null,
       leaves: own.leaves ?? handoff?.leaves ?? null,
       check: handoff?.check ?? null,
+      leavesWait: own.leavesWait ?? waits.some((w) => { return Boolean(w.on) && LEAVES_WAIT.test(w.reason || ''); }),
       rounds: own.rounds ?? 0,
       repairs: own.repairs ?? repairOf.get(row.id) ?? null,
       change: own.change ?? null,
