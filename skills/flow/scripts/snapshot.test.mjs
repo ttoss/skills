@@ -101,6 +101,21 @@ test('the handoff field is what integrating leaves, and its check carries the da
   assert.deepEqual(acts.filter((a) => { return a.act === 'judge'; }).map((a) => { return [a.task, a.about]; }), [['t_old', 'leaves']]);
 });
 
+test("the tick's own wait for what integrating leaves is told from a wait a person wrote", () => {
+  const wait = (reason) => { return { readiness: { blocked_by: [{ via: 'wait', kind: 'external', on: 'user_x', until: null, reason }] }, status: 'waiting' }; };
+  const snap = build({
+    ...base,
+    slices: [
+      row('t_tick', wait("integrated, and the task does not say what integrating leaves, a choice the Closing evidence keeps for a person: write the task's after_integration and the next tick applies it")),
+      row('t_old', wait('Integrated, but the body does not say what integrating leaves (close, release or check). Add after_integration, or close it.')),
+      row('t_person', wait('waiting for the vendor to confirm the rollout')),
+    ],
+  });
+  const by = Object.fromEntries(snap.tasks.map((t) => { return [t.id, t.leavesWait]; }));
+  assert.deepEqual(by, { t_tick: true, t_old: true, t_person: false });
+  assert.equal(snap.params.leavesByAgent, null);
+});
+
 test('rounds are the closed child runs that pushed to the change after it was opened', () => {
   const change = { url: 'https://gh/pr/5', createdAt: '2026-11-02T10:00:00Z' };
   const run = (started_at, over = {}) => { return { status: 'completed', started_at, produced: [change.url], ...over }; };

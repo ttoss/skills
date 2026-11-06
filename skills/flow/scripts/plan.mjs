@@ -15,7 +15,8 @@ import { fileURLToPath } from 'node:url';
 //   params: { maxRuns, staleAfterHours, autoRounds, reviewByAgent,
 //             reviewRequired: bool | null,   // `Review` names a reviewer; null: not stated, a judge
 //             agentsMayIntegrate, focus: null | { task } | { tag },
-//             releaseQueue },                 // WIP limit on what waits between implementation and release; null: 20
+//             releaseQueue,                   // WIP limit on what waits between implementation and release; null: 20
+//             leavesByAgent: bool | null },   // the Closing evidence gives the agent the choice of what integrating leaves; null: a judge
 //   defaults: [{ repo, sha,                   // each repo's default branch head
 //                red: bool | null,            // its required checks or integration pipeline red there
 //                repairTask: id | null }],    // the open task tagged `repair` for that repo
@@ -30,6 +31,7 @@ import { fileURLToPath } from 'node:url';
 //             brief: 'ready' | 'short' | 'split' | null,
 //             leaves: 'close' | 'release' | 'check' | 'none' | null, // the task's after_integration; null: not handed off, a judge reads the body
 //             check: null | { observe, where, visible_at }, // with leaves check: what the check's wait names, and its date
+//             leavesWait: bool,               // it waits on a person because nothing said what integrating leaves (the tick's own wait)
 //             rounds: number,
 //             repairs: repo | null,           // the repo whose red default branch this task repairs
 //             change: null | { url, repo, draft, headSha,
@@ -169,7 +171,24 @@ const isHeldByRepair = ({ task, change, underRepair }) => {
   return !task.repairs && underRepair.has(change.repo);
 };
 
-const advanceMerged = ({ task, change, underRepair }) => {
+// The tick's own wait for a missing after_integration is read again when the
+// Closing evidence gives the agent that choice: the parameter governs how
+// integrated work is verified, and a wait written before it said so must not
+// outlive it. A judge that answered no level since (`leaves: 'none'`) is not
+// asked again in the same tick, and a wait a person wrote is theirs.
+const rejudgeLeaves = ({ task, change, params }) => {
+  if (task.leaves !== null && task.leaves !== undefined) {
+    return NONE;
+  }
+  if (params.leavesByAgent === null || params.leavesByAgent === undefined) {
+    return { acts: [{ act: 'judge', about: 'closing_evidence', task: task.id, url: change.url, reason: 'integrated and waiting on a person for what integrating leaves: does the Closing evidence give the agent that choice?' }], item: null };
+  }
+  return params.leavesByAgent
+    ? { acts: [{ act: 'judge', about: 'leaves', task: task.id, url: change.url, reason: 'the Closing evidence gives the agent the choice: read the change, the task and its handoff, and answer close, release or check' }], item: null }
+    : NONE;
+};
+
+const advanceMerged = ({ task, change, params, underRepair }) => {
   // "The change integrated, nothing written since": a task written after the
   // merge and its pipeline was already advanced, and is left as it stands.
   // Except a wait on a person that now carries what integrating leaves: that
@@ -178,7 +197,10 @@ const advanceMerged = ({ task, change, underRepair }) => {
   // about the pipeline, never about what integrating leaves.
   if (change.writtenSince) {
     const answered = task.status === 'waiting' && task.heldByPerson && !change.pipelineRedAfterMerge && LEAVES[task.leaves];
-    return answered ? { acts: [answered(task, change)], item: null } : NONE;
+    if (answered) {
+      return { acts: [answered(task, change)], item: null };
+    }
+    return task.status === 'waiting' && task.leavesWait && !change.pipelineRedAfterMerge ? rejudgeLeaves({ task, change, params }) : NONE;
   }
   if (change.pipelineRedAfterMerge && isHeldByRepair({ task, change, underRepair })) {
     return NONE;
@@ -211,7 +233,7 @@ const advanceMerged = ({ task, change, underRepair }) => {
   const leaves = LEAVES[task.leaves];
   const act = leaves
     ? leaves(task, change)
-    : { act: 'wait_on_person', task: task.id, reason: "integrated, and the body does not say what integrating leaves: write the task's after_integration and the next tick applies it" };
+    : { act: 'wait_on_person', task: task.id, reason: "integrated, and the task does not say what integrating leaves, a choice the Closing evidence keeps for a person: write the task's after_integration and the next tick applies it" };
   return { acts: [act], item: null };
 };
 
@@ -309,7 +331,7 @@ const advance = ({ task, params, underRepair, now }) => {
     };
   }
   return change.merged
-    ? advanceMerged({ task, change, underRepair })
+    ? advanceMerged({ task, change, params, underRepair })
     : advanceOpen({ task, change, params, underRepair, now });
 };
 

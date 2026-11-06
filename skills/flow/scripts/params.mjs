@@ -142,6 +142,10 @@ export const resolve = ({ file, main, runtime = {} }) => {
       ['Review queue', intOf(main['Review queue'])],
       ['Runtime file: Review queue', intOf(runtime['Review queue'])],
     ], null),
+    // Whether the `Closing evidence` gives the agent the choice of what
+    // integrating leaves: it says so in prose, so a judge reads it when a
+    // task needs the answer, never a guess here.
+    leavesByAgent: null,
   };
   const projectId = (/proj_[0-9a-hjkmnp-tv-z]{10}/.exec(main['Flow project id'] || '') || [null])[0];
   const standingDecision = (/task_[0-9a-hjkmnp-tv-z]{10}/.exec(main['Standing-decision task id'] || '') || [null])[0];

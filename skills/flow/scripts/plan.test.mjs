@@ -365,6 +365,24 @@ test('integrated and held by a person: writing after_integration hands it back t
   assert.equal(quiet(held({ change: change({ merged: true, writtenSince: true, pipelineRedAfterMerge: true }) })), 0);
 });
 
+test("the tick's own wait for what integrating leaves is read again when the Closing evidence gives the agent the choice", () => {
+  const since = change({ merged: true, writtenSince: true });
+  const parked = (over) => { return task({ heldByPerson: true, leavesWait: true, leaves: null, change: since, ...over }) };
+  const with_ = (leavesByAgent, t) => { return plan({ now, params: { ...params, leavesByAgent }, defaults: [], children: [], tasks: [t] }).filter((a) => { return a.act !== 'report'; }) };
+  // Not read yet: the planner asks the parameter before anything else.
+  assert.deepEqual(with_(null, parked()).map((a) => { return [a.act, a.about]; }), [['judge', 'closing_evidence']]);
+  // It gives the agent the choice: the level is judged again, from the change and the task.
+  assert.deepEqual(with_(true, parked()).map((a) => { return [a.act, a.about]; }), [['judge', 'leaves']]);
+  // Its answer is applied as a person's would be.
+  assert.equal(with_(true, parked({ leaves: 'close' })).find((a) => { return a.act === 'move_task'; }).status, 'completed');
+  // The choice stays a person's, or the judge already answered no level: the wait stands.
+  assert.equal(with_(false, parked()).length, 0);
+  assert.equal(with_(true, parked({ leaves: 'none' })).length, 0);
+  // A wait a person wrote, or one about a red pipeline, is never read again.
+  assert.equal(with_(true, parked({ leavesWait: false })).length, 0);
+  assert.equal(with_(true, parked({ change: change({ merged: true, writtenSince: true, pipelineRedAfterMerge: true }) })).length, 0);
+});
+
 test('a draft is skipped', () => {
   const out = plan({ now, params, tasks: [task({ change: change({ draft: true }) })] });
   assert.deepEqual(
