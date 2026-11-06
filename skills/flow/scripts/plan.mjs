@@ -57,9 +57,11 @@ const NONE = { acts: [], item: null };
 // never estimated per task. A red default branch holds every change in its
 // repo, so its repair precedes all; then any task at very_high, bug or not,
 // since that priority is the person's word that waiting costs most; then a bug
-// at high; the stage order holds below that. A release step is its own task,
-// delegated as new work once written.
-const STAGES = ['repair', 'conflict', 'integratedCheck', 'round', 'review', 'otherCheck', 'new'];
+// at high; then what integrated and nobody has seen in effect; then the waits
+// that came due; then what is open at its gates (a conflict, a round, a
+// review), among which only Flow's ranking orders; then new work. A release
+// step is its own task, delegated as new work once written.
+const STAGES = ['repair', 'integratedCheck', 'otherCheck', 'gates', 'new'];
 
 export const urgencyTier = (task) => {
   if (task.priority === 'very_high') {
@@ -118,7 +120,7 @@ const roundOrPerson = ({ task, params, why }) => {
   if (task.rounds < params.autoRounds) {
     return {
       acts: [{ act: 'move_task', task: task.id, status: 'active', reason: `${why}: round ${task.rounds + 1} of ${params.autoRounds}` }],
-      item: { stage: 'round', kind: 'round' },
+      item: { stage: 'gates', kind: 'round' },
     };
   }
   return {
@@ -192,7 +194,7 @@ const advanceMerged = ({ task, change, underRepair }) => {
         { act: 'revert', task: task.id, url: change.url, reason: 'the integration pipeline is red: pull the change by the reversal path its description records' },
         { act: 'move_task', task: task.id, status: 'active', reason: 'the integration pipeline is red; the change is reverted, the log and the revert in the body' },
       ],
-      item: { stage: 'round', kind: 'round' },
+      item: { stage: 'gates', kind: 'round' },
     };
   }
   if (task.status !== 'waiting') {
@@ -247,7 +249,7 @@ const advanceGreen = ({ task, change, params, now }) => {
   const claimed = minutesSince(change.reviewPendingSince, now);
   const active = change.reviewRunActive || (claimed !== null && claimed < grace);
   if (params.reviewByAgent) {
-    return { acts: [], item: active ? null : { stage: 'review', kind: 'review' } };
+    return { acts: [], item: active ? null : { stage: 'gates', kind: 'review' } };
   }
   // A reviewer outside the tick: wait while the request is fresh or claimed;
   // past the grace with neither, the request is lost.
@@ -265,7 +267,7 @@ const advanceOpen = ({ task, change, params, underRepair, now }) => {
   if (change.conflict) {
     return {
       acts: [{ act: 'move_task', task: task.id, status: 'active', reason: 'a conflict with the default branch' }],
-      item: { stage: 'conflict', kind: 'conflict' },
+      item: { stage: 'gates', kind: 'conflict' },
     };
   }
   if (isHeldByRepair({ task, change, underRepair })) {
@@ -275,7 +277,7 @@ const advanceOpen = ({ task, change, params, underRepair, now }) => {
     // Red on a base the repair has since fixed says nothing about the change.
     return {
       acts: [{ act: 'move_task', task: task.id, status: 'active', reason: 'the default branch was repaired after its checks ran: update the branch onto it, no round counted' }],
-      item: { stage: 'round', kind: 'round' },
+      item: { stage: 'gates', kind: 'round' },
     };
   }
   if (change.checks === 'red') {
@@ -377,7 +379,7 @@ const slotAct = (item) => {
   if (item.stage === 'new' && task.brief === 'split') {
     return { act: 'judge', about: 'split', task: task.id, reason: 'split into deliveries that ship alone, then delegate the first wave' };
   }
-  return { act: 'start_child', kind: item.kind, tasks: [task.id], reason: item.stage };
+  return { act: 'start_child', kind: item.kind, tasks: [task.id], reason: item.stage === 'gates' ? item.kind : item.stage };
 };
 
 // Section 4: fill this person's free slots, what ages fastest first.

@@ -30,13 +30,14 @@ const priorityRank = (priority) => {
 
 /**
  * The order the tick works in (process rule 3): a `very_high` task, then a
- * `high` bug; then an open change before integrated work waiting to be seen,
- * since an open change gathers conflicts; then Flow's ranking, priority then
- * how many tasks it frees; then the oldest date its wait gives.
+ * `high` bug; then integrated work waiting to be seen in effect before an open
+ * change, since a regression in effect runs until somebody looks; then Flow's
+ * ranking, priority then how many tasks it frees; then the oldest date its
+ * wait gives.
  */
 export const byTickOrder = (a, b) => {
   return urgencyTier(a) - urgencyTier(b)
-    || Number(Boolean(a.change?.merged)) - Number(Boolean(b.change?.merged))
+    || Number(Boolean(b.change?.merged)) - Number(Boolean(a.change?.merged))
     || priorityRank(a.priority) - priorityRank(b.priority)
     || (b.unblocks || 0) - (a.unblocks || 0)
     || String(a.since || '9999').localeCompare(String(b.since || '9999'));
