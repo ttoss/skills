@@ -7,7 +7,7 @@ Each sink was measured on a real project (OneClick Ads, 2026-10-19/20). Numbers 
 | Sink | Evidence it was | Fix |
 | --- | --- | --- |
 | Rules with no `paths` that govern editing, not deciding | 18 always-loaded rules, 73 KB; about half was editing guidance, procedure or history | Scope by `paths` (generous globs), or demote the procedure and history to a linked file that loads on demand |
-| Incident narrative, measurements and decision history inside a rule | "Decided on", issue numbers and measured tables were 10–14% of package `CLAUDE.md` files | Keep the rule and its why; move the evidence to a linked companion file |
+| Incident narrative, measurements and decision history inside a rule | "Decided on", issue numbers and measured tables were 10–14% of package `CLAUDE.md` files | Delete it: the Flow graph holds the record. [`instruction-hygiene`](../../instruction-hygiene/SKILL.md) does both passes |
 | Busy packages stacking scoped rules | Reading any file in the app package loaded 16 rules + `CLAUDE.md`, 81 KB | Demote content inside the big rules; do not tighten their globs |
 | The same rule in two places | A notifications rule in the root `CLAUDE.md` and the package's own | One owner; the other links |
 | Long skill descriptions | Descriptions load every session; 13 skills = 8 KB, the longest 950 B | Trigger phrases and scope only, ~400 B; the body holds the rest |
