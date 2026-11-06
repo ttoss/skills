@@ -8,7 +8,8 @@ a code comment. Each is resolved to a file: the path as written, relative to
 the referrer, by basename under `.claude/rules` and `internal/rules`, under
 `packages/`, or, for a bare `CLAUDE.md` in code, the nearest `CLAUDE.md` above
 the referrer. The heading matches when its text (trailing ellipsis dropped)
-occurs in the target, case-insensitively, so a bold lead-in counts too.
+occurs in the target, case- and whitespace-insensitively, so a bold lead-in
+or a phrase wrapped across lines counts too.
 
 Without `--base`: every resolved pointer, grouped by target, so an editor knows
 which headings to keep. With `--base`: only the pointers that resolved in the
@@ -83,15 +84,19 @@ def candidates(referrer, target):
     ]
     seen, uniq = set(), []
     for c in out:
-        c = c.lstrip("./")
+        c = c[2:] if c.startswith("./") else c
         if c and c not in seen:
             seen.add(c)
             uniq.append(c)
     return uniq
 
 
+def norm(text):
+    return " ".join(text.split()).lower()
+
+
 def key_of(heading):
-    return heading.rstrip("…").rstrip(".").strip().lower()
+    return norm(heading.rstrip("…").rstrip("."))
 
 
 def resolve(root, referrer, target, heading, text_of):
@@ -103,7 +108,7 @@ def resolve(root, referrer, target, heading, text_of):
             continue
         if first_existing is None:
             first_existing = c
-        if key_of(heading) in text.lower():
+        if key_of(heading) in norm(text):
             return c, True
     return first_existing, False
 
@@ -170,7 +175,7 @@ def main(argv):
         if ok or resolved is None:
             continue
         old = base_text_of(resolved)
-        if old is not None and key_of(heading) in old.lower():
+        if old is not None and key_of(heading) in norm(old):
             broken.append({"from": referrer, "target": resolved, "heading": heading})
     if as_json:
         print(json.dumps(broken, indent=2))
