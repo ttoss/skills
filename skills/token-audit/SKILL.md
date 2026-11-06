@@ -18,7 +18,7 @@ It is easy to spend more auditing than the audit saves. Delegate every wide read
 
 Run `python3 scripts/measure_instructions.py <repo>` (stdlib only; `--json` for raw data) in each repo the sessions work in. It reports what always loads (root `CLAUDE.md` and its `@`-imports, `.claude/rules` without `paths`, skill descriptions), what each package area adds once a file there is read (path-scoped rules plus nested `CLAUDE.md`), the largest scoped files, and globs matching nothing.
 
-Then read the top always-loaded files and the rules that stack in the busiest areas, and classify their content by **when it must be known** — the sinks are in [sinks.md](references/sinks.md) §1. A rule that governs a decision made before any file is opened stays always-loaded; everything else is a candidate to scope or demote. Never propose tightening a glob only to save tokens: under-matching fails silently.
+Then read the top always-loaded files and the rules that stack in the busiest areas, and classify their content by **when it must be known** — the sinks are in [sinks.md](references/sinks.md) §1. A rule that governs a decision made before any file is opened stays always-loaded; everything else is a candidate to scope or demote. Never propose tightening a glob only to save tokens: under-matching fails silently. When the corpus itself is the finding, the fix is [`instruction-hygiene`](../instruction-hygiene/SKILL.md), run on the user's word.
 
 ## 2. Real session usage
 
