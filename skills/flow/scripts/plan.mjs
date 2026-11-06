@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 //             reviewRequired: bool | null,   // `Review` names a reviewer; null: not stated, a judge
 //             reviewGraceMinutes,            // how long a review may take to start before its request is lost
 //             agentsMayIntegrate, focus: null | { task } | { tag },
-//             reviewQueue },                 // WIP limit on what waits for review or validation; null: 20
+//             releaseQueue },                 // WIP limit on what waits between implementation and release; null: 20
 //   defaults: [{ repo, sha,                   // each repo's default branch head
 //                red: bool | null,            // its required checks or integration pipeline red there
 //                repairTask: id | null }],    // the open task tagged `repair` for that repo
@@ -398,29 +398,30 @@ const delegate = ({ items, free, newWork }) => {
   return { acts, skipped, free: left, held };
 };
 
-// The WIP limit that holds new work upstream (W1, W21): the review queue, what
-// waits to be reviewed or validated after an implementation. That is each open
+// The WIP limit that holds new work upstream (W1, W21): the release queue, what
+// waits between an implementation and its release to the customer (review,
+// integration, validation, a flag's removal). That is each open
 // change past draft, at its gates or with a person to integrate it, and each
 // integrated change whose task waits on a person to see it in effect. Every new
 // start lands in it, so the headroom is exact. Decisions are not in it: one
 // holds only the work it blocks, so a thousand open choices never stop the work
 // nobody has to choose about.
-export const inReviewQueue = ({ change, waitsOn }) => {
+export const inReleaseQueue = ({ change, waitsOn }) => {
   if (!change || change.closed) {
     return false;
   }
   return change.merged ? (waitsOn || []).length > 0 : !change.draft;
 };
 
-const reviewQueue = (tasks) => {
-  return tasks.filter(inReviewQueue).length;
+const releaseQueue = (tasks) => {
+  return tasks.filter(inReleaseQueue).length;
 };
 
 // How many new tasks this tick may start, and why fewer than its free slots.
 const newWorkBudget = ({ tasks, params }) => {
-  const limit = params.reviewQueue ?? 20;
-  const queued = reviewQueue(tasks);
-  return { budget: Math.max(0, limit - queued), why: `review queue ${queued}/${limit}`, wip: { reviewQueue: { now: queued, limit } } };
+  const limit = params.releaseQueue ?? 20;
+  const queued = releaseQueue(tasks);
+  return { budget: Math.max(0, limit - queued), why: `release queue ${queued}/${limit}`, wip: { releaseQueue: { now: queued, limit } } };
 };
 
 // `plan: <n> acts (<kind> <count>, …) · runs <n>/<cap> by me (<free> free: <why>)`

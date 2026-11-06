@@ -13,7 +13,7 @@ import { parseFlags } from './flow-api.mjs';
 // it, else the default; `sources` says which, so nothing is silently guessed.
 //
 // Usage: node params.mjs [--root <repo dir>]
-// Output: JSON `{ file, projectId, standingDecision, repos, reviewers, params, chaseLines, sources, items }`.
+// Output: JSON `{ file, projectId, standingDecision, repos, reviewers, params, sources, items }`.
 
 export const LOCATIONS = ['.agents/flow.md', '.claude/flow.md', 'AGENTS.md', 'CLAUDE.md'];
 
@@ -107,8 +107,6 @@ export const resolve = ({ file, main, runtime = {} }) => {
     return defaultValue;
   };
   const intOf = (v) => { const m = /(\d+)/.exec(v || ''); return m ? Number(m[1]) : null; };
-  const routines = main.Routines || '';
-  const chaseText = (/the Chase[^;]*/i.exec(routines) || [''])[0];
 
   const params = {
     maxRuns: pick('maxRuns', [
@@ -140,22 +138,21 @@ export const resolve = ({ file, main, runtime = {} }) => {
     agentsMayIntegrate: pick('agentsMayIntegrate', [['Agents integrate', yesNo(main['Agents integrate'])]], true),
     focus: null,
     // The WIP limit on new work; null leaves the planner's default, 20.
-    reviewQueue: pick('reviewQueue', [
+    releaseQueue: pick('releaseQueue', [
+      ['Release queue', intOf(main['Release queue'])],
+      ['Runtime file: Release queue', intOf(runtime['Release queue'])],
+      // The name it had before it covered everything up to the release.
       ['Review queue', intOf(main['Review queue'])],
       ['Runtime file: Review queue', intOf(runtime['Review queue'])],
     ], null),
   };
-  const chaseLines = pick('chaseLines', [
-    ['Chase lines', intOf(main['Chase lines'])],
-    ['Routines: the Chase\'s "N lines"', intOf((/(\d+) lines/i.exec(chaseText) || [])[1])],
-  ], 20);
   const projectId = (/proj_[0-9a-hjkmnp-tv-z]{10}/.exec(main['Flow project id'] || '') || [null])[0];
   const standingDecision = (/task_[0-9a-hjkmnp-tv-z]{10}/.exec(main['Standing-decision task id'] || '') || [null])[0];
   const repos = [...(main.Repos || '').matchAll(/`([\w.-]+\/[\w.-]+)`/g)].map((m) => { return m[1]; });
   // The code-host identities whose verdict counts; none named → any identity
   // with write access to the repo.
   const reviewers = [...(main.Reviewer || main.Reviewers || '').matchAll(/`([^`\s]+)`/g)].map((m) => { return m[1]; });
-  return { file, projectId, standingDecision, repos, reviewers, params, chaseLines, sources, items: main };
+  return { file, projectId, standingDecision, repos, reviewers, params, sources, items: main };
 };
 
 /** The parameters of the repo at `root`, or an error naming what is missing. */
