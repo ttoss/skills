@@ -132,9 +132,6 @@ export const resolve = ({ file, main, runtime = {} }) => {
       ['Review child', yesNo(main['Review child']) === true ? true : null],
       ['Review', reviewNamed(main.Review)],
     ], null),
-    reviewGraceMinutes: pick('reviewGraceMinutes', [
-      ['Review grace', (() => { const h = hours(main['Review grace']); return h === null ? null : Math.round(h * 60); })()],
-    ], 30),
     agentsMayIntegrate: pick('agentsMayIntegrate', [['Agents integrate', yesNo(main['Agents integrate'])]], true),
     focus: null,
     // The WIP limit on new work; null leaves the planner's default, 20.

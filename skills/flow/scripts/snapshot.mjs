@@ -18,7 +18,7 @@ import { load as loadParams } from './params.mjs';
 // Usage: node snapshot.mjs --root <repo dir> [--extra <file>] [--now <ISO>]
 //   (params and repos from the parameters there, the code host through `gh`),
 //   or --project <proj_…> [--extra <file>] with everything else in the file.
-// --extra JSON: { "params": { maxRuns, staleAfterHours, autoRounds, reviewByAgent, reviewRequired, reviewGraceMinutes, agentsMayIntegrate },
+// --extra JSON: { "params": { maxRuns, staleAfterHours, autoRounds, reviewByAgent, reviewRequired, agentsMayIntegrate },
 //                 "tasks": { "task_…": { brief, leaves, rounds, repairs, change } },
 //                 "children": { "arun_…": { runtime } },
 //                 "defaults": [{ repo, sha, red, repairTask }] }
@@ -30,7 +30,7 @@ const CLOSED = ['completed', 'cancelled', 'discarded', 'archived'];
 // The statuses a task with a change in flight can hold.
 const WORKED = ['active', 'waiting', 'calendar', 'blocked'];
 
-export const DEFAULT_PARAMS = { maxRuns: 2, staleAfterHours: 4, autoRounds: 1, reviewByAgent: false, reviewRequired: null, reviewGraceMinutes: 30, agentsMayIntegrate: true, focus: null, releaseQueue: null };
+export const DEFAULT_PARAMS = { maxRuns: 2, staleAfterHours: 4, autoRounds: 1, reviewByAgent: false, reviewRequired: null, agentsMayIntegrate: true, focus: null, releaseQueue: null };
 
 const waitsOf = (row) => {
   return (row.readiness?.blocked_by || []).filter((b) => { return b.via === 'wait'; });

@@ -15,7 +15,6 @@ const params = {
   autoRounds: 1,
   reviewByAgent: true,
   reviewRequired: true,
-  reviewGraceMinutes: 30,
   agentsMayIntegrate: true,
   focus: null,
 };
@@ -98,15 +97,17 @@ test('a reviewer outside the tick: no verdict waits, never integrates, while the
   assert.deepEqual(kinds(plan({ now, params: external, tasks: [noVerdict()] })), []);
 });
 
-test('a reviewer outside the tick: past the grace with no claim, the request is lost', () => {
-  const out = plan({ now, params: external, tasks: [noVerdict({ checksDoneAt: '2026-10-30T11:00:00Z' })] });
+test('a reviewer outside the tick: past Stale after with no claim, the request is lost', () => {
+  const fresh = plan({ now, params: external, tasks: [noVerdict({ checksDoneAt: '2026-10-30T11:00:00Z' })] });
+  assert.deepEqual(kinds(fresh), []);
+  const out = plan({ now, params: external, tasks: [noVerdict({ checksDoneAt: '2026-10-30T07:00:00Z' })] });
   assert.deepEqual(kinds(out), ['review_lost']);
 });
 
-test('a reviewer outside the tick: a claim past the grace with no run holding the task is lost too', () => {
-  const stale = noVerdict({ checksDoneAt: '2026-10-30T10:00:00Z', reviewPendingSince: '2026-10-30T11:00:00Z' });
+test('a reviewer outside the tick: a claim past Stale after with no run holding the task is lost too', () => {
+  const stale = noVerdict({ checksDoneAt: '2026-10-30T06:00:00Z', reviewPendingSince: '2026-10-30T07:00:00Z' });
   assert.deepEqual(kinds(plan({ now, params: external, tasks: [stale] })), ['review_lost']);
-  const held = noVerdict({ checksDoneAt: '2026-10-30T10:00:00Z', reviewRunActive: true });
+  const held = noVerdict({ checksDoneAt: '2026-10-30T06:00:00Z', reviewRunActive: true });
   assert.deepEqual(kinds(plan({ now, params: external, tasks: [held] })), []);
 });
 
@@ -124,7 +125,7 @@ test('Review not stated: no verdict is a judge, never an integration', () => {
 test('a review child is not started while a reviewer’s claim on the head is fresh', () => {
   const fresh = noVerdict({ reviewPendingSince: '2026-10-30T11:55:00Z' });
   assert.equal(acts({ tasks: [fresh] }, 'start_child').length, 0);
-  const stale = noVerdict({ reviewPendingSince: '2026-10-30T10:00:00Z' });
+  const stale = noVerdict({ reviewPendingSince: '2026-10-30T06:00:00Z' });
   assert.deepEqual(acts({ tasks: [stale] }, 'start_child').map((a) => { return a.kind }), ['review']);
 });
 

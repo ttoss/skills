@@ -14,7 +14,6 @@ import { fileURLToPath } from 'node:url';
 //   now: ISO date,
 //   params: { maxRuns, staleAfterHours, autoRounds, reviewByAgent,
 //             reviewRequired: bool | null,   // `Review` names a reviewer; null: not stated, a judge
-//             reviewGraceMinutes,            // how long a review may take to start before its request is lost
 //             agentsMayIntegrate, focus: null | { task } | { tag },
 //             releaseQueue },                 // WIP limit on what waits between implementation and release; null: 20
 //   defaults: [{ repo, sha,                   // each repo's default branch head
@@ -242,7 +241,9 @@ const advanceGreen = ({ task, change, params, now }) => {
   if (params.reviewRequired !== true) {
     return { acts: [{ act: 'judge', about: 'review', task: task.id, url: change.url, reason: 'no verdict, and the parameters do not state Review: does a reviewer judge this change? Write the Review item to stop asking' }], item: null };
   }
-  const grace = params.reviewGraceMinutes ?? 30;
+  // One clock: a review request nobody claimed, or a claim nobody is
+  // working, is lost on the same slice that takes a silent child as gone.
+  const grace = (params.staleAfterHours ?? 4) * 60;
   const claimed = minutesSince(change.reviewPendingSince, now);
   const active = change.reviewRunActive || (claimed !== null && claimed < grace);
   if (params.reviewByAgent) {
