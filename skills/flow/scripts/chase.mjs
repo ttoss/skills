@@ -3,24 +3,23 @@ import { fileURLToPath } from 'node:url';
 
 import { clientFromEnv, mapLimit, parseFlags } from './flow-api.mjs';
 import { load as loadParams } from './params.mjs';
-import { inReviewQueue, urgencyTier } from './plan.mjs';
+import { inReleaseQueue, urgencyTier } from './plan.mjs';
 import { run as readSnapshot } from './snapshot.mjs';
 
 // The Chase's digest (references/chase.md): what only a person can do to drain
-// the review queue, in the order the tick works, and, while the queue is within
+// the release queue, in the order the tick works, and, while the queue is within
 // its limit, the decisions the team owes. Read from the tick's own snapshot,
 // so the Chase and the tick never disagree about what is in the queue. It
 // writes nothing. The model records the run, translates the words and delivers
 // the digest.
 //
 // Usage: node chase.mjs --root <repo dir> [--now <ISO 8601>]
-//   reads the parameters there (project, Review queue, Chase lines, repos)
+//   reads the parameters there (project, Release queue, repos)
 //   and the code host with `gh`; or --project <proj_…> [--extra <file>]
-//   [--lines 20] [--review-queue 20], with what the code host knows in the
+//   [--release-queue 20], with what the code host knows in the
 //   file as snapshot.mjs takes it.
 // Output: JSON `{ digest, queue: { now, limit }, person, decisions }`.
 
-export const DEFAULT_LINES = 20;
 const DEFAULT_LIMIT = 20;
 const PRIORITY = ['very_high', 'high', 'medium', 'low', 'very_low'];
 
@@ -66,13 +65,15 @@ const waitOn = (detail, holders) => {
 };
 
 /**
- * The digest's two lists from what was read, as a pure function. `tasks` is
+ * The digest's two lists from what was read, as a pure function. Each shows
+ * as many lines as the release queue's limit, the size the project set for what
+ * may wait on a person. `tasks` is
  * the snapshot's; `details` each task's `get-task` answer, by id, for those
  * waiting on a person; `decisions` the decision rows `get-next` ranked.
  */
-export const pick = ({ tasks, details = {}, decisions = [], limit = DEFAULT_LIMIT, lines = DEFAULT_LINES, members = [], teams = [] }) => {
+export const pick = ({ tasks, details = {}, decisions = [], limit = DEFAULT_LIMIT, members = [], teams = [] }) => {
   const who = whoOf({ members, teams });
-  const queue = tasks.filter(inReviewQueue);
+  const queue = tasks.filter(inReleaseQueue);
   // A task in the queue that waits on nobody is the agents' or the gates': an
   // agent can move it, so the Chase leaves it to them.
   const person = queue.filter((t) => { return (t.waitsOn || []).length > 0; }).map((t) => {
@@ -94,14 +95,13 @@ export const pick = ({ tasks, details = {}, decisions = [], limit = DEFAULT_LIMI
   // Decisions hold only the work they block, and new work waits while the
   // queue is over its limit, so they are worth a person's time only within it.
   const within = queue.length <= limit;
-  const decisionLines = Math.ceil(lines / 2);
-  const owed = within ? decisions.slice(0, decisionLines).map((row) => {
+  const owed = within ? decisions.slice(0, limit).map((row) => {
     const wait = (row.readiness?.blocked_by || []).find((b) => { return b.via === 'wait'; });
     return { id: row.id, title: row.title, url: row.url, who: who(wait?.on ? [wait.on] : []), what: wait?.reason || 'decide' };
   }) : null;
   return {
     queue: { now: queue.length, limit },
-    person: person.slice(0, lines),
+    person: person.slice(0, limit),
     personTotal: person.length,
     decisions: owed,
     decisionsTotal: within ? decisions.length : null,
@@ -117,8 +117,8 @@ export const digest = ({ date, picked }) => {
   const { queue, person, personTotal, decisions, decisionsTotal } = picked;
   const lines = [`# Chase — ${date}`, ''];
   lines.push(queue.now > queue.limit
-    ? `Review queue: ${queue.now}, limit ${queue.limit}. The tick starts no new work until it is within the limit; these are what only a person can move.`
-    : `Review queue: ${queue.now}, limit ${queue.limit}. The tick starts new work; the decisions below hold what it would start next.`);
+    ? `Release queue: ${queue.now}, limit ${queue.limit}. The tick starts no new work until it is within the limit; these are what only a person can move.`
+    : `Release queue: ${queue.now}, limit ${queue.limit}. The tick starts new work; the decisions below hold what it would start next.`);
   lines.push('', `## Only a person can move these (${person.length} of ${personTotal})`);
   lines.push(...(person.length ? person.map(lineOf) : ['- none']));
   if (decisions) {
@@ -129,23 +129,23 @@ export const digest = ({ date, picked }) => {
 };
 
 /** Every read the digest needs, then the digest. */
-export const run = async ({ client, project, now = new Date().toISOString(), extra = {}, repos = null, reviewers = [], gh, limit = null, lines = DEFAULT_LINES }) => {
+export const run = async ({ client, project, now = new Date().toISOString(), extra = {}, repos = null, reviewers = [], gh, limit = null }) => {
   const { get } = client;
   const [projectAnswer, snapshot] = await Promise.all([
     get(`/projects/${project}`),
     readSnapshot({ client, project, now, extra, repos, reviewers, gh }),
   ]);
-  const queueLimit = limit ?? snapshot.params.reviewQueue ?? DEFAULT_LIMIT;
-  const waitingOnPerson = snapshot.tasks.filter((t) => { return inReviewQueue(t) && (t.waitsOn || []).length > 0; });
+  const queueLimit = limit ?? snapshot.params.releaseQueue ?? DEFAULT_LIMIT;
+  const waitingOnPerson = snapshot.tasks.filter((t) => { return inReleaseQueue(t) && (t.waitsOn || []).length > 0; });
   const details = Object.fromEntries(await mapLimit(waitingOnPerson, 4, async (t) => {
     return [t.id, await get(`/tasks/${t.id}`)];
   }));
-  const within = snapshot.tasks.filter(inReviewQueue).length <= queueLimit;
+  const within = snapshot.tasks.filter(inReleaseQueue).length <= queueLimit;
   const decisions = within
     ? await get('/next', { project, kind: 'decision', status: 'waiting', assignee: 'any', limit: 100 })
     : { tasks: [] };
   const picked = pick({
-    tasks: snapshot.tasks, details, decisions: decisions.tasks || [], limit: queueLimit, lines,
+    tasks: snapshot.tasks, details, decisions: decisions.tasks || [], limit: queueLimit,
     members: projectAnswer.members, teams: projectAnswer.teams,
   });
   return {
@@ -161,12 +161,12 @@ const isMain = process.argv[1] && realpathSync(fileURLToPath(import.meta.url)) =
 if (isMain) {
   const f = parseFlags(process.argv.slice(2));
   // --root reads the project's parameters (params.mjs): the project, the
-  // review queue's limit, the Chase's size and the repos the code host is
+  // release queue's limit, the Chase's size and the repos the code host is
   // read in.
   const p = f.root ? loadParams(f.root) : null;
   const project = f.project || p?.projectId;
   if (!project) {
-    process.stderr.write('usage: chase.mjs (--root <repo dir> | --project <proj_…> [--extra <file>]) [--lines 20] [--review-queue 20] [--now <ISO>]\n');
+    process.stderr.write('usage: chase.mjs (--root <repo dir> | --project <proj_…> [--extra <file>]) [--release-queue 20] [--now <ISO>]\n');
     process.exit(2);
   }
   const extra = f.extra ? JSON.parse(readFileSync(f.extra, 'utf8')) : {};
@@ -180,8 +180,7 @@ if (isMain) {
     extra,
     repos: p?.repos,
     reviewers: p?.reviewers ?? [],
-    limit: f['review-queue'] ? Number(f['review-queue']) : null,
-    lines: f.lines ? Number(f.lines) : p?.chaseLines ?? DEFAULT_LINES,
+    limit: f['release-queue'] ? Number(f['release-queue']) : null,
   }).then(
     (result) => { process.stdout.write(`${JSON.stringify(result, null, 2)}\n`); },
     (error) => { process.stderr.write(`${error.message}\n`); process.exit(1); },

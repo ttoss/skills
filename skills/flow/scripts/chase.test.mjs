@@ -46,23 +46,23 @@ test('the order is the tick’s: very_high, then a high bug, then open changes b
   assert.deepEqual(out.person.map((i) => { return i.id; }), ['very_high', 'high_bug', 'open_medium', 'open_frees', 'open_low', 'integrated']);
 });
 
-test('over the limit, the list is capped and no decision is sent; within it, half as many decisions follow', () => {
+test('each list holds as many lines as the limit; over it no decision is sent, within it the decisions follow', () => {
   const tasks = Array.from({ length: 25 }, (_, i) => { return t(`t${i}`, { waitsOn: ['user_pedro'] }); });
   const decisions = Array.from({ length: 14 }, (_, i) => {
     return { id: `d${i}`, title: `decide ${i}`, url: `u${i}`, readiness: { blocked_by: [{ via: 'wait', on: 'user_ana', reason: 'pick one' }] } };
   });
   const over = pick({ tasks, decisions, limit: 10, members });
-  assert.equal(over.person.length, 20);
+  assert.equal(over.person.length, 10);
   assert.equal(over.personTotal, 25);
   assert.equal(over.decisions, null);
-  const within = pick({ tasks, decisions, limit: 25, members });
-  assert.deepEqual([within.decisions.length, within.decisionsTotal], [10, 14]);
+  const within = pick({ tasks: tasks.slice(0, 12), decisions, limit: 12, members });
+  assert.deepEqual([within.person.length, within.decisions.length, within.decisionsTotal], [12, 12, 14]);
   assert.deepEqual(within.decisions[0], { id: 'd0', title: 'decide 0', url: 'u0', who: 'ana@example.com', what: 'pick one' });
 });
 
 test('the digest says where the queue stands and shows the decisions section only within the limit', () => {
   const over = digest({ date: '2026-11-05', picked: pick({ tasks: [t('a', { waitsOn: ['user_pedro'] }), t('b')], details: { a: detail('a', 'merge it') }, limit: 1, members }) });
-  assert.match(over, /Review queue: 2, limit 1\. The tick starts no new work/);
+  assert.match(over, /Release queue: 2, limit 1\. The tick starts no new work/);
   assert.match(over, /## Only a person can move these \(1 of 1\)\n- \[title a\]\(https:\/\/flow\/app\/tasks\/a\) — pedro@example\.com — merge it/);
   assert.doesNotMatch(over, /Decisions/);
   const within = digest({ date: '2026-11-05', picked: pick({ tasks: [], limit: 10, members }) });
@@ -87,10 +87,10 @@ test('run reads the tick’s snapshot and asks for decisions only within the lim
     return { task: { title: path, url: path, status: 'waiting' }, unblocks: 0, readiness: pr('x').readiness, references: [{ url: 'https://gh/pr/9', role: 'implements' }] };
   };
   const all = async () => { return [pr('t_pr')]; };
-  const extra = { params: { reviewQueue: 5 }, tasks: { t_pr: { change: { url: 'https://gh/pr/9', merged: false, closed: false, draft: false } } } };
+  const extra = { params: { releaseQueue: 5 }, tasks: { t_pr: { change: { url: 'https://gh/pr/9', merged: false, closed: false, draft: false } } } };
   const out = await run({ client: { get, all }, project: 'proj_x', now: '2026-11-05T12:00:00Z', extra });
   assert.deepEqual([out.queue, out.person, out.decisions], [{ now: 1, limit: 5 }, 1, 0]);
   assert.ok(asked.some(([path, q]) => { return path === '/next' && q.kind === 'decision'; }));
-  const over = await run({ client: { get, all }, project: 'proj_x', now: '2026-11-05T12:00:00Z', extra: { ...extra, params: { reviewQueue: 0 } } });
+  const over = await run({ client: { get, all }, project: 'proj_x', now: '2026-11-05T12:00:00Z', extra: { ...extra, params: { releaseQueue: 0 } } });
   assert.equal(over.decisions, null);
 });

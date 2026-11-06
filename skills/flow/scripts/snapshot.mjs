@@ -30,7 +30,7 @@ const CLOSED = ['completed', 'cancelled', 'discarded', 'archived'];
 // The statuses a task with a change in flight can hold.
 const WORKED = ['active', 'waiting', 'calendar', 'blocked'];
 
-export const DEFAULT_PARAMS = { maxRuns: 2, staleAfterHours: 4, autoRounds: 1, reviewByAgent: false, reviewRequired: null, reviewGraceMinutes: 30, agentsMayIntegrate: true, focus: null, reviewQueue: null };
+export const DEFAULT_PARAMS = { maxRuns: 2, staleAfterHours: 4, autoRounds: 1, reviewByAgent: false, reviewRequired: null, reviewGraceMinutes: 30, agentsMayIntegrate: true, focus: null, releaseQueue: null };
 
 const waitsOf = (row) => {
   return (row.readiness?.blocked_by || []).filter((b) => { return b.via === 'wait'; });
@@ -130,7 +130,7 @@ export const run = async ({ client, project, now = new Date().toISOString(), ext
     slice('waiting'), slice('blocked'),
     counts.date_came ? slice('date_came') : { tasks: [] },
     counts.hold_cleared ? slice('hold_cleared') : { tasks: [] },
-    // Every task whose change is out, every page: the review queue is counted
+    // Every task whose change is out, every page: the release queue is counted
     // from these, and a slice's limit would hide all but its first rows.
     all('/tasks', { project, status: WORKED, ref_role: 'implements', limit: 100 }, 'tasks'),
     get('/agent-runs', { project, status: 'running', agent: 'flow child', limit: 100 }),
