@@ -1,28 +1,19 @@
-import { readFileSync, realpathSync } from 'node:fs';
+import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { clientFromEnv, parseFlags } from './flow-api.mjs';
-import { flowHealth, audit as healthLines, readFlow, spendOf, spendPair, windows } from './health.mjs';
+import { readFlow, spend, spendOf, spendPair, windows } from './health.mjs';
 import { load as loadParams } from './params.mjs';
 
 // The weekly Audit's report lines that are arithmetic (token-audit's routine,
-// step 4): spend in total and by agent, the three costliest tasks, the runs
-// that reached no task or stayed open, this week against the week before,
-// then the flow's health, each state's arrivals against departures with a
-// line per person the person queue waits on, and what feeds and drains the
-// graph (health.mjs), then the decisions a
-// person answered over the last four weeks, as data for the model to read for
-// an answer given more than once (token-audit's routine, step 5). Read with the
-// project's API key; it writes nothing. What is waste, the fix and its saving,
-// and which answers are the same answer, stay with the model.
+// step 4): spend by agent, the three costliest tasks, the runs that reached no
+// task or stayed open, then spend by what became of the runs' tasks and in
+// total (health.mjs), this week against the week before. Read with the
+// project's API key; it writes nothing. What is waste, the fix and its saving
+// stay with the model. The flow's health is the Health's (health.mjs report).
 //
-// Usage: node audit.mjs (--root <repo dir> | --project <proj_…>) [--now <ISO 8601>] [--inbox <file>]
-//   --inbox: the session's `list-captures` answer (`triaged: false`, `limit: 1`),
-//   saved verbatim; a key restricted to the project is never given the inbox.
-// Output: JSON `{ alert, lines, mismatches, answers }`.
-
-const DAY = 24 * 3600 * 1000;
-const ANSWER_WEEKS = 4;
+// Usage: node audit.mjs (--root <repo dir> | --project <proj_…>) [--now <ISO 8601>]
+// Output: JSON `{ lines }`.
 
 const weight = (totals) => {
   return totals.cost_usd ?? (totals.input_tokens || 0) + (totals.output_tokens || 0);
@@ -48,37 +39,8 @@ export const report = ({ agentsThis, agentsBefore, tasksThis, titles, unlinkedTh
   return lines;
 };
 
-// When a decision was answered: the change that closed it, else its last write.
-const answeredAt = (task) => {
-  const closing = [...(task.changes || [])].reverse().find((c) => { return c.status && c.status.to === task.status; });
-  return closing ? closing.at : task.updated_at;
-};
-
-/**
- * The decisions a person closed over the last ANSWER_WEEKS weeks, newest
- * first, each with its answer: what the model reads for an answer given more
- * than once to the same kind of choice (GTF-E9). Closed decisions only: a
- * one-task wait a person answered recurs as the same question raised again,
- * which GTF-N6 already makes a decision the second time. Pure over what
- * `get-task` answered.
- */
-export const answers = ({ decisions, now }) => {
-  const since = Date.parse(now) - ANSWER_WEEKS * 7 * DAY;
-  return decisions
-    .map((task) => { return { id: task.id, url: task.url, title: task.title, outcome: task.outcome ?? null, at: answeredAt(task) }; })
-    .filter((a) => { return Date.parse(a.at) >= since; })
-    .sort((a, b) => { return Date.parse(b.at) - Date.parse(a.at); });
-};
-
-/** The line beside the data: how many were answered this week and the week before. */
-export const answersLine = ({ answers: list, now }) => {
-  const w = windows(now);
-  const within = (win) => { return list.filter((a) => { return a.at >= win.since && a.at < win.until; }).length; };
-  return `Decisions a person answered: ${within(w.thisWeek)} this week (${within(w.weekBefore)} the week before), ${list.length} over the last ${ANSWER_WEEKS} weeks`;
-};
-
 /** Every read, then the lines. */
-export const run = async ({ client, project, now = new Date().toISOString(), inbox = null }) => {
+export const run = async ({ client, project, now = new Date().toISOString() }) => {
   const { get } = client;
   const w = windows(now);
   const runs = (win, query) => {
@@ -94,27 +56,9 @@ export const run = async ({ client, project, now = new Date().toISOString(), inb
   const titles = Object.fromEntries(await Promise.all(top.map(async (g) => {
     return [g.key, (await get(`/tasks/${g.key}`)).task];
   })));
-  const health = healthLines(await readFlow({ routine: 'audit', project, now, client, inbox }));
-  // A person by their email, as the Chase names them; a team by its name,
-  // since the line counts the team's queue rather than asking its members.
-  const projectAnswer = await get(`/projects/${project}`);
-  const emails = new Map((projectAnswer.members || []).map((m) => { return [m.user_id, m.email]; }));
-  const teamNames = new Map((projectAnswer.teams || []).map((t) => { return [t.id, `the ${t.name} team`]; }));
-  const nameOfHolder = (key) => { return emails.get(key) || teamNames.get(key) || key; };
-  const flow = flowHealth({ ...(await readFlow({ routine: 'flow', project, now, client })), nameOfHolder });
-  // Closed decisions, newest write first; the summary carries no outcome, so
-  // each within the window is read whole. The list is cut at the first one
-  // older than the window, since `updated_at` never precedes the close.
-  const since = Date.parse(now) - ANSWER_WEEKS * 7 * DAY;
-  const closed = await get('/tasks', { project, kind: 'decision', status: ['completed', 'cancelled'], limit: 100 });
-  const recent = (closed.tasks || []).filter((t) => { return Date.parse(t.updated_at) >= since; });
-  const decisions = await Promise.all(recent.map(async (t) => { return (await get(`/tasks/${t.id}`)).task; }));
-  const list = answers({ decisions, now });
+  const total = spend(await readFlow({ routine: 'spend', project, now, client }));
   return {
-    alert: flow.alert,
-    lines: [...report({ agentsThis, agentsBefore, tasksThis, titles, unlinkedThis, unlinkedBefore, lingering: lingering.runs || [] }), ...flow.lines, ...health.lines, answersLine({ answers: list, now })],
-    mismatches: [...flow.mismatches, ...health.mismatches],
-    answers: list,
+    lines: [...report({ agentsThis, agentsBefore, tasksThis, titles, unlinkedThis, unlinkedBefore, lingering: lingering.runs || [] }), ...total.lines],
   };
 };
 
@@ -126,7 +70,7 @@ if (isMain) {
     process.stderr.write('usage: audit.mjs (--root <repo dir> | --project <proj_…>) [--now <ISO>]\n');
     process.exit(2);
   }
-  run({ client: clientFromEnv(), project, now: f.now, inbox: f.inbox ? JSON.parse(readFileSync(f.inbox, 'utf8')) : null }).then(
+  run({ client: clientFromEnv(), project, now: f.now }).then(
     (result) => { process.stdout.write(`${JSON.stringify(result, null, 2)}\n`); },
     (error) => { process.stderr.write(`${error.message}\n`); process.exit(1); },
   );

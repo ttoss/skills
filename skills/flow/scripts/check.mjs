@@ -72,12 +72,12 @@ export const check = async ({ project, client }) => {
     ? 'get-project-metrics answers entered and moves'
     : 'this Flow deployment predates entered and moves (TriangulosTecnologia/flow#320): update it');
 
-  // A warning, not a failure: without groups the Audit loses its lines per
+  // A warning, not a failure: without groups the Health loses its lines per
   // holder and keeps every other one.
   const grouped = await client.get(`/projects/${project}/metrics`, { since, until: now.toISOString(), group_by: 'on' });
   add('holders', true, Array.isArray(grouped.groups)
     ? 'get-project-metrics groups by holder'
-    : 'warning: this Flow deployment does not group metrics by holder (group_by=on), so the Audit has no line per person: update it');
+    : 'warning: this Flow deployment does not group metrics by holder (group_by=on), so the Health has no line per person: update it');
 
   const runs = await client.get('/agent-runs', { project, group_by: 'outcome', limit: 0 });
   const outcomeKeys = new Set(['completed', 'open', 'dropped', null]);

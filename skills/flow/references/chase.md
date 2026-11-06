@@ -15,6 +15,6 @@
 5. Deliver it where the Chase's row in `Routines` says, such as a channel; only a row that names no destination makes it the run's final message, which the runtime delivers to the routine's owner. A delivery that fails or is refused closes the run `failed`, with the reason in its final message beside the digest.
 6. The `Runtime`'s acts on every run, then close the run. The final message is the digest, or one line naming where it went and how many lines it holds.
 
-The flow's health, each state's arrivals against departures and the line per person, is the Audit's (`token-audit`), weekly.
+The flow's health, each state's arrivals against departures and the line per person, is the Health's ([health](health.md)), weekly.
 
 Never move a task, change a wait or its `until`, or send anything but the one digest.

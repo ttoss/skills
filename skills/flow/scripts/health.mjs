@@ -2,11 +2,13 @@ import { readFileSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { createClient, DEFAULT_BASE } from './flow-api.mjs';
+import { load as loadParams } from './params.mjs';
 
-// The health lines the Audit reports: a pure function from
-// Flow's answers, verbatim, to the lines. It calls nothing; the model makes the
-// reads, saves each answer to a file and runs this, so every window, label,
-// order and edge case is decided here once instead of in prose.
+// The lines the weekly Health reports, and the spend lines the Audit takes
+// from here: pure functions from Flow's answers, verbatim, to the lines. They
+// call nothing; the model makes the reads, saves each answer to a file and
+// runs this, so every window, label, order and edge case is decided here once
+// instead of in prose. `report` is the Health's whole run, reads included.
 //
 // The labels follow the console's health view (TriangulosTecnologia/flow,
 // packages/app/src/lib/flowStages.ts): a stage is a word beside Flow's own row,
@@ -14,18 +16,24 @@ import { createClient, DEFAULT_BASE } from './flow-api.mjs';
 //
 // Usage, reading Flow itself with the API key in FLOW_API_KEY (and FLOW_URL,
 // default https://flow.ttoss.dev), so no answer passes through the model:
+//   node health.mjs report (--root <repo dir> | --project <proj_…>) [--now <ISO 8601>] [--inbox <captures>]
 //   node health.mjs flow --project <proj_…> [--now <ISO 8601>]
-//   node health.mjs audit --project <proj_…> [--now <ISO 8601>] [--inbox <captures>]
+//   node health.mjs feeds --project <proj_…> [--now <ISO 8601>] [--inbox <captures>]
+//   node health.mjs spend --project <proj_…> [--now <ISO 8601>]
 // or, with no key, from answers the model saved verbatim, one file each:
 //   node health.mjs windows <ISO 8601>
 //   node health.mjs flow --this <metrics> --before <metrics> --bug-this <metrics> --bug-before <metrics>
-//   node health.mjs audit --this <metrics> --before <metrics> --runs-this <runs> --runs-before <runs> --inbox <captures>
+//   node health.mjs feeds --this <metrics> --before <metrics> --inbox <captures>
+//   node health.mjs spend --runs-this <runs> --runs-before <runs>
 // where each file is one tool answer: `get-project-metrics` (`group_by: on` for
 // the flow's plain weeks, which adds a line per holder), `list-agent-runs`
 // with `group_by: outcome` and `limit: 0`, `list-captures` with `triaged: false`
-// and `limit: 1`. Output: JSON `{ alert, lines, mismatches }`.
+// and `limit: 1`. Output: JSON `{ alert, lines, mismatches }` for `flow`,
+// `{ lines, mismatches }` for `feeds`, `{ lines }` for `spend`, and for
+// `report` `{ alert, lines, mismatches, answers }`.
 
 const DAY = 86_400_000;
+const ANSWER_WEEKS = 4;
 
 /** The two windows every health read uses: the 7 days ending now, and the 7 before. */
 export const windows = (now) => {
@@ -332,8 +340,8 @@ export const spendOf = (totals) => {
   return `${runs}, all unpriced · ${tokens.length ? tokens.join(', ') : 'no tokens reported'}`;
 };
 
-/** The Audit's lines on what feeds and drains the graph. */
-export const audit = ({ thisWeek, weekBefore, runsThisWeek, runsWeekBefore, inbox }) => {
+/** The Audit's spend by what became of the runs' tasks, then in total. */
+export const spend = ({ runsThisWeek, runsWeekBefore }) => {
   const lines = [];
   const groupOf = (answer, key) => {
     return (answer.groups || []).find((g) => { return g.key === key; })?.totals;
@@ -342,7 +350,12 @@ export const audit = ({ thisWeek, weekBefore, runsThisWeek, runsWeekBefore, inbo
     lines.push(`Spend, ${label}: ${spendPair({ now: groupOf(runsThisWeek, key), before: groupOf(runsWeekBefore, key) })}`);
   }
   lines.push(`Spend, every run: ${spendPair({ now: runsThisWeek.totals, before: runsWeekBefore.totals })}; a run on tasks with different outcomes counts in each group, so the groups do not add up to it`);
+  return { lines };
+};
 
+/** The Health's lines on what feeds and drains the graph: incubated work and the inbox. */
+export const feeds = ({ thisWeek, weekBefore, inbox }) => {
+  const lines = [];
   const incubated = pair({ now: thisWeek, before: weekBefore }).filter((r) => {
     return r.key.status === 'incubated' && (active(r.now) || active(r.before));
   });
@@ -370,7 +383,36 @@ export const audit = ({ thisWeek, weekBefore, runsThisWeek, runsWeekBefore, inbo
       ? `Untriaged inbox, now (the account's, across every project): ${inbox.total} captures, the oldest ${(oldest.inbox_age_ms / DAY).toFixed(1)}d old`
       : 'Untriaged inbox, now (the account\'s, across every project): empty',
   );
-  return { alert: null, lines, mismatches: mismatches({ now: thisWeek, before: weekBefore }) };
+  return { lines, mismatches: mismatches({ now: thisWeek, before: weekBefore }) };
+};
+
+// When a decision was answered: the change that closed it, else its last write.
+const answeredAt = (task) => {
+  const closing = [...(task.changes || [])].reverse().find((c) => { return c.status && c.status.to === task.status; });
+  return closing ? closing.at : task.updated_at;
+};
+
+/**
+ * The decisions a person closed over the last ANSWER_WEEKS weeks, newest
+ * first, each with its answer: what the model reads for an answer given more
+ * than once to the same kind of choice (GTF-E9). Closed decisions only: a
+ * one-task wait a person answered recurs as the same question raised again,
+ * which GTF-N6 already makes a decision the second time. Pure over what
+ * `get-task` answered.
+ */
+export const answers = ({ decisions, now }) => {
+  const since = Date.parse(now) - ANSWER_WEEKS * 7 * DAY;
+  return decisions
+    .map((task) => { return { id: task.id, url: task.url, title: task.title, outcome: task.outcome ?? null, at: answeredAt(task) }; })
+    .filter((a) => { return Date.parse(a.at) >= since; })
+    .sort((a, b) => { return Date.parse(b.at) - Date.parse(a.at); });
+};
+
+/** The line beside the data: how many were answered this week and the week before. */
+export const answersLine = ({ answers: list, now }) => {
+  const w = windows(now);
+  const within = (win) => { return list.filter((a) => { return a.at >= win.since && a.at < win.until; }).length; };
+  return `Decisions a person answered: ${within(w.thisWeek)} this week (${within(w.weekBefore)} the week before), ${list.length} over the last ${ANSWER_WEEKS} weeks`;
 };
 
 /**
@@ -391,12 +433,17 @@ export const readFlow = async ({ routine, project, now, client, key, base = DEFA
     ]);
     return { thisWeek, weekBefore, bugThisWeek, bugWeekBefore };
   }
-  const runs = (win) => {
-    return get('/agent-runs', { project, since: win.since, until: win.until, group_by: 'outcome', limit: 0 });
-  };
-  const [thisWeek, weekBefore, runsThisWeek, runsWeekBefore] = await Promise.all([
-    metrics(w.thisWeek), metrics(w.weekBefore), runs(w.thisWeek), runs(w.weekBefore),
-  ]);
+  if (routine === 'spend') {
+    const runs = (win) => {
+      return get('/agent-runs', { project, since: win.since, until: win.until, group_by: 'outcome', limit: 0 });
+    };
+    const [runsThisWeek, runsWeekBefore] = await Promise.all([runs(w.thisWeek), runs(w.weekBefore)]);
+    return { runsThisWeek, runsWeekBefore };
+  }
+  if (routine !== 'feeds') {
+    throw new Error(`readFlow: unknown routine ${routine}`);
+  }
+  const [thisWeek, weekBefore] = await Promise.all([metrics(w.thisWeek), metrics(w.weekBefore)]);
   // The inbox is the account's, in no project, so a key restricted to one is
   // never given it: the session reads it through its own connection and
   // passes the answer as `inbox`. Without that, the key is asked, and a 404
@@ -407,7 +454,43 @@ export const readFlow = async ({ routine, project, now, client, key, base = DEFA
     }
     throw error;
   });
-  return { thisWeek, weekBefore, runsThisWeek, runsWeekBefore, inbox: captures };
+  return { thisWeek, weekBefore, inbox: captures };
+};
+
+/**
+ * The weekly Health's whole report, every read included: the flow's health
+ * with a line per holder, what feeds and drains the graph, and the decisions a
+ * person answered over the last four weeks, as data for the model to read for
+ * an answer given more than once. It writes nothing.
+ */
+export const report = async ({ client, project, now = new Date().toISOString(), inbox = null }) => {
+  const { get } = client;
+  // A person by their email, as the Chase names them; a team by its name,
+  // since the line counts the team's queue rather than asking its members.
+  const projectAnswer = await get(`/projects/${project}`);
+  const emails = new Map((projectAnswer.members || []).map((m) => { return [m.user_id, m.email]; }));
+  const teamNames = new Map((projectAnswer.teams || []).map((t) => { return [t.id, `the ${t.name} team`]; }));
+  const nameOfHolder = (key) => { return emails.get(key) || teamNames.get(key) || key; };
+  const [flowAnswers, feedAnswers] = await Promise.all([
+    readFlow({ routine: 'flow', project, now, client }),
+    readFlow({ routine: 'feeds', project, now, client, inbox }),
+  ]);
+  const flow = flowHealth({ ...flowAnswers, nameOfHolder });
+  const fed = feeds(feedAnswers);
+  // Closed decisions, newest write first; the summary carries no outcome, so
+  // each within the window is read whole. The list is cut at the first one
+  // older than the window, since `updated_at` never precedes the close.
+  const since = Date.parse(now) - ANSWER_WEEKS * 7 * DAY;
+  const closed = await get('/tasks', { project, kind: 'decision', status: ['completed', 'cancelled'], limit: 100 });
+  const recent = (closed.tasks || []).filter((t) => { return Date.parse(t.updated_at) >= since; });
+  const decisions = await Promise.all(recent.map(async (t) => { return (await get(`/tasks/${t.id}`)).task; }));
+  const list = answers({ decisions, now });
+  return {
+    alert: flow.alert,
+    lines: [...flow.lines, ...fed.lines, answersLine({ answers: list, now })],
+    mismatches: [...flow.mismatches, ...fed.mismatches],
+    answers: list,
+  };
 };
 
 const flags = (args) => {
@@ -433,8 +516,8 @@ const run = async (argv, env) => {
   if (mode === 'windows') {
     return windows(rest[0]);
   }
-  if (mode !== 'flow' && mode !== 'audit') {
-    throw new Error('usage: health.mjs windows <now> | flow … | audit …');
+  if (!['report', 'flow', 'feeds', 'spend'].includes(mode)) {
+    throw new Error('usage: health.mjs windows <now> | report … | flow … | feeds … | spend …');
   }
   const opts = {};
   for (let i = 0; i < rest.length; i += 2) {
@@ -442,6 +525,18 @@ const run = async (argv, env) => {
       throw new Error(`expected --name <value>, got ${rest[i]}`);
     }
     opts[rest[i].slice(2)] = rest[i + 1];
+  }
+  const inboxOf = () => { return opts.inbox ? JSON.parse(readFileSync(opts.inbox, 'utf8')) : null; };
+  if (mode === 'report') {
+    const project = opts.project || (opts.root ? loadParams(opts.root).projectId : null);
+    if (!project) {
+      throw new Error('usage: health.mjs report (--root <repo dir> | --project <proj_…>) [--now <ISO>] [--inbox <file>]');
+    }
+    if (!env.FLOW_API_KEY) {
+      throw new Error('report reads Flow itself and needs FLOW_API_KEY');
+    }
+    const client = createClient({ key: env.FLOW_API_KEY, base: env.FLOW_URL || DEFAULT_BASE });
+    return report({ client, project, now: opts.now || new Date().toISOString(), inbox: inboxOf() });
   }
   if (opts.project) {
     if (!env.FLOW_API_KEY) {
@@ -453,17 +548,21 @@ const run = async (argv, env) => {
       now: opts.now || new Date().toISOString(),
       key: env.FLOW_API_KEY,
       base: env.FLOW_URL || 'https://flow.ttoss.dev',
-      inbox: opts.inbox ? JSON.parse(readFileSync(opts.inbox, 'utf8')) : null,
+      inbox: inboxOf(),
     });
-    return mode === 'flow' ? flowHealth(answers) : audit(answers);
+    return { flow: flowHealth, feeds, spend }[mode](answers);
   }
   const f = flags(rest);
   if (mode === 'flow') {
     need(f, ['this', 'before', 'bug-this', 'bug-before']);
     return flowHealth({ thisWeek: f.this, weekBefore: f.before, bugThisWeek: f['bug-this'], bugWeekBefore: f['bug-before'] });
   }
-  need(f, ['this', 'before', 'runs-this', 'runs-before', 'inbox']);
-  return audit({ thisWeek: f.this, weekBefore: f.before, runsThisWeek: f['runs-this'], runsWeekBefore: f['runs-before'], inbox: f.inbox });
+  if (mode === 'feeds') {
+    need(f, ['this', 'before', 'inbox']);
+    return feeds({ thisWeek: f.this, weekBefore: f.before, inbox: f.inbox });
+  }
+  need(f, ['runs-this', 'runs-before']);
+  return spend({ runsThisWeek: f['runs-this'], runsWeekBefore: f['runs-before'] });
 };
 
 // Resolved on both sides, as plan.mjs does, for a skill installed through a symlink.
