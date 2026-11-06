@@ -172,8 +172,13 @@ const isHeldByRepair = ({ task, change, underRepair }) => {
 const advanceMerged = ({ task, change, underRepair }) => {
   // "The change integrated, nothing written since": a task written after the
   // merge and its pipeline was already advanced, and is left as it stands.
+  // Except a wait on a person that now carries what integrating leaves: that
+  // write is the person's answer to the wait, and a write after the merge
+  // must not be what keeps the tick from reading it. A red pipeline's wait is
+  // about the pipeline, never about what integrating leaves.
   if (change.writtenSince) {
-    return { acts: [], item: null };
+    const answered = task.status === 'waiting' && task.heldByPerson && !change.pipelineRedAfterMerge && LEAVES[task.leaves];
+    return answered ? { acts: [answered(task, change)], item: null } : NONE;
   }
   if (change.pipelineRedAfterMerge && isHeldByRepair({ task, change, underRepair })) {
     return NONE;
@@ -206,7 +211,7 @@ const advanceMerged = ({ task, change, underRepair }) => {
   const leaves = LEAVES[task.leaves];
   const act = leaves
     ? leaves(task, change)
-    : { act: 'wait_on_person', task: task.id, reason: 'integrated, and the body does not say what integrating leaves' };
+    : { act: 'wait_on_person', task: task.id, reason: "integrated, and the body does not say what integrating leaves: write the task's after_integration and the next tick applies it" };
   return { acts: [act], item: null };
 };
 
