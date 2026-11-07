@@ -83,6 +83,10 @@ export const build = ({ now, candidates, slices, dueIds, children, mine, childTa
       status: row.status,
       waitsOn: [...new Set(waits.map((w) => { return w.on; }).filter(Boolean))],
       priority: row.priority,
+      // The priority it holds through an open commitment it blocks, above its
+      // own (get-next's `inherited_priority`); null when none, or on a row
+      // that does not carry it.
+      inherited: row.inherited_priority?.priority ?? null,
       tags: row.tags || [],
       rank: rank.has(row.id) ? rank.get(row.id) : null,
       heldByPerson: waits.some((w) => { return Boolean(w.on); }),

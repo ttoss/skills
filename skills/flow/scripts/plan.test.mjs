@@ -596,3 +596,12 @@ test('from Max runs 2 up, new work never takes the last free slot; what ages fas
 test('with Max runs 1 there is no slot to keep: new work takes the only one', () => {
   assert.deepEqual(started({ tasks: [fresh('task_n1')] }, { maxRuns: 1 }), ['task_n1']);
 });
+
+test('an inherited very_high or high on a bug is as urgent as an asserted one', () => {
+  const full = [0, 1].map((i) => { return atGates(`task_o${i}`) });
+  const blocker = fresh('task_n1', { inherited: 'very_high' });
+  const bugBlocker = fresh('task_n2', { tags: ['bug'], inherited: 'high' });
+  const plain = fresh('task_n3', { inherited: 'high' });
+  const acted = plan({ now, params: { ...params, maxRuns: 4, releaseQueue: 2 }, tasks: [...full, blocker, bugBlocker, plain] });
+  assert.deepEqual(acted.filter((a) => { return a.act === 'start_child' }).map((a) => { return a.tasks[0] }), ['task_n1', 'task_n2']);
+});

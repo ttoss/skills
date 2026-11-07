@@ -115,3 +115,15 @@ test('a long reason is cut at a sentence or a word, never mid-word', () => {
   const cut = shorten(words);
   assert.ok(cut.length <= 282 && cut.endsWith('word …'));
 });
+
+test('a change whose task inherits a very_high from what it blocks is listed first, as the tick works it', () => {
+  const tasks = [
+    t('open_high', { waitsOn: ['user_ana'], priority: 'high' }),
+    t('blocker', { waitsOn: ['user_ana'], inherited: 'very_high' }),
+    t('open_low', { waitsOn: ['user_ana'], priority: 'low', inherited: 'medium' }),
+    t('open_plain', { waitsOn: ['user_ana'] }),
+  ];
+  const details = Object.fromEntries(tasks.map((x) => { return [x.id, detail(x.id, 'r')]; }));
+  const out = pick({ tasks, details, members });
+  assert.deepEqual(out.person.map((i) => { return i.id; }), ['blocker', 'open_high', 'open_low', 'open_plain']);
+});
