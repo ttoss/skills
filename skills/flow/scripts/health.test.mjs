@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { answers, answersLine, feeds, flowHealth, holderLines, mismatches, nameOf, readFlow, report, spend, spendOf, spendPair, windows } from './health.mjs';
+import { answers, answersLine, feeds, flowHealth, holderLines, mismatches, nameOf, queues, readFlow, report, spend, spendOf, spendPair, windows } from './health.mjs';
 
 // Shapes and edge cases taken from OneClick Ads' answers in November 2026.
 const row = (status, state, on, open, entered, left, p90 = 1, p50 = 0) => {
@@ -335,4 +335,95 @@ test('report: the flow\'s lines, then what feeds and drains the graph, then the 
   assert.deepEqual(out.lines, [...digest.lines, ...fed.lines, 'Decisions a person answered: 1 this week (0 the week before), 1 over the last 4 weeks']);
   assert.deepEqual(out.answers.map((a) => { return [a.id, a.outcome]; }), [['task_d', 'yes']]);
   assert.ok(!out.lines.some((l) => { return l.startsWith('Spend'); }));
+});
+
+const queued = (id, over = {}) => {
+  const { change: changeOver = {}, ...rest } = over;
+  return {
+    id,
+    priority: null,
+    tags: [],
+    waitsOn: [],
+    ...rest,
+    change: { url: `https://github.com/o/r/pull/${id}`, title: `change ${id}`, draft: false, merged: false, closed: false, conflict: false, checks: 'green', verdict: null, createdAt: '2026-11-01T00:00:00Z', mergedAt: null, ...changeOver },
+  };
+};
+
+test('queues: the oldest item in each queue a person drains, with its age, what is left and who acts', () => {
+  const now = '2026-11-07T00:00:00Z';
+  const out = queues({
+    now,
+    limit: 20,
+    tasks: [
+      queued('task_a'),
+      queued('task_b', { waitsOn: ['user_ana'], change: { merged: true, createdAt: '2026-10-01T00:00:00Z', mergedAt: '2026-10-28T00:00:00Z' } }),
+      queued('task_draft', { change: { draft: true, createdAt: '2026-09-01T00:00:00Z' } }),
+    ],
+    decisions: [
+      { id: 'task_d1', url: 'https://f/task_d1', title: 'pick a provider', updated_at: '2026-10-17T00:00:00Z', readiness: { blocked_by: [{ via: 'wait', on: 'user_ana' }] } },
+      { id: 'task_d2', url: 'https://f/task_d2', title: 'no holder', updated_at: '2026-09-01T00:00:00Z', readiness: { blocked_by: [{ via: 'wait', on: null }] } },
+    ],
+    who: (ids) => { return ids.map((id) => { return `${id}@x`; }).join(', '); },
+  });
+  assert.deepEqual(out.lines, [
+    'Oldest in the release queue (2, limit 20): [change task_b](https://github.com/o/r/pull/task_b), 10.0d since integrated, integrated; waits to be seen in effect, user_ana@x',
+    'Oldest in the decision queue (1): [pick a provider](https://f/task_d1), untouched 21.0d, user_ana@x',
+  ]);
+  assert.deepEqual(out.drain, []);
+});
+
+test('queues: at its limit, the bottom of the tick\'s order is proposed to drain, enough to bring it below the limit; age never ranks', () => {
+  const now = '2026-11-07T00:00:00Z';
+  const tasks = [
+    queued('task_old', { change: { createdAt: '2026-08-01T00:00:00Z', conflict: true } }),
+    queued('task_hi', { priority: 'high', change: { createdAt: '2026-11-06T00:00:00Z' } }),
+    queued('task_vh', { priority: 'very_high', change: { createdAt: '2026-11-06T00:00:00Z' } }),
+    queued('task_low', { priority: 'low', change: { checks: 'red' } }),
+  ];
+  const atLimit = queues({ now, limit: 4, tasks });
+  assert.deepEqual(atLimit.drain.map((d) => { return [d.task, d.age, d.left]; }), [['task_old', '98.0d', 'a conflict to resolve']]);
+  assert.equal(atLimit.lines.at(-1), "The release queue is at its limit: 1 change at the bottom of the tick's order proposed to drain");
+  const over = queues({ now, limit: 3, tasks });
+  assert.deepEqual(over.drain.map((d) => { return d.task; }), ['task_old', 'task_low']);
+  assert.equal(queues({ now, limit: 5, tasks }).lines.length, 2);
+});
+
+test('report: with the tick\'s snapshot, the queue lines follow the flow\'s and the proposal is data', async () => {
+  const now = '2026-11-02T17:00:00Z';
+  const get = async (path) => {
+    if (path === '/projects/proj_1m5wbbbf1x') {
+      return { members: [{ user_id: 'user_ana', email: 'ana@x', role: 'admin' }], teams: [] };
+    }
+    if (path === '/projects/proj_1m5wbbbf1x/metrics') {
+      return thisWeek;
+    }
+    if (path === '/tasks') {
+      return { tasks: [] };
+    }
+    if (path === '/next') {
+      return { tasks: [] };
+    }
+    throw new Error(`unexpected read ${path}`);
+  };
+  const snapshot = { params: { releaseQueue: 1 }, tasks: [queued('task_a', { change: { createdAt: '2026-11-01T17:00:00Z' } })], needs: { changes: [] } };
+  const out = await report({ client: { get }, project: 'proj_1m5wbbbf1x', now, inbox: { captures: [], total: 0 }, snapshot });
+  const at = out.lines.findIndex((l) => { return l.startsWith('Oldest in the release queue'); });
+  assert.ok(at > 0);
+  assert.equal(out.lines[at], 'Oldest in the release queue (1, limit 1): [change task_a](https://github.com/o/r/pull/task_a), 1.0d since opened, a review, the agents');
+  assert.deepEqual(out.drain.map((d) => { return d.task; }), ['task_a']);
+  assert.deepEqual(out.needs, { changes: [] });
+});
+
+test('queues by hand: the saved snapshot and waiting rows give the same lines as the function', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'health-'));
+  const file = (name, value) => {
+    const path = join(dir, `${name}.json`);
+    writeFileSync(path, JSON.stringify(value));
+    return path;
+  };
+  const now = '2026-11-07T00:00:00Z';
+  const tasks = [queued('task_a')];
+  const script = join(dirname(fileURLToPath(import.meta.url)), 'health.mjs');
+  const out = JSON.parse(execFileSync('node', [script, 'queues', '--snapshot', file('s', { params: { releaseQueue: 1 }, tasks }), '--decisions', file('d', { tasks: [] }), '--now', now], { encoding: 'utf8' }));
+  assert.deepEqual(out, queues({ tasks, decisions: [], limit: 1, now }));
 });

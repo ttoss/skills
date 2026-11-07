@@ -413,13 +413,19 @@ const slotAct = (item) => {
   return { act: 'start_child', kind: item.kind, tasks: [task.id], reason: item.stage === 'gates' ? item.kind : item.stage };
 };
 
-// Section 4: fill this person's free slots, what ages fastest first.
-const delegate = ({ items, free, newWork }) => {
+// Section 4: fill this person's free slots, what ages fastest first. From
+// Max runs 2 up, new work never takes the last free slot (D15, F20): a child
+// holds its slot for hours, so a repair or a very_high task arriving next
+// would wait for one, and taking it back would mean interrupting a run. The
+// slot is head-of-the-line room for what ages faster, never a preemption.
+const delegate = ({ items, free, newWork, cap }) => {
   const acts = [];
   const skipped = [];
   let left = free;
   let budget = newWork.budget;
   let held = 0;
+  let reserved = 0;
+  const reserve = cap >= 2 ? 1 : 0;
   for (const item of [...items].sort(byPriority)) {
     const skip = itemSkip(item);
     if (skip) {
@@ -437,6 +443,11 @@ const delegate = ({ items, free, newWork }) => {
     // New work beyond the WIP limit waits upstream, where waiting is cheap;
     // what the person said cannot wait (very_high, a high bug) starts anyway.
     if (item.stage === 'new' && urgencyTier(item.task) === 2) {
+      if (left <= reserve) {
+        reserved += 1;
+        skipped.push({ task: item.task.id, reason: 'the last free slot is kept for what ages faster' });
+        continue;
+      }
       if (budget === 0) {
         held += 1;
         skipped.push({ task: item.task.id, reason: `held upstream: ${newWork.why}` });
@@ -447,7 +458,7 @@ const delegate = ({ items, free, newWork }) => {
     acts.push(slotAct(item));
     left -= 1;
   }
-  return { acts, skipped, free: left, held };
+  return { acts, skipped, free: left, held, reserved };
 };
 
 // The WIP limit that holds new work upstream (W1, W21): the release queue, what
@@ -535,7 +546,7 @@ export const plan = ({ now, params, children = [], tasks = [], defaults = [] }) 
     return c.byMe && !reconciled.closed.has(c.run);
   }).length;
   const newWork = newWorkBudget({ tasks, params });
-  const delegated = delegate({ items, free: Math.max(0, params.maxRuns - running), newWork });
+  const delegated = delegate({ items, free: Math.max(0, params.maxRuns - running), newWork, cap: params.maxRuns });
   const started = delegated.acts.filter((a) => {
     return a.act === 'start_child';
   }).length;
@@ -549,7 +560,9 @@ export const plan = ({ now, params, children = [], tasks = [], defaults = [] }) 
     ? null
     : delegated.held > 0
       ? `new work held upstream: ${newWork.why}`
-      : anyNew ? 'every candidate left was skipped' : 'no candidate left in the focus';
+      : delegated.reserved > 0
+        ? 'kept for what ages faster'
+        : anyNew ? 'every candidate left was skipped' : 'no candidate left in the focus';
   const report = {
     act: 'report',
     started,

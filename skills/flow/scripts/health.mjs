@@ -2,7 +2,10 @@ import { readFileSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { createClient, DEFAULT_BASE } from './flow-api.mjs';
+import { byTickOrder } from './chase.mjs';
 import { load as loadParams } from './params.mjs';
+import { inReleaseQueue } from './plan.mjs';
+import { run as readSnapshot } from './snapshot.mjs';
 
 // The lines the weekly Health reports, and the spend lines the Audit takes
 // from here: pure functions from Flow's answers, verbatim, to the lines. They
@@ -25,12 +28,14 @@ import { load as loadParams } from './params.mjs';
 //   node health.mjs flow --this <metrics> --before <metrics> --bug-this <metrics> --bug-before <metrics>
 //   node health.mjs feeds --this <metrics> --before <metrics> --inbox <captures>
 //   node health.mjs spend --runs-this <runs> --runs-before <runs>
+//   node health.mjs queues --snapshot <snapshot> --decisions <get-next waiting> [--now <ISO 8601>]
 // where each file is one tool answer: `get-project-metrics` (`group_by: on` for
 // the flow's plain weeks, which adds a line per holder), `list-agent-runs`
 // with `group_by: outcome` and `limit: 0`, `list-captures` with `triaged: false`
 // and `limit: 1`. Output: JSON `{ alert, lines, mismatches }` for `flow`,
 // `{ lines, mismatches }` for `feeds`, `{ lines }` for `spend`, and for
-// `report` `{ alert, lines, mismatches, answers }`.
+// `report` `{ alert, lines, mismatches, answers, drain }` (with `needs` when
+// --root lets it read the tick's snapshot), `{ lines, drain }` for `queues`.
 
 const DAY = 86_400_000;
 const ANSWER_WEEKS = 4;
@@ -415,6 +420,93 @@ export const answersLine = ({ answers: list, now }) => {
   return `Decisions a person answered: ${within(w.thisWeek)} this week (${within(w.weekBefore)} the week before), ${list.length} over the last ${ANSWER_WEEKS} weeks`;
 };
 
+const DEFAULT_RELEASE_QUEUE = 20;
+
+const ageOf = (ms) => {
+  return `${(ms / DAY).toFixed(1)}d`;
+};
+
+// What is left before a change leaves the release queue, from what the code
+// host and its task say: the next act, never an estimate of its size.
+const leftOf = (task) => {
+  const { change } = task;
+  if (change.merged) {
+    return 'integrated; waits to be seen in effect';
+  }
+  if (change.conflict) {
+    return 'a conflict to resolve';
+  }
+  if (change.checks === 'red') {
+    return 'red checks to fix';
+  }
+  if (change.checks !== 'green') {
+    return 'checks still running';
+  }
+  return change.verdict?.result === 'CLEAN' ? 'to integrate' : 'a review';
+};
+
+/**
+ * The two queues only a person drains, read for what averages hide (W15) and
+ * for what a full queue should give up (W7): the oldest item in each, with its
+ * age and who acts, and, while the release queue is at its limit, the changes
+ * at the bottom of the tick's order, as many as bring it below the limit. Age
+ * names an item and never orders one. Pure over the tick's snapshot `tasks`,
+ * the `waiting` rows `get-next` ranked (`decisions`) and `who`, which names
+ * the holders a wait is `on`.
+ */
+export const queues = ({ tasks, decisions = [], limit = DEFAULT_RELEASE_QUEUE, now, who = (ids) => { return (ids || []).join(', '); } }) => {
+  const at = Date.parse(now);
+  const queued = tasks.filter(inReleaseQueue).map((t) => {
+    const since = t.change.merged ? t.change.mergedAt : t.change.createdAt;
+    return {
+      task: t.id,
+      url: t.change.url,
+      title: t.change.title || t.change.url,
+      age: since ? at - Date.parse(since) : null,
+      from: t.change.merged ? 'integrated' : 'opened',
+      who: (t.waitsOn || []).length ? who(t.waitsOn) : 'the agents',
+      left: leftOf(t),
+      order: t,
+    };
+  });
+  const out = new Set(tasks.filter((t) => { return t.change; }).map((t) => { return t.id; }));
+  // A decision's summary carries no time it started waiting, only its last
+  // write, so its age is how long it has gone untouched.
+  const owed = decisions.filter((row) => {
+    return !out.has(row.id) && (row.readiness?.blocked_by || []).some((b) => { return b.via === 'wait' && b.on; });
+  }).map((row) => {
+    const wait = row.readiness.blocked_by.find((b) => { return b.via === 'wait' && b.on; });
+    return { task: row.id, url: row.url, title: row.title, age: row.updated_at ? at - Date.parse(row.updated_at) : null, who: who([wait.on]) };
+  });
+  const oldest = (list) => {
+    return list.filter((i) => { return i.age !== null; }).sort((a, b) => { return b.age - a.age || a.task.localeCompare(b.task); })[0] || null;
+  };
+  const oldRelease = oldest(queued);
+  const oldDecision = oldest(owed);
+  const full = queued.length >= limit;
+  const drain = full
+    ? [...queued].sort((a, b) => { return byTickOrder(a.order, b.order) || a.task.localeCompare(b.task); })
+      .slice(-(queued.length - limit + 1))
+      .reverse()
+      .map(({ order, ...item }) => { return item; })
+    : [];
+  const lines = [
+    oldRelease
+      ? `Oldest in the release queue (${queued.length}, limit ${limit}): [${oldRelease.title}](${oldRelease.url}), ${ageOf(oldRelease.age)} since ${oldRelease.from}, ${oldRelease.left}, ${oldRelease.who}`
+      : `Oldest in the release queue (${queued.length}, limit ${limit}): none`,
+    oldDecision
+      ? `Oldest in the decision queue (${owed.length}): [${oldDecision.title}](${oldDecision.url}), untouched ${ageOf(oldDecision.age)}, ${oldDecision.who}`
+      : `Oldest in the decision queue (${owed.length}): none`,
+  ];
+  if (full) {
+    lines.push(`The release queue is at its limit: ${drain.length} ${drain.length === 1 ? 'change' : 'changes'} at the bottom of the tick's order proposed to drain`);
+  }
+  return {
+    lines,
+    drain: drain.map((d) => { return { ...d, age: d.age === null ? null : ageOf(d.age) }; }),
+  };
+};
+
 /**
  * Flow's answers for one routine, read with an API key through `client`
  * (flow-api.mjs), or a client built from `key`, `base` and `fetchImpl`.
@@ -463,7 +555,7 @@ export const readFlow = async ({ routine, project, now, client, key, base = DEFA
  * person answered over the last four weeks, as data for the model to read for
  * an answer given more than once. It writes nothing.
  */
-export const report = async ({ client, project, now = new Date().toISOString(), inbox = null }) => {
+export const report = async ({ client, project, now = new Date().toISOString(), inbox = null, snapshot = null }) => {
   const { get } = client;
   // A person by their email, as the Chase names them; a team by its name,
   // since the line counts the team's queue rather than asking its members.
@@ -485,11 +577,31 @@ export const report = async ({ client, project, now = new Date().toISOString(), 
   const recent = (closed.tasks || []).filter((t) => { return Date.parse(t.updated_at) >= since; });
   const decisions = await Promise.all(recent.map(async (t) => { return (await get(`/tasks/${t.id}`)).task; }));
   const list = answers({ decisions, now });
+  // The queues only a person drains, from the tick's own snapshot, so the
+  // Health counts the release queue exactly as the tick and the Chase do.
+  let queue = { lines: [], drain: [] };
+  if (snapshot) {
+    const waiting = await get('/next', { project, status: 'waiting', assignee: 'any', limit: 100 });
+    const emailsOf = (ids) => {
+      const named = (ids || []).map(nameOfHolder);
+      const admins = (projectAnswer.members || []).filter((m) => { return m.role === 'admin' && !m.pending; }).map((m) => { return m.email; });
+      return named.join(', ') || admins.join(', ');
+    };
+    queue = queues({
+      tasks: snapshot.tasks,
+      decisions: waiting.tasks || [],
+      limit: snapshot.params?.releaseQueue ?? DEFAULT_RELEASE_QUEUE,
+      now,
+      who: emailsOf,
+    });
+  }
   return {
     alert: flow.alert,
-    lines: [...flow.lines, ...fed.lines, answersLine({ answers: list, now })],
+    lines: [...flow.lines, ...queue.lines, ...fed.lines, answersLine({ answers: list, now })],
     mismatches: [...flow.mismatches, ...fed.mismatches],
     answers: list,
+    drain: queue.drain,
+    ...(snapshot ? { needs: snapshot.needs } : {}),
   };
 };
 
@@ -516,8 +628,16 @@ const run = async (argv, env) => {
   if (mode === 'windows') {
     return windows(rest[0]);
   }
-  if (!['report', 'flow', 'feeds', 'spend'].includes(mode)) {
-    throw new Error('usage: health.mjs windows <now> | report … | flow … | feeds … | spend …');
+  if (!['report', 'flow', 'feeds', 'spend', 'queues'].includes(mode)) {
+    throw new Error('usage: health.mjs windows <now> | report … | flow … | feeds … | spend … | queues …');
+  }
+  if (mode === 'queues') {
+    // By hand: the tick's snapshot and the `waiting` rows of `get-next`, as
+    // saved; the holders stay as Flow names them, for the model to name.
+    const now = rest.includes('--now') ? rest[rest.indexOf('--now') + 1] : new Date().toISOString();
+    const f = flags(rest.filter((_, i) => { return rest[i] !== '--now' && rest[i - 1] !== '--now'; }));
+    need(f, ['snapshot', 'decisions']);
+    return queues({ tasks: f.snapshot.tasks, decisions: f.decisions.tasks || [], limit: f.snapshot.params?.releaseQueue ?? DEFAULT_RELEASE_QUEUE, now });
   }
   const opts = {};
   for (let i = 0; i < rest.length; i += 2) {
@@ -528,7 +648,8 @@ const run = async (argv, env) => {
   }
   const inboxOf = () => { return opts.inbox ? JSON.parse(readFileSync(opts.inbox, 'utf8')) : null; };
   if (mode === 'report') {
-    const project = opts.project || (opts.root ? loadParams(opts.root).projectId : null);
+    const p = opts.root ? loadParams(opts.root) : null;
+    const project = opts.project || p?.projectId;
     if (!project) {
       throw new Error('usage: health.mjs report (--root <repo dir> | --project <proj_…>) [--now <ISO>] [--inbox <file>]');
     }
@@ -536,7 +657,14 @@ const run = async (argv, env) => {
       throw new Error('report reads Flow itself and needs FLOW_API_KEY');
     }
     const client = createClient({ key: env.FLOW_API_KEY, base: env.FLOW_URL || DEFAULT_BASE });
-    return report({ client, project, now: opts.now || new Date().toISOString(), inbox: inboxOf() });
+    const now = opts.now || new Date().toISOString();
+    // With the project's parameters, the release queue is read as the tick
+    // reads it, the code host included; without them, the queue lines are
+    // left out rather than counted from part of the graph.
+    const snapshot = p
+      ? await readSnapshot({ client, project, now, extra: { params: p.params }, repos: p.repos, reviewers: p.reviewers ?? [] })
+      : null;
+    return report({ client, project, now, inbox: inboxOf(), snapshot });
   }
   if (opts.project) {
     if (!env.FLOW_API_KEY) {
