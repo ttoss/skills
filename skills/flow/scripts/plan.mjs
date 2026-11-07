@@ -157,10 +157,12 @@ const LEAVES = {
     return { act: 'release_step', task: task.id, reason: 'integrated: write its release step by the Release procedure, a task that blocks it (GTF-N4)' };
   },
   // The handoff's date becomes the wait's: `calendar` asserts a date holds
-  // the work, and Flow refuses one without it.
-  check: (task) => {
+  // the work, and Flow refuses one without it. A date already past is dated
+  // now, so the wait never records a hold that had cleared when written.
+  check: (task, change, now) => {
+    const until = task.check && now && Date.parse(task.check.visible_at) < Date.parse(now) ? now : task.check?.visible_at;
     return task.check
-      ? { act: 'move_task', task: task.id, status: 'calendar', until: task.check.visible_at, reason: `integrated: check ${task.check.observe}, at ${task.check.where}` }
+      ? { act: 'move_task', task: task.id, status: 'calendar', until, reason: `integrated: check ${task.check.observe}, at ${task.check.where}` }
       : { act: 'move_task', task: task.id, status: 'calendar', until: null, reason: "integrated: the check's wait the body names" };
   },
 };
@@ -188,17 +190,19 @@ const rejudgeLeaves = ({ task, change, params }) => {
     : NONE;
 };
 
-const advanceMerged = ({ task, change, params, underRepair }) => {
+const advanceMerged = ({ task, change, params, underRepair, now }) => {
   // "The change integrated, nothing written since": a task written after the
   // merge and its pipeline was already advanced, and is left as it stands.
-  // Except a wait on a person that now carries what integrating leaves: that
-  // write is the person's answer to the wait, and a write after the merge
-  // must not be what keeps the tick from reading it. A red pipeline's wait is
-  // about the pipeline, never about what integrating leaves.
+  // Except the tick's own wait for what integrating leaves, once the task
+  // carries it: that write is the person's answer, and a write after the merge
+  // must not be what keeps the tick from reading it. Any other wait on a
+  // person, such as a check child's for an act only they can do, asked for
+  // something else, so a field written before it answers nothing. A red
+  // pipeline's wait is about the pipeline, never about what integrating leaves.
   if (change.writtenSince) {
-    const answered = task.status === 'waiting' && task.heldByPerson && !change.pipelineRedAfterMerge && LEAVES[task.leaves];
+    const answered = task.status === 'waiting' && task.heldByPerson && task.leavesWait && !change.pipelineRedAfterMerge && LEAVES[task.leaves];
     if (answered) {
-      return { acts: [answered(task, change)], item: null };
+      return { acts: [answered(task, change, now)], item: null };
     }
     return task.status === 'waiting' && task.leavesWait && !change.pipelineRedAfterMerge ? rejudgeLeaves({ task, change, params }) : NONE;
   }
@@ -232,7 +236,7 @@ const advanceMerged = ({ task, change, params, underRepair }) => {
   }
   const leaves = LEAVES[task.leaves];
   const act = leaves
-    ? leaves(task, change)
+    ? leaves(task, change, now)
     : { act: 'wait_on_person', task: task.id, reason: "integrated, and the task does not say what integrating leaves, a choice the Closing evidence keeps for a person: write the task's after_integration and the next tick applies it" };
   return { acts: [act], item: null };
 };
@@ -331,7 +335,7 @@ const advance = ({ task, params, underRepair, now }) => {
     };
   }
   return change.merged
-    ? advanceMerged({ task, change, params, underRepair })
+    ? advanceMerged({ task, change, params, underRepair, now })
     : advanceOpen({ task, change, params, underRepair, now });
 };
 

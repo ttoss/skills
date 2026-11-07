@@ -351,18 +351,40 @@ test('integrated: the body decides what is left', () => {
   assert.equal(plan({ now, params, defaults: [], children: [], tasks: [task({ change: change({ merged: true, writtenSince: true, pipelineRedAfterMerge: true }) })] }).filter((a) => { return a.act !== 'report'; }).length, 0);
 });
 
-test('integrated and held by a person: writing after_integration hands it back to the tick', () => {
+test("integrated and waiting on a person for what integrating leaves: writing after_integration hands it back to the tick", () => {
   const since = change({ merged: true, writtenSince: true });
-  const held = (over) => { return task({ heldByPerson: true, change: since, ...over }) };
+  const held = (over) => { return task({ heldByPerson: true, leavesWait: true, change: since, ...over }) };
   assert.equal(acts({ tasks: [held({ leaves: 'close' })] }, 'move_task')[0].status, 'completed');
   assert.equal(acts({ tasks: [held({ leaves: 'check' })] }, 'move_task')[0].status, 'calendar');
   assert.equal(acts({ tasks: [held({ leaves: 'release' })] }, 'release_step').length, 1);
-  const quiet = (t) => { return plan({ now, params, defaults: [], children: [], tasks: [t] }).filter((a) => { return a.act !== 'report'; }).length };
+  const quiet = (t) => { return plan({ now, params: { ...params, leavesByAgent: false }, defaults: [], children: [], tasks: [t] }).filter((a) => { return a.act !== 'report'; }).length };
   // Still nothing stated: the wait already names it, and is not written again.
   assert.equal(quiet(held({ leaves: 'none' })), 0);
   assert.equal(quiet(held({ leaves: null })), 0);
   // A red pipeline's wait is about the pipeline, whatever the handoff says.
   assert.equal(quiet(held({ change: change({ merged: true, writtenSince: true, pipelineRedAfterMerge: true }) })), 0);
+});
+
+test("a check child's wait on a person is not that person's answer", () => {
+  // The check child ran the check, found the missing half is the person's
+  // act, and waited on them: after_integration predates that wait.
+  const blocked = task({
+    status: 'waiting',
+    heldByPerson: true,
+    leavesWait: false,
+    leaves: 'check',
+    check: { observe: 'the probe answers 200', where: 'the endpoint', visible_at: '2026-10-29T12:00:00Z' },
+    change: change({ merged: true, writtenSince: true }),
+  });
+  assert.equal(plan({ now, params, defaults: [], children: [], tasks: [blocked] }).filter((a) => { return a.act !== 'report'; }).length, 0);
+});
+
+test('a check applied with its date past is dated now, never in the past', () => {
+  const check = (visible_at) => {
+    return acts({ tasks: [task({ leaves: 'check', check: { observe: 'o', where: 'w', visible_at }, change: change({ merged: true }) })] }, 'move_task')[0].until;
+  };
+  assert.equal(check('2026-10-29T12:00:00Z'), now);
+  assert.equal(check('2026-11-02T12:00:00Z'), '2026-11-02T12:00:00Z');
 });
 
 test("the tick's own wait for what integrating leaves is read again when the Closing evidence gives the agent the choice", () => {
