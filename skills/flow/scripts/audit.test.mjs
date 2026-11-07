@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { report } from './audit.mjs';
+import { costliestFromFiles, report, withoutTicks } from './audit.mjs';
 
 test('no total of its own (health.mjs gives it); spend by agent costliest first, the three costliest tasks, runs on no task and lingering runs', () => {
   const lines = report({
@@ -25,3 +25,44 @@ test('no total of its own (health.mjs gives it); spend by agent costliest first,
   assert.equal(lines[6], 'Runs still open after every task they worked on closed: flow child https://s/1');
 });
 
+
+test('a task\'s spend leaves the tick out, since the tick takes every task it delegates', () => {
+  const lines = report({
+    agentsThis: { groups: [] },
+    agentsBefore: { groups: [] },
+    tasksThis: { groups: [
+      { key: 'task_a', totals: { runs: 2, unpriced: 0, cost_usd: 1.3 } },
+      { key: 'task_b', totals: { runs: 2, unpriced: 0, cost_usd: 0.45 } },
+      { key: 'task_t', totals: { runs: 1, unpriced: 0, cost_usd: 0.4 } },
+    ] },
+    ticksThis: { groups: [
+      { key: 'task_a', totals: { runs: 1, unpriced: 0, cost_usd: 0.4 } },
+      { key: 'task_b', totals: { runs: 1, unpriced: 0, cost_usd: 0.4 } },
+      { key: 'task_t', totals: { runs: 1, unpriced: 0, cost_usd: 0.4 } },
+    ] },
+    titles: {},
+    unlinkedThis: { totals: { runs: 0, unpriced: 0 } },
+    unlinkedBefore: { totals: { runs: 0, unpriced: 0 } },
+    lingering: [],
+  });
+  const costliest = lines.filter((l) => { return l.startsWith('Costliest'); });
+  assert.equal(costliest.length, 2);
+  assert.ok(costliest[0].includes('task_a') && costliest[0].endsWith('1 run · $0.90'));
+  assert.ok(costliest[1].includes('task_b') && costliest[1].endsWith('1 run · $0.05'));
+});
+
+test('withoutTicks keeps a counter the tick did not report', () => {
+  const { groups } = withoutTicks({
+    tasks: { groups: [{ key: 'task_a', totals: { runs: 2, unpriced: 1, input_tokens: 100 } }] },
+    ticks: { groups: [{ key: 'task_a', totals: { runs: 1, unpriced: 1 } }] },
+  });
+  assert.deepEqual(groups, [{ key: 'task_a', totals: { runs: 1, unpriced: 0, input_tokens: 100 } }]);
+});
+
+test('without the key, the same lines come from two saved answers', () => {
+  const lines = costliestFromFiles({
+    all: { groups: [{ key: 'task_a', totals: { runs: 2, unpriced: 0, cost_usd: 1.3 } }] },
+    ticks: { groups: [{ key: 'task_a', totals: { runs: 1, unpriced: 0, cost_usd: 0.4 } }] },
+  });
+  assert.deepEqual(lines, ['Costliest task this week: [task_a](https://flow.ttoss.dev/app/tasks/task_a): 1 run · $0.90']);
+});
