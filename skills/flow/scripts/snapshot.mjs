@@ -30,7 +30,7 @@ const CLOSED = ['completed', 'cancelled', 'discarded', 'archived'];
 // The statuses a task with a change in flight can hold.
 const WORKED = ['active', 'waiting', 'calendar', 'blocked'];
 
-export const DEFAULT_PARAMS = { maxRuns: 2, staleAfterHours: 4, autoRounds: 1, reviewByAgent: false, reviewRequired: null, agentsMayIntegrate: true, focus: null, releaseQueue: null, leavesByAgent: null };
+export const DEFAULT_PARAMS = { maxRuns: 3, staleAfterHours: 4, autoRounds: 1, reviewByAgent: false, reviewRequired: null, agentsMayIntegrate: true, focus: null, releaseQueue: null, leavesByAgent: null };
 
 // The tick's own wait for a missing after_integration, by the words the
 // planner's reason carries, so a later tick can read it again when the

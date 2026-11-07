@@ -255,15 +255,14 @@ test('red checks that ran before the repair update the branch without a round', 
 });
 
 test('a conflict goes to a child before new work', () => {
-  const out = acts(
-    {
-      tasks: [
-        task({ id: 'task_new', status: 'active', candidate: true, rank: 0 }),
-        task({ id: 'task_c', change: change({ conflict: true }) }),
-      ],
-    },
-    'start_child',
-  );
+  const out = plan({
+    now,
+    params: { ...params, maxRuns: 3 },
+    tasks: [
+      task({ id: 'task_new', status: 'active', candidate: true, rank: 0 }),
+      task({ id: 'task_c', change: change({ conflict: true }) }),
+    ],
+  }).filter((a) => { return a.act === 'start_child' });
   assert.deepEqual(
     out.map((a) => { return [a.kind, a.tasks[0]] }),
     [
@@ -446,7 +445,7 @@ test('a stale unreadable child closes failed; a fresh one stays', () => {
 test('closing a child frees its slot', () => {
   const out = plan({
     now,
-    params,
+    params: { ...params, maxRuns: 3 },
     children: [
       {
         run: 'arun_1',
@@ -580,4 +579,20 @@ test('the limit holds only new work: very_high, a high bug, rounds and checks go
   const round = task({ id: 'task_r1', status: 'active', change: change({ url: 'https://github.com/o/r/pull/r1', checks: 'red', verdict: null }) });
   const acted = plan({ now, params: { ...params, maxRuns: 4, releaseQueue: 4 }, tasks: [...full, urgent, bug, round, fresh('task_n3')] });
   assert.deepEqual(acted.filter((a) => { return a.act === 'start_child' }).map((a) => { return a.tasks[0] }).sort(), ['task_n1', 'task_n2', 'task_r1']);
+});
+
+test('from Max runs 2 up, new work never takes the last free slot; what ages faster does', () => {
+  const report = plan({ now, params, tasks: [fresh('task_n1'), fresh('task_n2')] }).at(-1);
+  assert.deepEqual(started({ tasks: [fresh('task_n1'), fresh('task_n2')] }, { maxRuns: 2 }), ['task_n1']);
+  assert.equal(report.freeReason, 'kept for what ages faster');
+  assert.deepEqual(report.skipped, [{ task: 'task_n2', reason: 'the last free slot is kept for what ages faster' }]);
+  const conflict = task({ id: 'task_c', change: change({ conflict: true }) });
+  const both = plan({ now, params, tasks: [fresh('task_n1'), conflict] }).filter((a) => { return a.act === 'start_child' });
+  assert.deepEqual(both.map((a) => { return a.tasks[0] }), ['task_c']);
+  const urgent = plan({ now, params, tasks: [fresh('task_n1'), fresh('task_n2', { priority: 'very_high' })] }).filter((a) => { return a.act === 'start_child' });
+  assert.deepEqual(urgent.map((a) => { return a.tasks[0] }), ['task_n2']);
+});
+
+test('with Max runs 1 there is no slot to keep: new work takes the only one', () => {
+  assert.deepEqual(started({ tasks: [fresh('task_n1')] }, { maxRuns: 1 }), ['task_n1']);
 });
