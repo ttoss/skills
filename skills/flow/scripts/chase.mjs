@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 
 import { clientFromEnv, mapLimit, parseFlags } from './flow-api.mjs';
 import { load as loadParams } from './params.mjs';
-import { inReleaseQueue, urgencyTier } from './plan.mjs';
+import { effectivePriority, inReleaseQueue, urgencyTier } from './plan.mjs';
 import { run as readSnapshot } from './snapshot.mjs';
 
 // The Chase's digest (references/chase.md): what only a person can do to drain
@@ -38,7 +38,7 @@ const priorityRank = (priority) => {
 export const byTickOrder = (a, b) => {
   return urgencyTier(a) - urgencyTier(b)
     || Number(Boolean(b.change?.merged)) - Number(Boolean(a.change?.merged))
-    || priorityRank(a.priority) - priorityRank(b.priority)
+    || priorityRank(effectivePriority(a)) - priorityRank(effectivePriority(b))
     || (b.unblocks || 0) - (a.unblocks || 0)
     || String(a.since || '9999').localeCompare(String(b.since || '9999'));
 };
@@ -87,6 +87,7 @@ export const pick = ({ tasks, details = {}, decisions = [], limit = DEFAULT_LIMI
       who: who(t.waitsOn),
       what: wait?.reason || (t.change?.merged ? 'see the change in effect' : 'integrate the change'),
       priority: t.priority,
+      inherited: t.inherited ?? null,
       tags: t.tags,
       change: t.change,
       unblocks: detail.unblocks ?? 0,

@@ -24,6 +24,7 @@ import { fileURLToPath } from 'node:url';
 //                runtime: 'working' | 'idle' | 'failed' | 'gone' | null,
 //                handoff: bool }],          // its task closed or waits on gates or a person
 //   tasks: [{ id, status, priority, tags, rank, heldByPerson, inFocus,
+//             inherited: priority | null,   // held through an open commitment it blocks, above its own
 //             waitsOn: [holder],              // whom its waits are `on`
 //             candidate: bool,                // in get-next's ready candidates
 //             due: bool,                      // date_came, hold_cleared, or an external wait past until
@@ -65,11 +66,20 @@ const NONE = { acts: [], item: null };
 // step is its own task, delegated as new work once written.
 const STAGES = ['repair', 'integratedCheck', 'otherCheck', 'gates', 'new'];
 
+// The priority a task is worked by: what it inherits from an open commitment
+// it blocks, which Flow answers only when above its own, else its own. A
+// blocker of a very_high is as urgent as the very_high, or the work it holds
+// would wait on it while ranking first.
+export const effectivePriority = (task) => {
+  return task.inherited || task.priority || null;
+};
+
 export const urgencyTier = (task) => {
-  if (task.priority === 'very_high') {
+  const priority = effectivePriority(task);
+  if (priority === 'very_high') {
     return 0;
   }
-  if ((task.tags || []).includes('bug') && task.priority === 'high') {
+  if ((task.tags || []).includes('bug') && priority === 'high') {
     return 1;
   }
   return 2;

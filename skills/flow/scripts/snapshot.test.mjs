@@ -162,3 +162,16 @@ test('every task whose change is out is read, past the slices’ limit; a row Fl
   assert.deepEqual(snap.needs.changes, [{ task: 't_pr', url: 'https://gh/pr/7' }]);
   assert.deepEqual(snap.needs.unread, [{ task: 't_retracted', error: 'listed by ref_role=implements without a live implements reference' }]);
 });
+
+test('the priority a row inherits from what it blocks reaches the planner, which works the blocker of a very_high first', () => {
+  const snap = build({
+    ...base,
+    candidates: [row('t_high', { priority: 'high' }), row('t_blocker', { inherited_priority: { priority: 'very_high', from: 't_release' } })],
+  });
+  const by = Object.fromEntries(snap.tasks.map((t) => { return [t.id, t]; }));
+  assert.deepEqual([by.t_blocker.priority, by.t_blocker.inherited, by.t_high.inherited], [null, 'very_high', null]);
+  const params = { ...snap.params, maxRuns: 2, releaseQueue: 0 };
+  const started = plan({ ...snap, params, tasks: snap.tasks.map((t) => { return { ...t, brief: 'ready' }; }) })
+    .filter((a) => { return a.act === 'start_child'; }).map((a) => { return a.tasks[0]; });
+  assert.deepEqual(started, ['t_blocker']);
+});
