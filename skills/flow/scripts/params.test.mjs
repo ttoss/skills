@@ -59,3 +59,9 @@ test('Review fails closed: none is no review, a reviewer named is one, unstated 
   const r = resolve({ file: 'f', main: { Reviewer: '`acme-reviewer[bot]`, `ana`' } });
   assert.deepEqual(r.reviewers, ['acme-reviewer[bot]', 'ana']);
 });
+
+test('with no Max runs anywhere, the default is 3', () => {
+  const main = items(FILE.replace('max runs 3, ', ''));
+  const r = resolve({ file: 'f', main, runtime: {} });
+  assert.deepEqual([r.params.maxRuns, r.sources.maxRuns], [3, 'default']);
+});

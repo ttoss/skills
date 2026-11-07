@@ -113,7 +113,7 @@ export const resolve = ({ file, main, runtime = {} }) => {
       ['Max runs', intOf(main['Max runs'])],
       ['Runtime file: Max runs', intOf(runtime['Max runs'])],
       ['Runtime: "max runs N"', intOf((/max runs (\d+)/i.exec(main.Runtime || '') || [])[1])],
-    ], 2),
+    ], 3),
     staleAfterHours: pick('staleAfterHours', [
       ['Stale after', hours(main['Stale after'])],
       ['Runtime file: Stale after', hours(runtime['Stale after'])],
