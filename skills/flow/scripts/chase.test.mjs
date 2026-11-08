@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { digest, pick, run, shorten } from './chase.mjs';
+import { digest, pick, run, shorten, unconfirmedOf } from './chase.mjs';
 
 const members = [
   { user_id: 'user_pedro', email: 'pedro@example.com', role: 'admin', pending: false },
@@ -46,17 +46,23 @@ test('the order is the tick’s: very_high, then a high bug, then integrated cha
   assert.deepEqual(out.person.map((i) => { return i.id; }), ['very_high', 'high_bug', 'integrated', 'open_medium', 'open_frees', 'open_low']);
 });
 
-test('each list holds as many lines as the limit; over it no decision is sent, within it the decisions follow', () => {
+test('each list is whole; the digest shows as many lines as the limit; over it no decision is sent, within it the decisions follow', () => {
   const tasks = Array.from({ length: 25 }, (_, i) => { return t(`t${i}`, { waitsOn: ['user_pedro'] }); });
   const decisions = Array.from({ length: 14 }, (_, i) => {
     return { id: `d${i}`, title: `decide ${i}`, url: `u${i}`, readiness: { blocked_by: [{ via: 'wait', on: 'user_ana', reason: 'pick one' }] } };
   });
   const over = pick({ tasks, decisions, limit: 10, members });
-  assert.equal(over.person.length, 10);
+  assert.equal(over.person.length, 25);
   assert.equal(over.personTotal, 25);
   assert.equal(over.decisions, null);
+  assert.match(digest({ date: 'd', picked: over }), /\(10 of 25\)/);
+  // --all shows every line, and still sends no decision over the limit.
+  const everything = digest({ date: 'd', picked: over, show: Infinity });
+  assert.match(everything, /\(25 of 25\)/);
+  assert.doesNotMatch(everything, /Decisions/);
   const within = pick({ tasks: tasks.slice(0, 12), decisions, limit: 12, members });
-  assert.deepEqual([within.person.length, within.decisions.length, within.decisionsTotal], [12, 12, 14]);
+  assert.deepEqual([within.person.length, within.decisions.length, within.decisionsTotal], [12, 14, 14]);
+  assert.match(digest({ date: 'd', picked: within }), /## Decisions the team owes \(12 of 14\)/);
   assert.deepEqual(within.decisions[0], { id: 'd0', title: 'decide 0', url: 'u0', who: 'ana@example.com', what: 'pick one' });
 });
 
@@ -88,10 +94,11 @@ test('run reads the tick’s snapshot and asks for decisions only within the lim
   };
   const all = async () => { return [pr('t_pr')]; };
   const extra = { params: { releaseQueue: 5 }, tasks: { t_pr: { change: { url: 'https://gh/pr/9', merged: false, closed: false, draft: false } } } };
-  const out = await run({ client: { get, all }, project: 'proj_x', now: '2026-11-05T12:00:00Z', extra });
-  assert.deepEqual([out.queue, out.person, out.decisions], [{ now: 1, limit: 5 }, 1, 0]);
+  const { result: out } = await run({ client: { get, all }, project: 'proj_x', now: '2026-11-05T12:00:00Z', extra });
+  assert.deepEqual([out.queue, out.personTotal, out.decisionsTotal], [{ now: 1, limit: 5 }, 1, 0]);
+  assert.deepEqual(out.person.map((i) => { return [i.id, i.who, i.change]; }), [['t_pr', 'pedro@example.com', 'https://gh/pr/9']]);
   assert.ok(asked.some(([path, q]) => { return path === '/next' && q.status === 'waiting'; }));
-  const over = await run({ client: { get, all }, project: 'proj_x', now: '2026-11-05T12:00:00Z', extra: { ...extra, params: { releaseQueue: 0 } } });
+  const { result: over } = await run({ client: { get, all }, project: 'proj_x', now: '2026-11-05T12:00:00Z', extra: { ...extra, params: { releaseQueue: 0 } } });
   assert.equal(over.decisions, null);
 });
 
@@ -126,4 +133,35 @@ test('a change whose task inherits a very_high from what it blocks is listed fir
   const details = Object.fromEntries(tasks.map((x) => { return [x.id, detail(x.id, 'r')]; }));
   const out = pick({ tasks, details, members });
   assert.deepEqual(out.person.map((i) => { return i.id; }), ['blocker', 'open_high', 'open_low', 'open_plain']);
+});
+
+test('a task whose change the host could not read is not counted, and the digest says how many and where', () => {
+  const tasks = [t('t_read', { waitsOn: ['user_pedro'] }), t('t_blind', { change: null })];
+  const host = [
+    { task: 't_blind', url: 'https://github.com/o/secret/pull/1', repo: 'o/secret', error: 'HTTP 404' },
+    { task: 't_read', url: 'https://github.com/o/secret/pull/2', repo: 'o/secret', error: 'HTTP 404' },
+    { repo: 'o/secret', error: 'HTTP 404' },
+  ];
+  const unconfirmed = unconfirmedOf({ tasks, host });
+  assert.deepEqual(unconfirmed, [{ task: 't_blind', urls: ['https://github.com/o/secret/pull/1'], repos: ['o/secret'] }]);
+  const text = digest({ date: 'd', picked: pick({ tasks, details: { t_read: detail('t_read', 'merge it') }, members }), unconfirmed });
+  assert.match(text, /Not counted: 1 task with a change the code host could not read \(o\/secret\), so the queue may be larger\./);
+});
+
+test('a saved snapshot is read instead of Flow and the code host, and a listed row needs no get-task', async () => {
+  const asked = [];
+  const get = async (path, query = {}) => {
+    asked.push(path);
+    if (path === '/projects/proj_x') {
+      return { members };
+    }
+    return { tasks: [] };
+  };
+  const all = async () => { throw new Error('no listing with a saved snapshot'); };
+  const snapshot = { now: '2026-11-05T12:00:00Z', params: { releaseQueue: 5 }, tasks: [t('t_pr', { waitsOn: ['user_pedro'] })], needs: { host: [] } };
+  const rows = { t_pr: { id: 't_pr', title: 'Ship it', url: 'https://flow/app/tasks/t_pr', unblocks: 2, readiness: { blocked_by: [{ via: 'wait', on: 'user_pedro', reason: 'merge it' }] } } };
+  const { result, saved } = await run({ client: { get, all }, project: 'proj_x', now: snapshot.now, saved: { project: 'proj_x', snapshot, rows } });
+  assert.deepEqual(asked, ['/projects/proj_x', '/next']);
+  assert.deepEqual(result.person.map((i) => { return [i.title, i.what, i.unblocks]; }), [['Ship it', 'merge it', 2]]);
+  assert.deepEqual(saved, { project: 'proj_x', snapshot, rows });
 });

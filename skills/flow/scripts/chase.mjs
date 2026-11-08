@@ -1,4 +1,4 @@
-import { readFileSync, realpathSync } from 'node:fs';
+import { readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { clientFromEnv, mapLimit, parseFlags } from './flow-api.mjs';
@@ -13,12 +13,17 @@ import { run as readSnapshot } from './snapshot.mjs';
 // writes nothing. The model records the run, translates the words and delivers
 // the digest.
 //
-// Usage: node chase.mjs --root <repo dir> [--now <ISO 8601>]
+// Usage: node chase.mjs --root <repo dir> [--now <ISO 8601>] [--all]
 //   reads the parameters there (project, Release queue, repos)
 //   and the code host with `gh`; or --project <proj_…> [--extra <file>]
 //   [--release-queue 20], with what the code host knows in the
 //   file as snapshot.mjs takes it.
-// Output: JSON `{ digest, queue: { now, limit }, person, decisions }`.
+// --all shows every line in the digest; the limit still decides whether
+//   decisions are read. --save-snapshot <file> keeps what was read, and
+//   --snapshot <file> reads it back instead of Flow and the code host, so a
+//   second cut of the same digest costs no read. Progress goes to stderr.
+// Output: JSON `{ digest, queue: { now, limit }, person: [...], personTotal,
+//   decisions: [...] | null, decisionsTotal, unconfirmed: [...], needs }`.
 
 const DEFAULT_LIMIT = 20;
 const PRIORITY = ['very_high', 'high', 'medium', 'low', 'very_low'];
@@ -104,13 +109,13 @@ export const pick = ({ tasks, details = {}, decisions = [], limit = DEFAULT_LIMI
   const answers = decisions.filter((row) => {
     return !out.has(row.id) && (row.readiness?.blocked_by || []).some((b) => { return b.via === 'wait' && b.on; });
   });
-  const owed = within ? answers.slice(0, limit).map((row) => {
+  const owed = within ? answers.map((row) => {
     const wait = (row.readiness?.blocked_by || []).find((b) => { return b.via === 'wait' && b.on; });
     return { id: row.id, title: row.title, url: row.url, who: who([wait.on]), what: wait.reason || 'decide' };
   }) : null;
   return {
     queue: { now: queue.length, limit },
-    person: person.slice(0, limit),
+    person,
     personTotal: person.length,
     decisions: owed,
     decisionsTotal: within ? answers.length : null,
@@ -141,33 +146,86 @@ const lineOf = (item) => {
   return `- [${item.title}](${item.url}) — ${item.who} — ${shorten(item.what)}`;
 };
 
-/** The digest text: the queue against its limit, then the two lists. */
-export const digest = ({ date, picked }) => {
+/**
+ * The tasks whose change the code host could not read: their place in the
+ * release queue is unknown, so they are not counted, and the digest says so.
+ */
+export const unconfirmedOf = ({ tasks, host = [] }) => {
+  const counted = new Set(tasks.filter((t) => { return t.change; }).map((t) => { return t.id; }));
+  const out = new Map();
+  for (const e of host) {
+    if (e.task && e.url && !counted.has(e.task)) {
+      const entry = out.get(e.task) || { task: e.task, urls: [], repos: [] };
+      entry.urls.push(e.url);
+      if (e.repo && !entry.repos.includes(e.repo)) {
+        entry.repos.push(e.repo);
+      }
+      out.set(e.task, entry);
+    }
+  }
+  return [...out.values()];
+};
+
+/**
+ * The digest text: the queue against its limit, then the two lists, each cut
+ * at `show` lines (the limit, or every line with --all).
+ */
+export const digest = ({ date, picked, show = picked.queue.limit, unconfirmed = [] }) => {
   const { queue, person, personTotal, decisions, decisionsTotal } = picked;
   const lines = [`# Chase — ${date}`, ''];
   lines.push(queue.now > queue.limit
     ? `Release queue: ${queue.now}, limit ${queue.limit}. The tick starts no new work until it is within the limit; these are what only a person can move.`
     : `Release queue: ${queue.now}, limit ${queue.limit}. The tick starts new work; the decisions below hold what it would start next.`);
-  lines.push('', `## Only a person can move these (${person.length} of ${personTotal})`);
-  lines.push(...(person.length ? person.map(lineOf) : ['- none']));
+  if (unconfirmed.length) {
+    const repos = [...new Set(unconfirmed.flatMap((u) => { return u.repos; }))];
+    lines.push('', `Not counted: ${unconfirmed.length} task${unconfirmed.length === 1 ? '' : 's'} with a change the code host could not read${repos.length ? ` (${repos.join(', ')})` : ''}, so the queue may be larger.`);
+  }
+  const shown = person.slice(0, show);
+  lines.push('', `## Only a person can move these (${shown.length} of ${personTotal})`);
+  lines.push(...(shown.length ? shown.map(lineOf) : ['- none']));
   if (decisions) {
-    lines.push('', `## Decisions the team owes (${decisions.length} of ${decisionsTotal})`);
-    lines.push(...(decisions.length ? decisions.map(lineOf) : ['- none']));
+    const owed = decisions.slice(0, show);
+    lines.push('', `## Decisions the team owes (${owed.length} of ${decisionsTotal})`);
+    lines.push(...(owed.length ? owed.map(lineOf) : ['- none']));
   }
   return lines.join('\n');
 };
 
-/** Every read the digest needs, then the digest. */
-export const run = async ({ client, project, now = new Date().toISOString(), extra = {}, repos = null, reviewers = [], gh, limit = null }) => {
+// A line of the JSON: what the digest shows, and the change by its URL.
+const itemOf = ({ change, tags, inherited, ...item }) => {
+  return { ...item, ...(change ? { change: change.url, merged: Boolean(change.merged) } : {}) };
+};
+
+/**
+ * Every read the digest needs, then the digest. `saved` is a snapshot kept by
+ * --save-snapshot, read instead of Flow and the code host; `all` shows every
+ * line without changing what the limit decides.
+ */
+export const run = async ({ client, project, now = new Date().toISOString(), extra = {}, repos = null, reviewers = [], gh, limit = null, all = false, saved = null, progress = () => {} }) => {
   const { get } = client;
-  const [projectAnswer, snapshot] = await Promise.all([
+  const [projectAnswer, read] = await Promise.all([
     get(`/projects/${project}`),
-    readSnapshot({ client, project, now, extra, repos, reviewers, gh }),
+    // Only where each change stands: the release queue is counted by it, and
+    // checks and verdicts are the tick's to act on, not the Chase's.
+    saved ? saved : readSnapshot({ client, project, now, extra, repos, reviewers, gh, host: 'state', progress }).then((snapshot) => {
+      return { snapshot, rows: snapshot.rows };
+    }),
   ]);
+  const { snapshot, rows = {} } = read;
   const queueLimit = limit ?? snapshot.params.releaseQueue ?? DEFAULT_LIMIT;
   const waitingOnPerson = snapshot.tasks.filter((t) => { return inReleaseQueue(t) && (t.waitsOn || []).length > 0; });
-  const details = Object.fromEntries(await mapLimit(waitingOnPerson, 4, async (t) => {
+  // Each row Flow listed already carries its title, readiness and unblocks;
+  // get-task only for one it did not.
+  const missing = waitingOnPerson.filter((t) => { return !rows[t.id]?.readiness; });
+  if (missing.length) {
+    progress(`flow: ${missing.length} tasks to detail`);
+  }
+  const fetched = Object.fromEntries(await mapLimit(missing, 4, async (t) => {
     return [t.id, await get(`/tasks/${t.id}`)];
+  }));
+  const details = Object.fromEntries(waitingOnPerson.map((t) => {
+    const row = rows[t.id];
+    return [t.id, fetched[t.id] || { task: { title: row.title, url: row.url }, unblocks: row.unblocks ?? 0, readiness: row.readiness }];
   }));
   const within = snapshot.tasks.filter(inReleaseQueue).length <= queueLimit;
   const decisions = within
@@ -177,12 +235,19 @@ export const run = async ({ client, project, now = new Date().toISOString(), ext
     tasks: snapshot.tasks, details, decisions: decisions.tasks || [], limit: queueLimit,
     members: projectAnswer.members, teams: projectAnswer.teams,
   });
+  const unconfirmed = unconfirmedOf({ tasks: snapshot.tasks, host: snapshot.needs?.host });
   return {
-    digest: digest({ date: now.slice(0, 10), picked }),
-    queue: picked.queue,
-    person: picked.personTotal,
-    decisions: picked.decisionsTotal,
-    needs: snapshot.needs,
+    result: {
+      digest: digest({ date: now.slice(0, 10), picked, show: all ? Infinity : queueLimit, unconfirmed }),
+      queue: picked.queue,
+      person: picked.person.map(itemOf),
+      personTotal: picked.personTotal,
+      decisions: picked.decisions,
+      decisionsTotal: picked.decisionsTotal,
+      unconfirmed,
+      needs: snapshot.needs,
+    },
+    saved: { project, snapshot, rows },
   };
 };
 
@@ -195,23 +260,36 @@ if (isMain) {
   const p = f.root ? loadParams(f.root) : null;
   const project = f.project || p?.projectId;
   if (!project) {
-    process.stderr.write('usage: chase.mjs (--root <repo dir> | --project <proj_…> [--extra <file>]) [--release-queue 20] [--now <ISO>]\n');
+    process.stderr.write('usage: chase.mjs (--root <repo dir> | --project <proj_…> [--extra <file>]) [--release-queue 20] [--all] [--save-snapshot <file> | --snapshot <file>] [--now <ISO>]\n');
     process.exit(2);
   }
   const extra = f.extra ? JSON.parse(readFileSync(f.extra, 'utf8')) : {};
   if (p && !extra.params) {
     extra.params = p.params;
   }
+  const saved = typeof f.snapshot === 'string' ? JSON.parse(readFileSync(f.snapshot, 'utf8')) : null;
+  if (saved && saved.project !== project) {
+    process.stderr.write(`--snapshot holds ${saved.project}, not ${project}\n`);
+    process.exit(2);
+  }
   run({
     client: clientFromEnv(),
     project,
-    now: f.now,
+    now: f.now ?? saved?.snapshot.now,
     extra,
     repos: p?.repos,
     reviewers: p?.reviewers ?? [],
     limit: f['release-queue'] ? Number(f['release-queue']) : null,
+    all: f.all === true,
+    saved,
+    progress: (line) => { process.stderr.write(`${line}\n`); },
   }).then(
-    (result) => { process.stdout.write(`${JSON.stringify(result, null, 2)}\n`); },
+    ({ result, saved: kept }) => {
+      if (typeof f['save-snapshot'] === 'string') {
+        writeFileSync(f['save-snapshot'], JSON.stringify(kept));
+      }
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    },
     (error) => { process.stderr.write(`${error.message}\n`); process.exit(1); },
   );
 }

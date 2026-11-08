@@ -175,3 +175,49 @@ test('the priority a row inherits from what it blocks reaches the planner, which
     .filter((a) => { return a.act === 'start_child'; }).map((a) => { return a.tasks[0]; });
   assert.deepEqual(started, ['t_blocker']);
 });
+
+test('a listed row answers what get-task would; the Chase reads one call per change, skips a repo it cannot read from the start, and keeps a task’s readable change', async () => {
+  const asked = [];
+  const get = async (path, query = {}) => {
+    asked.push(path);
+    if (path === '/next') {
+      return { tasks: [], counts: {} };
+    }
+    if (path === '/agent-runs') {
+      return { runs: [] };
+    }
+    throw new Error(`unexpected ${path}`);
+  };
+  const listed = (id, urls) => {
+    return { ...row(id, { status: 'waiting' }), role_refs: urls.map((url) => { return { role: 'implements', url }; }), after_integration: null, updated_at: now };
+  };
+  const all = async () => {
+    return [
+      listed('t_both', ['https://github.com/o/open/pull/1', 'https://github.com/o/secret/pull/1']),
+      listed('t_blind', ['https://github.com/o/secret/pull/2']),
+      listed('t_blind2', ['https://github.com/o/secret/pull/3']),
+    ];
+  };
+  const calls = [];
+  const gh = async (path) => {
+    calls.push(path);
+    if (path.startsWith('repos/o/secret')) {
+      throw Object.assign(new Error('gh failed'), { stderr: 'gh: Not Found (HTTP 404)' });
+    }
+    return { title: 'x', body: '', draft: false, merged: false, state: 'open', created_at: now };
+  };
+  const lines = [];
+  const snap = await run({ client: { get, all }, project: 'proj_x', now, repos: ['o/open'], gh, host: 'state', progress: (l) => { lines.push(l); } });
+  // No get-task, no read of the default branch, no runs per task.
+  assert.deepEqual([...new Set(asked)].sort(), ['/agent-runs', '/next']);
+  assert.equal(asked.filter((p) => { return p === '/agent-runs'; }).length, 3);
+  assert.deepEqual(snap.tasks.find((x) => { return x.id === 't_both'; }).change.url, 'https://github.com/o/open/pull/1');
+  assert.equal(snap.tasks.find((x) => { return x.id === 't_blind'; }).change, null);
+  // The unreadable repo is asked once, before any of its changes.
+  assert.deepEqual(calls.filter((c) => { return c.startsWith('repos/o/secret'); }), ['repos/o/secret']);
+  assert.deepEqual(snap.needs.host.map((e) => { return [e.task ?? null, e.repo]; }).sort(), [[null, 'o/secret'], ['t_blind', 'o/secret'], ['t_blind2', 'o/secret'], ['t_both', 'o/secret']]);
+  assert.ok(lines.includes('flow: 3 tasks with a change out') && lines.includes('host: 4/4 changes'));
+  assert.ok(lines.includes('host: not readable by this session: o/secret'));
+  assert.equal(snap.rows.t_both.role_refs.length, 2);
+  assert.ok(!('rows' in JSON.parse(JSON.stringify(snap))));
+});
