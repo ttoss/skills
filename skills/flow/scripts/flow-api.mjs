@@ -1,13 +1,14 @@
-// The one way the routines' scripts read Flow: GET only, with the API key in
-// FLOW_API_KEY (a key restricted to the project; see flow-setup's
-// prerequisites). No script writes: writes stay with the model, through the
-// MCP tools, where the standing decision and `basis` apply.
+// The one way the scripts reach Flow, with the API key in FLOW_API_KEY (a key
+// restricted to the project; see flow-setup's prerequisites). They read, and
+// the one write is session-run.mjs's own run, which carries no `basis`: task
+// writes stay with the model, through the MCP tools, where the standing
+// decision and `basis` apply.
 
 export const DEFAULT_BASE = 'https://flow.ttoss.dev';
 
 export class FlowError extends Error {
-  constructor({ path, status, detail = '' }) {
-    super(`GET ${path} answered ${status}${status === 404 ? ': the key cannot reach it' : ''}${detail ? `: ${detail}` : ''}`);
+  constructor({ method = 'GET', path, status, detail = '' }) {
+    super(`${method} ${path} answered ${status}${status === 404 ? ': the key cannot reach it' : ''}${detail ? `: ${detail}` : ''}`);
     this.status = status;
   }
 }
@@ -15,7 +16,7 @@ export class FlowError extends Error {
 /**
  * A client over `/api/v1`. `get(path, query)` repeats a query key for each
  * value of an array; `all(path, query, field)` follows `next_cursor` to the
- * end and returns every row of `field`.
+ * end and returns every row of `field`; `post(path, body)` sends JSON.
  */
 export const createClient = ({ key, base = DEFAULT_BASE, fetchImpl = fetch }) => {
   if (!key) {
@@ -56,7 +57,21 @@ export const createClient = ({ key, base = DEFAULT_BASE, fetchImpl = fetch }) =>
     } while (cursor);
     return rows;
   };
-  return { get, all };
+  // Not retried: a session hook writes again at the next turn's end.
+  const post = async (path, body) => {
+    const url = new URL(`/api/v1${path}`, base);
+    const res = await fetchImpl(url, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${key}`, accept: 'application/json', 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const detail = res.status === 400 ? (await res.text().catch(() => { return ''; })).slice(0, 300) : '';
+      throw new FlowError({ method: 'POST', path: url.pathname, status: res.status, detail });
+    }
+    return res.json();
+  };
+  return { get, all, post };
 };
 
 /** The client the scripts use when run from the command line. */

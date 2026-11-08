@@ -17,6 +17,18 @@ The tick and each child run in a cloud session of their own, through the `claude
 | --- | --- |
 | Integrate | `merge_pull_request` with `merge_method` the `Merge rule`'s and `expectedHeadSha` the head the verdict is for |
 
+**Run records** are a hook: [`scripts/session-run.mjs`](../scripts/session-run.mjs) records every session's run at its session URL, creating it at the start, writing its `model` and `usage` at each turn's end and closing it `completed` at the end unless something else already closed it. A tick or a child writing the same address adds its `agent`, `parent`, `works_on` and `authority`. The key is `FLOW_API_KEY` in the environment; without it the hook writes nothing. `flow-setup` adds it to the repo's `.claude/settings.json`, with `<proj_id>` the project:
+
+```json
+{
+  "hooks": {
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/.claude/skills/flow/scripts/session-run.mjs\" --project <proj_id>", "timeout": 15 }] }],
+    "Stop": [{ "hooks": [{ "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/.claude/skills/flow/scripts/session-run.mjs\" --project <proj_id>", "timeout": 15 }] }],
+    "SessionEnd": [{ "hooks": [{ "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/.claude/skills/flow/scripts/session-run.mjs\" --project <proj_id>", "timeout": 15 }] }]
+  }
+}
+```
+
 A session's `usage` is its `external_metadata.usage`, with `peak_context` its `context_usage.used_tokens`, and a session reports it only after its turn ends, so a tick never knows its own.
 
 **Each run**, last in § 2 of a tick and last before any other routine's run closes: the last run under its `agent` (§ 0) and, for a tick, that run's children (`list-agent-runs` with `parent`), each closed with no `usage` and addressed by a session URL with no query, get `usage` from `get_session` on that session, then `archive_session`. A child the tick ends is archived by End. A session without `get_session` and `archive_session`, as a routine fires with only the trigger tools, `send_later` and `add_repo`, skips this step: those runs keep no `usage` until a session that has them runs it, and a child it cannot read is left alone, as § 2 says.
