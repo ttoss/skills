@@ -2,7 +2,7 @@ import { readFileSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { clientFromEnv, mapLimit, parseFlags } from './flow-api.mjs';
-import { readChange, readDefault } from './host.mjs';
+import { ghApi, parseChangeUrl, readChange, readChangeState, readDefault, unreadable } from './host.mjs';
 import { load as loadParams } from './params.mjs';
 
 // The tick's snapshot (flow/SKILL.md section 1), in plan.mjs's schema, read
@@ -128,8 +128,30 @@ export const build = ({ now, candidates, slices, dueIds, children, mine, childTa
   };
 };
 
-/** Every read, then the snapshot. */
-export const run = async ({ client, project, now = new Date().toISOString(), extra = {}, repos = null, reviewers = [], gh }) => {
+// What a `ref_role` row already answers of `get-task`: the live
+// `implements` references, what integrating leaves and when it was written.
+// Null on a deployment whose rows do not carry `role_refs`.
+const answerOfRow = (row) => {
+  if (!Array.isArray(row.role_refs)) {
+    return null;
+  }
+  return {
+    task: { status: row.status, title: row.title, url: row.url, updated_at: row.updated_at, after_integration: row.after_integration ?? null },
+    references: row.role_refs,
+  };
+};
+
+const firstLine = (error) => {
+  return String(error.stderr || error.message).split('\n')[0].slice(0, 200);
+};
+
+/**
+ * Every read, then the snapshot. `host: 'state'` reads only where each change
+ * stands (open, draft, integrated, closed), one `gh` call each: what the
+ * release queue is counted by, and all the Chase needs. `progress` hears a line
+ * per stage, for stderr.
+ */
+export const run = async ({ client, project, now = new Date().toISOString(), extra = {}, repos = null, reviewers = [], gh, host = 'full', progress = () => {} }) => {
   const { get, all } = client;
   const slice = (name) => {
     return get('/next', { project, slice: name, assignee: 'any', limit: 20 });
@@ -147,18 +169,33 @@ export const run = async ({ client, project, now = new Date().toISOString(), ext
     // that recorded its run holds the task as surely as a child does.
     repos?.length ? get('/agent-runs', { project, status: 'running', limit: 100 }) : { runs: [] },
   ]);
+  progress(`flow: ${implemented.length} tasks with a change out`);
   const sliced = [...waiting.tasks, ...blocked.tasks, ...dateCame.tasks, ...holdCleared.tasks];
-  const ids = [...new Set([...sliced, ...implemented].map((t) => { return t.id; }).concat(children.runs.flatMap((r) => { return r.works_on || []; })))];
+  // A listed row already answers what get-task would: each get-task loads the
+  // whole graph, so reading it again per row was most of the Flow side's time.
+  const full = {};
+  for (const row of implemented) {
+    const answer = answerOfRow(row);
+    if (answer) {
+      full[row.id] = answer;
+    }
+  }
+  const ids = [...new Set([...sliced, ...implemented].map((t) => { return t.id; }).concat(children.runs.flatMap((r) => { return r.works_on || []; })))]
+    .filter((id) => { return !full[id]; });
   // A task Flow cannot answer right now is named in `needs.unread`, never guessed.
   const unread = [];
-  const full = Object.fromEntries((await mapLimit(ids, 4, async (id) => {
+  let read = 0;
+  await mapLimit(ids, 4, async (id) => {
     try {
-      return [id, await get(`/tasks/${id}`)];
+      full[id] = await get(`/tasks/${id}`);
     } catch (error) {
       unread.push({ task: id, error: error.message });
-      return null;
     }
-  })).filter(Boolean));
+    read += 1;
+    if (read % 20 === 0 || read === ids.length) {
+      progress(`flow: ${read}/${ids.length} tasks read`);
+    }
+  });
   const implementsOf = Object.fromEntries(Object.entries(full).map(([id, answer]) => {
     return [id, (answer.references || []).filter((r) => { return r.role === 'implements' && !r.retracted_at; }).map((r) => { return r.url; })];
   }).filter(([, urls]) => { return urls.length; }));
@@ -179,22 +216,32 @@ export const run = async ({ client, project, now = new Date().toISOString(), ext
   let repairRows = [];
   if (repos?.length) {
     const opts = { ...(gh ? { gh } : {}), reviewers };
-    const defaults = await mapLimit(repos, 2, async (repo) => {
-      try {
-        return await readDefault(repo, opts);
-      } catch (error) {
-        hostErrors.push({ repo, error: String(error.stderr || error.message).split('\n')[0].slice(0, 200) });
-        return null;
-      }
-    });
-    const repairs = await get('/tasks', { project, tag: 'repair', status: ['active', 'waiting', 'blocked'], limit: 100 });
-    repairRows = repairs.tasks || [];
-    for (const d of defaults.filter(Boolean)) {
-      for (const task of repairs.tasks || []) {
-        const refs = (await get(`/tasks/${task.id}`)).references || [];
-        if (refs.some((r) => { return r.url.includes(`github.com/${d.repo}/`); })) {
-          d.repairTask = task.id;
-          break;
+    // A repo the session cannot read fails every change in it the same way:
+    // named once, and its changes are not asked for again.
+    const blind = new Map();
+    let defaults = [];
+    if (host === 'full') {
+      defaults = await mapLimit(repos, 2, async (repo) => {
+        try {
+          return await readDefault(repo, opts);
+        } catch (error) {
+          hostErrors.push({ repo, error: firstLine(error) });
+          if (unreadable(error)) {
+            blind.set(repo, firstLine(error));
+          }
+          return null;
+        }
+      });
+      const repairs = await get('/tasks', { project, tag: 'repair', status: ['active', 'waiting', 'blocked'], limit: 100 });
+      repairRows = repairs.tasks || [];
+      // Each repair task read once, not once per repo.
+      const repairRefs = Object.fromEntries(await mapLimit(repairRows, 4, async (task) => {
+        return [task.id, (full[task.id] || await get(`/tasks/${task.id}`)).references || []];
+      }));
+      for (const d of defaults.filter(Boolean)) {
+        const found = repairRows.find((task) => { return repairRefs[task.id].some((r) => { return r.url.includes(`github.com/${d.repo}/`); }); });
+        if (found) {
+          d.repairTask = found.id;
         }
       }
     }
@@ -202,31 +249,72 @@ export const run = async ({ client, project, now = new Date().toISOString(), ext
     const red = new Map((extra.defaults || []).map((d) => { return [d.repo, d.red]; }));
     const enforced = new Map((extra.defaults || []).map((d) => { return [d.repo, d.reviewEnforced ?? null]; }));
     const holders = new Set([...children.runs, ...running.runs].flatMap((r) => { return r.works_on || []; }));
-    await mapLimit(Object.entries(implementsOf), 4, async ([task, urls]) => {
-      if (extra.tasks[task]?.change) {
+    const toRead = Object.entries(implementsOf).filter(([task]) => { return !extra.tasks[task]?.change; });
+    // Each repo the changes live in is asked once before any change: one the
+    // session cannot read (the repo outside the session's access, say) is
+    // skipped from the start, not refused once per change.
+    const known = new Set([...blind.keys(), ...defaults.filter(Boolean).map((d) => { return d.repo; })]);
+    const unknown = [...new Set(toRead.flatMap(([, urls]) => { return urls.map((u) => { return parseChangeUrl(u)?.repo; }); }).filter(Boolean))]
+      .filter((repo) => { return !known.has(repo); });
+    await mapLimit(unknown, 4, async (repo) => {
+      try {
+        await (gh || ghApi)(`repos/${repo}`);
+      } catch (error) {
+        if (unreadable(error)) {
+          blind.set(repo, firstLine(error));
+          hostErrors.push({ repo, error: firstLine(error) });
+        }
+      }
+    });
+    if (blind.size) {
+      progress(`host: not readable by this session: ${[...blind.keys()].join(', ')}`);
+    }
+    const total = toRead.reduce((n, [, urls]) => { return n + urls.length; }, 0);
+    let done = 0;
+    const readOne = async (task, url) => {
+      const repo = parseChangeUrl(url)?.repo;
+      try {
+        if (repo && blind.has(repo)) {
+          throw Object.assign(new Error(`${repo} is not readable by this session: ${blind.get(repo)}`), { skipped: true });
+        }
+        return host === 'state' ? await readChangeState(url, opts) : await readChange(url, opts);
+      } catch (error) {
+        if (repo && !error.skipped && unreadable(error)) {
+          blind.set(repo, firstLine(error));
+        }
+        hostErrors.push({ task, url, ...(repo ? { repo } : {}), error: firstLine(error) });
+        return null;
+      } finally {
+        done += 1;
+        if (done % 10 === 0 || done === total) {
+          progress(`host: ${done}/${total} changes`);
+        }
+      }
+    };
+    await mapLimit(toRead, host === 'state' ? 8 : 4, async ([task, urls]) => {
+      // One change the host cannot read never hides the others the task cites.
+      const changes = (await Promise.all(urls.map((u) => { return readOne(task, u); }))).filter(Boolean);
+      // The open change when there is one, else the last integrated.
+      const change = changes.find((c) => { return !c.merged && !c.closed; }) || changes.at(-1);
+      if (!change) {
         return;
       }
       try {
-        const changes = (await Promise.all(urls.map((u) => { return readChange(u, opts); }))).filter(Boolean);
-        // The open change when there is one, else the last integrated.
-        const change = changes.find((c) => { return !c.merged && !c.closed; }) || changes.at(-1);
-        if (change) {
-          const { title, task: named, mergedAt, pipelineDoneAt, createdAt, ...rest } = change;
-          // Written after the merge and after its pipeline finished: the tick
-          // (or a person) already applied what integrating left.
-          const updated = full[task]?.task?.updated_at;
-          const settled = [mergedAt, pipelineDoneAt].filter(Boolean).map(Date.parse);
-          const writtenSince = Boolean(change.merged && updated && settled.length && Date.parse(updated) > Math.max(...settled));
-          // Rounds are Flow's answer, from the runs on the task, never a count
-          // the model carries between ticks.
-          const rounds = extra.tasks[task]?.rounds ?? roundsOf({
-            runs: (await get('/agent-runs', { project, task, agent: 'flow child', limit: 100 })).runs || [],
-            change: { url: change.url, createdAt },
-          });
-          extra.tasks[task] = { ...(extra.tasks[task] || {}), rounds, change: { ...rest, writtenSince, redOnDefault: red.get(change.repo) ?? null, reviewEnforced: enforced.get(change.repo) ?? null, reviewRunActive: holders.has(task) } };
-        }
+        const { title, task: named, mergedAt, pipelineDoneAt, createdAt, ...rest } = change;
+        // Written after the merge and after its pipeline finished: the tick
+        // (or a person) already applied what integrating left.
+        const updated = full[task]?.task?.updated_at;
+        const settled = [mergedAt, pipelineDoneAt].filter(Boolean).map(Date.parse);
+        const writtenSince = Boolean(change.merged && updated && settled.length && Date.parse(updated) > Math.max(...settled));
+        // Rounds are Flow's answer, from the runs on the task, never a count
+        // the model carries between ticks. Where a change stands needs none.
+        const rounds = extra.tasks[task]?.rounds ?? (host === 'state' ? 0 : roundsOf({
+          runs: (await get('/agent-runs', { project, task, agent: 'flow child', limit: 100 })).runs || [],
+          change: { url: change.url, createdAt },
+        }));
+        extra.tasks[task] = { ...(extra.tasks[task] || {}), rounds, change: { ...rest, writtenSince, redOnDefault: red.get(change.repo) ?? null, reviewEnforced: enforced.get(change.repo) ?? null, reviewRunActive: holders.has(task) } };
       } catch (error) {
-        hostErrors.push({ task, error: String(error.stderr || error.message).split('\n')[0].slice(0, 200) });
+        hostErrors.push({ task, error: firstLine(error) });
       }
     });
   }
@@ -245,6 +333,13 @@ export const run = async ({ client, project, now = new Date().toISOString(), ext
   });
   snapshot.needs.unread = unread;
   snapshot.needs.host = hostErrors;
+  // What Flow answered of each row (title, url, readiness, unblocks), for a
+  // caller that would otherwise read every task again; out of the JSON.
+  const rows = {};
+  for (const row of [...(next.tasks || []), ...slices, ...repairRows]) {
+    rows[row.id] = row;
+  }
+  Object.defineProperty(snapshot, 'rows', { value: rows, enumerable: false });
   return snapshot;
 };
 
@@ -263,7 +358,8 @@ if (isMain) {
   if (p && !extra.params) {
     extra.params = p.params;
   }
-  run({ client: clientFromEnv(), project, now: f.now, extra, repos: p?.repos, reviewers: p?.reviewers ?? [] }).then(
+  const progress = (line) => { process.stderr.write(`${line}\n`); };
+  run({ client: clientFromEnv(), project, now: f.now, extra, repos: p?.repos, reviewers: p?.reviewers ?? [], progress }).then(
     (result) => { process.stdout.write(`${JSON.stringify(result, null, 2)}\n`); },
     (error) => { process.stderr.write(`${error.message}\n`); process.exit(1); },
   );

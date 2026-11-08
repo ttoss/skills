@@ -141,6 +141,39 @@ export const parseChangeUrl = (url) => {
   return m ? { repo: m[1], number: Number(m[2]) } : null;
 };
 
+/**
+ * Whether `gh` failed because the session cannot read the repo, rather than
+ * for a reason a retry could clear: every other change there fails the same.
+ */
+export const unreadable = (error) => {
+  return /HTTP 40[34]|Not Found|Resource not accessible|Could not resolve to a Repository/i.test(String(error?.stderr || error?.message || ''));
+};
+
+/**
+ * Only where a change stands (`state`): open, draft, integrated or closed,
+ * in one read. What the Chase counts the release queue by; the checks,
+ * verdicts and mergeability the tick acts on are `readChange`'s.
+ */
+export const readChangeState = async (url, { gh = ghApi } = {}) => {
+  const ref = parseChangeUrl(url);
+  if (!ref) {
+    return null;
+  }
+  const pull = await gh(`repos/${ref.repo}/pulls/${ref.number}`);
+  const merged = Boolean(pull.merged);
+  return {
+    url,
+    repo: ref.repo,
+    title: pull.title,
+    task: (TASK.exec(pull.body || '') || [null])[0],
+    draft: Boolean(pull.draft),
+    createdAt: pull.created_at,
+    merged,
+    mergedAt: pull.merged_at,
+    closed: pull.state === 'closed' && !merged,
+  };
+};
+
 /** A change as plan.mjs's snapshot holds it, from the code host. */
 export const readChange = async (url, { gh = ghApi, reviewers = [] } = {}) => {
   const ref = parseChangeUrl(url);
