@@ -131,15 +131,13 @@ export const build = ({ now, candidates, slices, dueIds, children, mine, childTa
 /** Every read, then the snapshot. */
 export const run = async ({ client, project, now = new Date().toISOString(), extra = {}, repos = null, reviewers = [], gh }) => {
   const { get, all } = client;
-  const next = await get('/next', { project, limit: 10 });
-  const counts = next.counts || {};
   const slice = (name) => {
     return get('/next', { project, slice: name, assignee: 'any', limit: 20 });
   };
-  const [waiting, blocked, dateCame, holdCleared, implemented, children, mine, running] = await Promise.all([
-    slice('waiting'), slice('blocked'),
-    counts.date_came ? slice('date_came') : { tasks: [] },
-    counts.hold_cleared ? slice('hold_cleared') : { tasks: [] },
+  // Every read at once: an empty slice costs less than waiting on `counts`.
+  const [next, waiting, blocked, dateCame, holdCleared, implemented, children, mine, running] = await Promise.all([
+    get('/next', { project, limit: 10 }),
+    slice('waiting'), slice('blocked'), slice('date_came'), slice('hold_cleared'),
     // Every task whose change is out, every page: the release queue is counted
     // from these, and a slice's limit would hide all but its first rows.
     all('/tasks', { project, status: WORKED, ref_role: 'implements', limit: 100 }, 'tasks'),
