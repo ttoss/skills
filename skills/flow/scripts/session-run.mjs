@@ -1,4 +1,5 @@
-import { readdirSync, readFileSync, realpathSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -17,6 +18,12 @@ import { clientFromEnv, parseFlags } from './flow-api.mjs';
 //
 // Usage (a command hook on SessionStart, Stop and SessionEnd, the hook's JSON
 // on stdin): node session-run.mjs --project <proj_…> [--agent <label>]
+//
+// A session whose hooks never load (a cloud session with several repos runs
+// from their parent directory, where no repo's .claude/settings.json is read)
+// writes its own usage as its last act: node session-run.mjs --project <proj_…>
+// --self. It finds its transcript by CLAUDE_CODE_SESSION_ID and writes what a
+// Stop would; the final message it writes after is the only spend it misses.
 
 export const DEFAULT_AGENT = 'claude code session';
 
@@ -130,6 +137,25 @@ export const record = async ({ input, project, agent = DEFAULT_AGENT, env = proc
   return written;
 };
 
+/**
+ * The Stop input for the session running this process, from its id and the
+ * transcript Claude Code keeps under ~/.claude/projects; null outside one.
+ */
+export const selfInput = ({ env = process.env, root = join(homedir(), '.claude', 'projects') } = {}) => {
+  const sessionId = env.CLAUDE_CODE_SESSION_ID;
+  if (!sessionId) {
+    return null;
+  }
+  let dirs = [];
+  try {
+    dirs = readdirSync(root);
+  } catch {
+    return null;
+  }
+  const path = dirs.map((dir) => { return join(root, dir, `${sessionId}.jsonl`); }).find((candidate) => { return existsSync(candidate); });
+  return path ? { hook_event_name: 'Stop', session_id: sessionId, transcript_path: path } : null;
+};
+
 const readStdin = async () => {
   const chunks = [];
   for await (const chunk of process.stdin) {
@@ -142,7 +168,7 @@ const isMain = process.argv[1] && realpathSync(fileURLToPath(import.meta.url)) =
 if (isMain) {
   (async () => {
     const f = parseFlags(process.argv.slice(2));
-    const input = JSON.parse((await readStdin()) || '{}');
+    const input = f.self ? selfInput() || {} : JSON.parse((await readStdin()) || '{}');
     const client = process.env.FLOW_API_KEY ? clientFromEnv() : null;
     await record({ input, project: f.project, agent: typeof f.agent === 'string' ? f.agent : undefined, client });
   })().catch((error) => {

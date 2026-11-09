@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 
 import { createClient } from './flow-api.mjs';
-import { record, sessionAddress, usageOf } from './session-run.mjs';
+import { record, selfInput, sessionAddress, usageOf } from './session-run.mjs';
 
 const PROJECT = 'proj_0123456789';
 const REMOTE = { CLAUDE_CODE_REMOTE_SESSION_ID: 'cse_01AbC' };
@@ -109,4 +109,14 @@ test('without a key, a project or an address, nothing is written', async () => {
   assert.deepEqual(await record({ input, project: undefined, env: REMOTE, client: flow.client }), []);
   assert.deepEqual(await record({ input: { hook_event_name: 'Stop' }, project: PROJECT, env: {}, client: flow.client }), []);
   assert.equal(flow.calls.length, 0);
+});
+
+test('--self: a session no hook reaches finds its own transcript and writes what a Stop would', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'projects-'));
+  mkdirSync(join(root, '-home-user'));
+  const path = join(root, '-home-user', 'abc.jsonl');
+  writeFileSync(path, line({ id: 'm1', input: 2, output: 9 }));
+  assert.deepEqual(selfInput({ env: { CLAUDE_CODE_SESSION_ID: 'abc' }, root }), { hook_event_name: 'Stop', session_id: 'abc', transcript_path: path });
+  assert.equal(selfInput({ env: { CLAUDE_CODE_SESSION_ID: 'other' }, root }), null);
+  assert.equal(selfInput({ env: {}, root }), null);
 });
