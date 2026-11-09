@@ -591,6 +591,19 @@ test('an integrated change waiting on a person to validate it is in the queue; a
   assert.deepEqual(started({ tasks: [...light, fresh('task_n1')] }, { releaseQueue: 2 }), ['task_n1']);
 });
 
+test('a validation a person dated in the future enters the queue on its date; an external wait or an undated one counts now', () => {
+  const merged = change({ merged: true });
+  const deferred = (id) => { return task({ id, status: 'calendar', waitsOn: ['user_ana'], deferredUntil: '2026-11-05T00:00:00Z', change: merged }) };
+  const cameDue = (id) => { return task({ id, status: 'calendar', due: true, dueKind: 'check', change: merged }) };
+  const chased = (id) => { return task({ id, waitsOn: ['user_ana'], change: merged }) };
+  const deferredOnly = [atGates('task_o1'), deferred('task_f1'), deferred('task_f2'), deferred('task_f3')];
+  assert.deepEqual(started({ tasks: [...deferredOnly, fresh('task_n1')] }, { releaseQueue: 2 }), ['task_n1']);
+  assert.deepEqual(started({ tasks: [atGates('task_o1'), cameDue('task_f1'), fresh('task_n1')] }, { releaseQueue: 2 }), []);
+  assert.deepEqual(started({ tasks: [atGates('task_o1'), chased('task_x1'), fresh('task_n1')] }, { releaseQueue: 2 }), []);
+  const draftDeferred = task({ id: 'task_p1', waitsOn: ['user_ana'], deferredUntil: '2026-11-05T00:00:00Z', change: change() });
+  assert.deepEqual(started({ tasks: [atGates('task_o1'), draftDeferred, fresh('task_n1')] }, { releaseQueue: 2 }), []);
+});
+
 test('decisions do not hold implementation: any number of choices waiting on a person', () => {
   const decisions = Array.from({ length: 50 }, (_, i) => { return task({ id: `task_d${i}`, waitsOn: ['user_ana'] }) });
   assert.deepEqual(started({ tasks: [...decisions, atGates('task_o1'), atGates('task_o2'), fresh('task_n1'), fresh('task_n2')] }), ['task_n1', 'task_n2']);

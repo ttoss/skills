@@ -86,6 +86,10 @@ export const build = ({ now, candidates, slices, held = [], dueIds, children, mi
     const waits = waitsOf(row);
     const pastWait = waits.some((w) => { return w.kind === 'external' && w.until && Date.parse(w.until) <= nowMs; });
     const due = dueIds.has(row.id) || pastWait;
+    // A person who dated a `scheduled` wait on themselves deferred the work to
+    // that date; an `external` wait's `until` is only when to chase it.
+    const personWaits = waits.filter((w) => { return Boolean(w.on); });
+    const deferred = personWaits.length > 0 && personWaits.every((w) => { return w.kind === 'scheduled' && w.until && Date.parse(w.until) > nowMs; });
     const own = extra.tasks?.[row.id] || {};
     // What integrating leaves is the handoff's field; a judge reads the body
     // only for a task handed off before the field existed.
@@ -102,7 +106,8 @@ export const build = ({ now, candidates, slices, held = [], dueIds, children, mi
       inherited: row.inherited_priority?.priority ?? null,
       tags: row.tags || [],
       rank: rank.has(row.id) ? rank.get(row.id) : null,
-      heldByPerson: waits.some((w) => { return Boolean(w.on); }),
+      heldByPerson: personWaits.length > 0,
+      deferredUntil: deferred ? personWaits.map((w) => { return w.until; }).sort().at(-1) : null,
       inFocus: true,
       candidate: rank.has(row.id),
       due,
