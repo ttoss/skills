@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { checksOf, mergedSince, readChange, readyChanges, reviewEnforcedOf, verdictFor, verdictsOf } from './host.mjs';
+import { checksOf, defaultRedOf, mergedSince, readChange, readDefault, readyChanges, reviewEnforcedOf, verdictFor, verdictsOf } from './host.mjs';
 
 const run = (name, conclusion, started_at = '2026-11-01T00:00:00Z', status = 'completed') => {
   return { name, status, conclusion, started_at, completed_at: started_at };
@@ -101,4 +101,24 @@ test('ready changes: green, no conflict, and no FINDINGS on the head; merges sin
   });
   assert.deepEqual((await readyChanges(['o/r'], { gh })).map((c) => { return c.url; }), ['https://github.com/o/r/pull/1']);
   assert.equal(await mergedSince(['o/r', 'o/r'], '2026-11-01T00:00:00Z', { gh }), 8);
+});
+
+test('default red: only a required check or the integration pipeline makes the head red; neither ran → null', async () => {
+  const suite = (r, id) => { return { ...r, check_suite: { id } }; };
+  const housekeeping = suite(run('cleanup-tags', 'failure'), 2);
+  const pipeline = suite(run('main', 'success'), 1);
+  assert.equal(defaultRedOf({ checkRuns: [pipeline, housekeeping], pipelineSuites: [1] }), false);
+  assert.equal(defaultRedOf({ checkRuns: [pipeline, housekeeping, suite(run('ci', 'failure'), 3)], required: ['ci'], pipelineSuites: [1] }), true);
+  assert.equal(defaultRedOf({ checkRuns: [pipeline], statuses: [{ context: 'ci', state: 'error' }], required: ['ci'] }), true);
+  assert.equal(defaultRedOf({ checkRuns: [housekeeping], required: [] }), null);
+  assert.equal(defaultRedOf({}), false);
+  const gh = fakeGh({
+    'repos/o/r/branches/main': { commit: { sha: H }, protection: { required_status_checks: { contexts: ['pr'] } } },
+    'repos/o/r/rules/branches/main': [],
+    [`repos/o/r/commits/${H}/check-runs`]: { check_runs: [pipeline, housekeeping] },
+    [`repos/o/r/commits/${H}/statuses`]: [],
+    'repos/o/r/actions/runs': { workflow_runs: [{ check_suite_id: 1, event: 'push' }] },
+    'repos/o/r': { default_branch: 'main' },
+  });
+  assert.deepEqual(await readDefault('o/r', { gh }), { repo: 'o/r', sha: H, red: false, reviewEnforced: false, repairTask: null });
 });
