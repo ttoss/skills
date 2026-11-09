@@ -116,20 +116,23 @@ test("the tick's own wait for what integrating leaves is told from a wait a pers
   assert.equal(snap.params.leavesByAgent, null);
 });
 
-test('rounds are the closed child runs that pushed to the change after it was opened', () => {
+test('rounds are the closed child runs that pushed to one of the task’s changes after it was opened, each run once', () => {
   const change = { url: 'https://gh/pr/5', createdAt: '2026-11-02T10:00:00Z' };
+  const other = { url: 'https://gh/pr/6', createdAt: '2026-11-02T13:30:00Z' };
   const run = (started_at, over = {}) => { return { status: 'completed', started_at, produced: [change.url], ...over }; };
   assert.equal(roundsOf({
-    change,
+    changes: [change, other],
     runs: [
       run('2026-11-02T09:00:00Z'),
       run('2026-11-02T11:00:00Z'),
       run('2026-11-02T12:00:00Z', { produced: [] }),
       run('2026-11-02T13:00:00Z', { status: 'running' }),
       run('2026-11-02T14:00:00Z', { status: 'failed' }),
+      run('2026-11-02T15:00:00Z', { produced: [change.url, other.url] }),
+      run('2026-11-02T13:00:00Z', { status: 'completed', produced: [other.url] }),
     ],
-  }), 2);
-  assert.equal(roundsOf({ change: { url: change.url, createdAt: null }, runs: [run('2026-11-02T11:00:00Z')] }), 0);
+  }), 3);
+  assert.equal(roundsOf({ changes: [{ url: change.url, createdAt: null }], runs: [run('2026-11-02T11:00:00Z')] }), 0);
 });
 
 test('every task whose change is out is read, past the slices’ limit; a row Flow listed without the reference stays out, named', async () => {
@@ -211,8 +214,8 @@ test('a listed row answers what get-task would; the Chase reads one call per cha
   // No get-task, no read of the default branch, no runs per task.
   assert.deepEqual([...new Set(asked)].sort(), ['/agent-runs', '/next']);
   assert.equal(asked.filter((p) => { return p === '/agent-runs'; }).length, 3);
-  assert.deepEqual(snap.tasks.find((x) => { return x.id === 't_both'; }).change.url, 'https://github.com/o/open/pull/1');
-  assert.equal(snap.tasks.find((x) => { return x.id === 't_blind'; }).change, null);
+  assert.deepEqual(snap.tasks.find((x) => { return x.id === 't_both'; }).changes.map((c) => { return c.url; }), ['https://github.com/o/open/pull/1']);
+  assert.deepEqual(snap.tasks.find((x) => { return x.id === 't_blind'; }).changes, []);
   // The unreadable repo is asked once, before any of its changes.
   assert.deepEqual(calls.filter((c) => { return c.startsWith('repos/o/secret'); }), ['repos/o/secret']);
   assert.deepEqual(snap.needs.host.map((e) => { return [e.task ?? null, e.repo]; }).sort(), [[null, 'o/secret'], ['t_blind', 'o/secret'], ['t_blind2', 'o/secret'], ['t_both', 'o/secret']]);
@@ -259,4 +262,37 @@ test('a task whose waits on a person are all scheduled in the future is deferred
   assert.deepEqual(by, { t_def: '2026-11-07T00:00:00Z', t_ext: null, t_mix: null, t_past: null, t_nobody: null });
   const outside = Object.fromEntries(snap.tasks.map((t) => { return [t.id, t.heldOutside]; }));
   assert.deepEqual(outside, { t_def: false, t_ext: false, t_mix: false, t_past: false, t_nobody: true });
+});
+
+test('a task carries every change it implements; one whose only open change is unread is left out, never read as integrated', async () => {
+  const get = async (path) => {
+    if (path === '/next') {
+      return { tasks: [], counts: {} };
+    }
+    if (path === '/agent-runs') {
+      return { runs: [] };
+    }
+    throw new Error(`unexpected ${path}`);
+  };
+  const listed = (id, urls) => {
+    return { ...row(id, { status: 'waiting' }), role_refs: urls.map((url) => { return { role: 'implements', url }; }), after_integration: { leaves: 'release' }, updated_at: now };
+  };
+  const all = async () => {
+    return [
+      listed('t_two', ['https://github.com/o/r/pull/1', 'https://github.com/o/s/pull/2']),
+      listed('t_part', ['https://github.com/o/r/pull/3', 'https://github.com/o/secret/pull/4']),
+    ];
+  };
+  const gh = async (path) => {
+    if (path.startsWith('repos/o/secret')) {
+      throw Object.assign(new Error('gh failed'), { stderr: 'gh: Not Found (HTTP 404)' });
+    }
+    const merged = !path.endsWith('pulls/2');
+    return { title: 'x', body: '', draft: false, merged, merged_at: merged ? '2026-11-01T00:00:00Z' : null, state: merged ? 'closed' : 'open', created_at: '2026-10-31T00:00:00Z' };
+  };
+  const snap = await run({ client: { get, all }, project: 'proj_x', now, repos: ['o/r', 'o/s'], gh, host: 'state' });
+  const by = Object.fromEntries(snap.tasks.map((t) => { return [t.id, t]; }));
+  assert.deepEqual(by.t_two.changes.map((c) => { return [c.url, c.merged]; }), [['https://github.com/o/r/pull/1', true], ['https://github.com/o/s/pull/2', false]]);
+  assert.deepEqual(by.t_part.changes, []);
+  assert.equal(plan(snap).filter((a) => { return a.act === 'release_step'; }).length, 0);
 });

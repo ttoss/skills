@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 
 import { clientFromEnv, mapLimit, parseFlags } from './flow-api.mjs';
 import { load as loadParams } from './params.mjs';
-import { effectivePriority, heldByIntegrated, inReleaseQueue, urgencyTier } from './plan.mjs';
+import { allIntegrated, changeOf, changesOf, effectivePriority, heldByIntegrated, inReleaseQueue, urgencyTier } from './plan.mjs';
 import { run as readSnapshot } from './snapshot.mjs';
 
 // The Chase's digest (references/chase.md): what only a person can do to drain
@@ -42,7 +42,7 @@ const priorityRank = (priority) => {
  */
 export const byTickOrder = (a, b) => {
   return urgencyTier(a) - urgencyTier(b)
-    || Number(Boolean(b.change?.merged)) - Number(Boolean(a.change?.merged))
+    || Number(allIntegrated(b)) - Number(allIntegrated(a))
     || priorityRank(effectivePriority(a)) - priorityRank(effectivePriority(b))
     || (b.unblocks || 0) - (a.unblocks || 0)
     || String(a.since || '9999').localeCompare(String(b.since || '9999'));
@@ -90,11 +90,11 @@ export const pick = ({ tasks, details = {}, decisions = [], limit = DEFAULT_LIMI
       title: detail.task?.title || t.id,
       url: detail.task?.url || `https://flow.ttoss.dev/app/tasks/${t.id}`,
       who: who(t.waitsOn),
-      what: wait?.reason || (t.change?.merged ? 'see the change in effect' : 'integrate the change'),
+      what: wait?.reason || (allIntegrated(t) ? 'see the change in effect' : 'integrate the change'),
       priority: t.priority,
       inherited: t.inherited ?? null,
       tags: t.tags,
-      change: t.change,
+      change: changeOf(t),
       unblocks: detail.unblocks ?? 0,
       since: wait?.until || null,
     };
@@ -131,7 +131,7 @@ export const pick = ({ tasks, details = {}, decisions = [], limit = DEFAULT_LIMI
   // work waits while the queue is over its limit, so they are worth a person's
   // time only within it.
   const within = queue.length <= limit;
-  const out = new Set(tasks.filter((t) => { return t.change; }).map((t) => { return t.id; }));
+  const out = new Set(tasks.filter((t) => { return changesOf(t).length; }).map((t) => { return t.id; }));
   const answers = decisions.filter((row) => {
     return !out.has(row.id) && (row.readiness?.blocked_by || []).some((b) => { return b.via === 'wait' && b.on; });
   });
@@ -177,7 +177,7 @@ const lineOf = (item) => {
  * release queue is unknown, so they are not counted, and the digest says so.
  */
 export const unconfirmedOf = ({ tasks, host = [] }) => {
-  const counted = new Set(tasks.filter((t) => { return t.change; }).map((t) => { return t.id; }));
+  const counted = new Set(tasks.filter((t) => { return changesOf(t).length; }).map((t) => { return t.id; }));
   const out = new Map();
   for (const e of host) {
     if (e.task && e.url && !counted.has(e.task)) {

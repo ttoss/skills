@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { createClient, DEFAULT_BASE } from './flow-api.mjs';
 import { byTickOrder } from './chase.mjs';
 import { load as loadParams } from './params.mjs';
-import { inReleaseQueue } from './plan.mjs';
+import { changeOf, changesOf, inReleaseQueue } from './plan.mjs';
 import { run as readSnapshot } from './snapshot.mjs';
 
 // The lines the weekly Health reports, and the spend lines the Audit takes
@@ -417,7 +417,7 @@ const ageOf = (ms) => {
 // What is left before a change leaves the release queue, from what the code
 // host and its task say: the next act, never an estimate of its size.
 const leftOf = (task) => {
-  const { change } = task;
+  const change = changeOf(task);
   if (change.merged) {
     return 'integrated; waits to be seen in effect';
   }
@@ -445,19 +445,20 @@ const leftOf = (task) => {
 export const queues = ({ tasks, decisions = [], limit = DEFAULT_RELEASE_QUEUE, now, who = (ids) => { return (ids || []).join(', '); } }) => {
   const at = Date.parse(now);
   const queued = tasks.filter(inReleaseQueue).map((t) => {
-    const since = t.change.merged ? t.change.mergedAt : t.change.createdAt;
+    const change = changeOf(t);
+    const since = change.merged ? change.mergedAt : change.createdAt;
     return {
       task: t.id,
-      url: t.change.url,
-      title: t.change.title || t.change.url,
+      url: change.url,
+      title: change.title || change.url,
       age: since ? at - Date.parse(since) : null,
-      from: t.change.merged ? 'integrated' : 'opened',
+      from: change.merged ? 'integrated' : 'opened',
       who: (t.waitsOn || []).length ? who(t.waitsOn) : 'the agents',
       left: leftOf(t),
       order: t,
     };
   });
-  const out = new Set(tasks.filter((t) => { return t.change; }).map((t) => { return t.id; }));
+  const out = new Set(tasks.filter((t) => { return changesOf(t).length; }).map((t) => { return t.id; }));
   // A decision's summary carries no time it started waiting, only its last
   // write, so its age is how long it has gone untouched.
   const owed = decisions.filter((row) => {
