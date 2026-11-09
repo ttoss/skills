@@ -30,7 +30,7 @@ const CLOSED = ['completed', 'cancelled', 'discarded', 'archived'];
 // The statuses a task with a change in flight can hold.
 const WORKED = ['active', 'waiting', 'calendar', 'blocked'];
 
-export const DEFAULT_PARAMS = { maxRuns: 3, staleAfterHours: 4, autoRounds: 1, reviewByAgent: false, reviewRequired: null, agentsMayIntegrate: true, focus: null, releaseQueue: null, leavesByAgent: null };
+export const DEFAULT_PARAMS = { maxRuns: 3, staleAfterHours: 4, autoRounds: 1, reviewByAgent: false, reviewRequired: null, agentsMayIntegrate: true, focus: null, releaseQueue: null, leavesByAgent: null, retargetByAgent: null };
 
 // The tick's own wait for a missing after_integration, by the words the
 // planner's reason carries, so a later tick can read it again when the
@@ -39,6 +39,15 @@ const LEAVES_WAIT = /does not say what integrating leaves/i;
 
 const waitsOf = (row) => {
   return (row.readiness?.blocked_by || []).filter((b) => { return b.via === 'wait'; });
+};
+
+// The open `blocks` sources holding a row, `null` for one in a project the
+// caller cannot reach; null when the row carries no readiness.
+const blockersOf = (row) => {
+  if (!row.readiness) {
+    return null;
+  }
+  return row.readiness.blocked_by.filter((b) => { return b.via === 'task'; }).map((b) => { return b.id; });
 };
 
 /**
@@ -58,7 +67,7 @@ export const roundsOf = ({ runs, change }) => {
 };
 
 /** The snapshot from what was read, as a pure function. */
-export const build = ({ now, candidates, slices, dueIds, children, mine, childTasks, implementsOf, handoffs = {}, repairRows = [], extra = {} }) => {
+export const build = ({ now, candidates, slices, held = [], dueIds, children, mine, childTasks, implementsOf, handoffs = {}, repairRows = [], extra = {} }) => {
   const nowMs = Date.parse(now);
   const rank = new Map(candidates.map((t, i) => { return [t.id, i]; }));
   // Each repo's open repair task, found by its `source` commit: the task
@@ -67,7 +76,10 @@ export const build = ({ now, candidates, slices, dueIds, children, mine, childTa
   const rows = new Map();
   // A repair task is in the snapshot even when no slice holds it, since a red
   // default branch is the first thing the tick works.
-  for (const row of [...candidates, ...slices, ...repairRows.filter((r) => { return repairOf.has(r.id); })]) {
+  // A task some `blocks` edge holds is in it too, read first so a slice's
+  // row of the same task wins: the planner reports one held only by sources
+  // whose change integrated.
+  for (const row of [...held, ...candidates, ...slices, ...repairRows.filter((r) => { return repairOf.has(r.id); })]) {
     rows.set(row.id, row);
   }
   const tasks = [...rows.values()].map((row) => {
@@ -82,6 +94,7 @@ export const build = ({ now, candidates, slices, dueIds, children, mine, childTa
       id: row.id,
       status: row.status,
       waitsOn: [...new Set(waits.map((w) => { return w.on; }).filter(Boolean))],
+      blockedBy: blockersOf(row),
       priority: row.priority,
       // The priority it holds through an open commitment it blocks, above its
       // own (get-next's `inherited_priority`); null when none, or on a row
@@ -157,9 +170,12 @@ export const run = async ({ client, project, now = new Date().toISOString(), ext
     return get('/next', { project, slice: name, assignee: 'any', limit: 20 });
   };
   // Every read at once: an empty slice costs less than waiting on `counts`.
-  const [next, waiting, blocked, dateCame, holdCleared, implemented, children, mine, running] = await Promise.all([
+  const [next, waiting, blocked, dateCame, holdCleared, held, implemented, children, mine, running] = await Promise.all([
     get('/next', { project, limit: 10 }),
     slice('waiting'), slice('blocked'), slice('date_came'), slice('hold_cleared'),
+    // Every task a `blocks` edge holds, whatever its status: its row already
+    // names the sources, so none is read again.
+    get('/next', { project, state: 'blocked:dependency', assignee: 'any', limit: 100 }),
     // Every task whose change is out, every page: the release queue is counted
     // from these, and a slice's limit would hide all but its first rows.
     all('/tasks', { project, status: WORKED, ref_role: 'implements', limit: 100 }, 'tasks'),
@@ -322,6 +338,7 @@ export const run = async ({ client, project, now = new Date().toISOString(), ext
     now,
     candidates: next.tasks || [],
     slices,
+    held: held.tasks || [],
     dueIds: new Set([...dateCame.tasks, ...holdCleared.tasks].map((t) => { return t.id; })),
     children: children.runs,
     mine: new Set(mine.runs.map((r) => { return r.id; })),
@@ -336,7 +353,7 @@ export const run = async ({ client, project, now = new Date().toISOString(), ext
   // What Flow answered of each row (title, url, readiness, unblocks), for a
   // caller that would otherwise read every task again; out of the JSON.
   const rows = {};
-  for (const row of [...(next.tasks || []), ...slices, ...repairRows]) {
+  for (const row of [...(held.tasks || []), ...(next.tasks || []), ...slices, ...repairRows]) {
     rows[row.id] = row;
   }
   Object.defineProperty(snapshot, 'rows', { value: rows, enumerable: false });

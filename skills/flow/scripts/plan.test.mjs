@@ -629,3 +629,46 @@ test('an inherited very_high or high on a bug is as urgent as an asserted one', 
   const acted = plan({ now, params: { ...params, maxRuns: 4, releaseQueue: 2 }, tasks: [...full, blocker, bugBlocker, plain] });
   assert.deepEqual(acted.filter((a) => { return a.act === 'start_child' }).map((a) => { return a.tasks[0] }), ['task_n1', 'task_n2']);
 });
+
+// A `blocks` edge gates until its source closes; once the source's change
+// integrated and the source stays open (a release or a check later), the tick
+// reports the target held only by it, and retracts the edge only when the
+// standing decision delegates that.
+const source = (over = {}) => {
+  return task({ id: 'task_src', status: 'blocked', leaves: 'release', change: change({ merged: true, writtenSince: true }), ...over });
+};
+const target = (over = {}) => { return task({ id: 'task_tgt', status: 'active', change: null, blockedBy: ['task_src'], ...over }) };
+const decided = { ...params, retargetByAgent: false };
+
+test('a source whose change has not integrated is no finding: the edge holds what it should', () => {
+  const out = plan({ now, params: decided, tasks: [source({ status: 'waiting', change: change() }), target()] });
+  assert.deepEqual(out.at(-1).heldByIntegrated, []);
+  assert.equal(out.filter((a) => { return a.about === 'integrated_blockers' || a.act === 'retarget_blocks' }).length, 0);
+  assert.doesNotMatch(out.at(-1).line, /held by integrated/);
+});
+
+test('a target held only by an integrated, open source is reported, never written', () => {
+  const out = plan({ now, params: decided, tasks: [source(), target()] });
+  const report = out.at(-1);
+  assert.deepEqual(report.heldByIntegrated, [{ task: 'task_tgt', sources: [{ task: 'task_src', url: 'https://github.com/o/r/pull/1' }] }]);
+  assert.match(report.line, /held by integrated blockers: 1$/);
+  assert.equal(out.filter((a) => { return a.act === 'retarget_blocks' }).length, 0);
+});
+
+test('a second source not yet integrated, or one the snapshot cannot name, keeps it from being a finding', () => {
+  const other = task({ id: 'task_src2', status: 'waiting', change: change({ url: 'https://github.com/o/r/pull/2' }) });
+  assert.deepEqual(plan({ now, params: decided, tasks: [source(), other, target({ blockedBy: ['task_src', 'task_src2'] })] }).at(-1).heldByIntegrated, []);
+  assert.deepEqual(plan({ now, params: decided, tasks: [source(), target({ blockedBy: ['task_src', null] })] }).at(-1).heldByIntegrated, []);
+  assert.deepEqual(plan({ now, params: decided, tasks: [target()] }).at(-1).heldByIntegrated, []);
+});
+
+test('whether the standing decision delegates the retraction is a judge until answered', () => {
+  const out = plan({ now, params: { ...params, retargetByAgent: null }, tasks: [source(), target()] });
+  assert.deepEqual(out.filter((a) => { return a.act === 'judge' }).map((a) => { return [a.about, a.tasks] }), [['integrated_blockers', ['task_tgt']]]);
+});
+
+test('with the standing decision delegating it, the tick retracts each edge and records mentions', () => {
+  const out = plan({ now, params: { ...params, retargetByAgent: true }, tasks: [source(), target()] });
+  assert.deepEqual(out.filter((a) => { return a.act === 'retarget_blocks' }).map((a) => { return [a.task, a.from, a.url] }), [['task_tgt', 'task_src', 'https://github.com/o/r/pull/1']]);
+  assert.deepEqual(out.at(-1).heldByIntegrated, []);
+});

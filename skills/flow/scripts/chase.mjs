@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 
 import { clientFromEnv, mapLimit, parseFlags } from './flow-api.mjs';
 import { load as loadParams } from './params.mjs';
-import { effectivePriority, inReleaseQueue, urgencyTier } from './plan.mjs';
+import { effectivePriority, heldByIntegrated, inReleaseQueue, urgencyTier } from './plan.mjs';
 import { run as readSnapshot } from './snapshot.mjs';
 
 // The Chase's digest (references/chase.md): what only a person can do to drain
@@ -98,7 +98,33 @@ export const pick = ({ tasks, details = {}, decisions = [], limit = DEFAULT_LIMI
       unblocks: detail.unblocks ?? 0,
       since: wait?.until || null,
     };
-  }).sort(byTickOrder);
+  });
+  // A task held only by `blocks` sources whose change integrated: whether the
+  // edge keeps gating until they close is a person's choice (the tick reports
+  // it), so it is listed with what they can do, though it is no change of its own.
+  const byId = new Map(tasks.map((t) => { return [t.id, t]; }));
+  const listed = new Set(person.map((i) => { return i.id; }));
+  const held = heldByIntegrated(tasks).filter((found) => { return !listed.has(found.task); }).map((found) => {
+    const t = byId.get(found.task);
+    const detail = details[t.id] || {};
+    const changes = found.sources.map((s) => { return s.url; }).join(', ');
+    return {
+      id: t.id,
+      title: detail.task?.title || t.id,
+      url: detail.task?.url || `https://flow.ttoss.dev/app/tasks/${t.id}`,
+      who: who(t.waitsOn),
+      what: `held only by tasks whose change integrated and that stay open (${changes}): retract the blocks edge to start it now, or keep it until they close`,
+      priority: t.priority,
+      inherited: t.inherited ?? null,
+      tags: t.tags,
+      change: null,
+      unblocks: detail.unblocks ?? 0,
+      since: null,
+      heldBy: found.sources,
+    };
+  });
+  person.push(...held);
+  person.sort(byTickOrder);
   // The decision queue: what waits on a person's answer before it can start,
   // a `decision` or a task whose brief needs one; a task with its change out
   // is the release queue's. Decisions hold only the work they block, and new
@@ -213,7 +239,8 @@ export const run = async ({ client, project, now = new Date().toISOString(), ext
   ]);
   const { snapshot, rows = {} } = read;
   const queueLimit = limit ?? snapshot.params.releaseQueue ?? DEFAULT_LIMIT;
-  const waitingOnPerson = snapshot.tasks.filter((t) => { return inReleaseQueue(t) && (t.waitsOn || []).length > 0; });
+  const heldIds = new Set(heldByIntegrated(snapshot.tasks).map((f) => { return f.task; }));
+  const waitingOnPerson = snapshot.tasks.filter((t) => { return (inReleaseQueue(t) && (t.waitsOn || []).length > 0) || heldIds.has(t.id); });
   // Each row Flow listed already carries its title, readiness and unblocks;
   // get-task only for one it did not.
   const missing = waitingOnPerson.filter((t) => { return !rows[t.id]?.readiness; });
