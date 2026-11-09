@@ -107,6 +107,8 @@ export const build = ({ now, candidates, slices, held = [], dueIds, children, mi
       tags: row.tags || [],
       rank: rank.has(row.id) ? rank.get(row.id) : null,
       heldByPerson: personWaits.length > 0,
+      // A wait on nobody is outside the team: nothing the team does drains it.
+      heldOutside: waits.some((w) => { return !w.on; }),
       deferredUntil: deferred ? personWaits.map((w) => { return w.until; }).sort().at(-1) : null,
       inFocus: true,
       candidate: rank.has(row.id),

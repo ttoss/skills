@@ -257,4 +257,6 @@ test('a task whose waits on a person are all scheduled in the future is deferred
   });
   const by = Object.fromEntries(snap.tasks.map((t) => { return [t.id, t.deferredUntil]; }));
   assert.deepEqual(by, { t_def: '2026-11-07T00:00:00Z', t_ext: null, t_mix: null, t_past: null, t_nobody: null });
+  const outside = Object.fromEntries(snap.tasks.map((t) => { return [t.id, t.heldOutside]; }));
+  assert.deepEqual(outside, { t_def: false, t_ext: false, t_mix: false, t_past: false, t_nobody: true });
 });

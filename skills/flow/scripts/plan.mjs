@@ -28,6 +28,7 @@ import { fileURLToPath } from 'node:url';
 //             inherited: priority | null,   // held through an open commitment it blocks, above its own
 //             waitsOn: [holder],              // whom its waits are `on`
 //             deferredUntil: ISO date | null, // every wait on a person is `scheduled` and still in the future: the latest `until`
+//             heldOutside: bool,              // a wait on nobody, outside the team, still holds it
 //             blockedBy: [id | null] | null,  // its open `blocks` sources (null: one in a project the caller cannot reach); null: not read
 //             candidate: bool,                // in get-next's ready candidates
 //             due: bool,                      // date_came, hold_cleared, or an external wait past until
@@ -497,8 +498,10 @@ const delegate = ({ items, free, newWork, cap }) => {
 // in it: one holds only the work it blocks, so a thousand open choices never
 // stop the work nobody has to choose about. A validation a person dated in the
 // future is held by that decision, like `incubated` work, and holding new work
-// would not bring its date closer: it enters the queue when it comes due.
-export const inReleaseQueue = ({ change, waitsOn, deferredUntil, due }) => {
+// would not bring its date closer: it enters the queue when it comes due. What
+// waits on nobody is outside the team, and holding new work never drains it,
+// so a past chase date on it does not count.
+export const inReleaseQueue = ({ change, waitsOn, deferredUntil, due, heldOutside }) => {
   if (!change || change.closed) {
     return false;
   }
@@ -508,7 +511,7 @@ export const inReleaseQueue = ({ change, waitsOn, deferredUntil, due }) => {
   if (deferredUntil) {
     return false;
   }
-  return (waitsOn || []).length > 0 || Boolean(due);
+  return (waitsOn || []).length > 0 || (Boolean(due) && !heldOutside);
 };
 
 const releaseQueue = (tasks) => {
