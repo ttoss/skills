@@ -1,12 +1,14 @@
 ---
 name: token-audit
-description: Find where a project's Claude Code sessions waste tokens, from measurements, not guesses — the instruction corpus every session loads, scoped rules, real session usage (cost, context growth, cache rewrites, PR wake-ups), each routine's model and tool payloads. Produces a ranked report with fixes. Use when the user says /token-audit, "where are we wasting tokens" or "make our agents cheaper", or session costs look high.
+description: Find where a project's Claude Code sessions waste tokens, from measurements, not guesses — the instruction corpus every session loads, scoped rules, real session usage (tokens, context growth, cache rewrites, PR wake-ups), each routine's model and tool payloads. Produces a ranked report with fixes. Use when the user says /token-audit, "where are we wasting tokens" or "make our agents cheaper", or session costs look high.
 argument-hint: "[repo path] [--sessions N] [--no-sessions] [--routine]"
 ---
 
 # Token audit
 
-What an agent session costs is **its context, re-read on every API call**, priced mostly as cache reads and cache writes; output is usually under 5%. So the audit looks for what makes a context big, what keeps it growing, and what makes the cache be written again, and ranks by **measured** spend, never by file size alone. The instruction files are the easiest lever and rarely the biggest: on the project this skill was built from, they were ~20k tokens per session, while one long-lived tick session cost $42 in 20 hours.
+What an agent session costs is **its context, re-read on every API call**, priced mostly as cache reads and cache writes; output is usually under 5%. So the audit looks for what makes a context big, what keeps it growing, and what makes the cache be written again, and ranks by **measured** tokens, never by file size alone. The instruction files are the easiest lever and rarely the biggest: on the project this skill was built from, they were ~20k tokens per session, while one long-lived tick session re-read ~700k tokens on every call for 20 hours.
+
+Spend is measured in tokens. A run without a cost is the normal case, not a gap: never read a transcript to recover a dollar figure. A cost a run does carry may be shown beside its tokens.
 
 Report in as few words as carry the meaning, and in full sentences wherever a person reads the report later. This skill reads and proposes; it changes nothing (a routine's model, a rule, a skill) without the user's word. When the project's rules restrict how instruction files change (one rule per PR, demote-don't-delete), the fixes it proposes follow them.
 
@@ -26,10 +28,10 @@ Skip with `--no-sessions`, or when the session tools (`list_sessions`, `list_eve
 
 1. `list_triggers`: every routine with its model, schedule and `last_run.session_id`.
 2. `list_sessions` (`mine: true`, `limit` from `--sessions`, default 50). Classify each: routine run, tick parent (a routine or `/loop`), delegated child, interactive. Note which belong to other projects.
-3. For each routine's last run and a sample of 6–10 sessions across classes, in a subagent: `list_events` with `kinds: ["result"]`, paging back a few pages; the latest result's `modelUsage` is cumulative (input, cache read, cache write, output, cost, turns). For the 2–3 most expensive, read the first ~100 events for the baseline context (first call's input + cache tokens), context growth per call, the largest tool results, and cache writes after idle gaps.
+3. For each routine's last run and a sample of 6–10 sessions across classes, in a subagent: `list_events` with `kinds: ["result"]`, paging back a few pages; the latest result's `modelUsage` is cumulative (input, cache read, cache write, output, turns). For the 2–3 most expensive, read the first ~100 events for the baseline context (first call's input + cache tokens), context growth per call, the largest tool results, and cache writes after idle gaps.
 4. Write the raw numbers to a scratch file and cite it.
 
-When the project records its runs in Flow, `list-agent-runs` gives the same numbers without reading a transcript: `group_by=model`, by `task`, `tag` or `upstream_of`, by `agent` for every run in one role (`flow tick`, `flow child`), and `since`/`until` either side of a change.
+When the project records its runs in Flow, read `list-agent-runs` first, and a transcript only for what it does not hold (baseline context, growth per call, the largest tool results): `group_by=model`, by `task`, `tag` or `upstream_of`, by `agent` for every run in one role (`flow tick`, `flow child`), and `since`/`until` either side of a change.
 
 ## 3. Match the model to the work
 
@@ -45,7 +47,7 @@ When the repo ships an MCP server or tools the sessions themselves call, measure
 
 ## 6. Report
 
-One ranked list, largest measured saving first. Each item: the sink, the evidence (session id, file and bytes, or tool and size), the fix, the estimated saving with its arithmetic, and who decides (config the user owns, a PR, an upstream skill). Separate **apply now** (config, a routine's model) from **PRs to open** and from **needs a decision**. Anything found on the way that is not about tokens (a security or privacy gap) goes at the top, flagged, never buried.
+One ranked list, largest measured saving first. Each item: the sink, the evidence (session id, file and bytes, or tool and size), the fix, the estimated saving in tokens with its arithmetic, and who decides (config the user owns, a PR, an upstream skill). Separate **apply now** (config, a routine's model) from **PRs to open** and from **needs a decision**. Anything found on the way that is not about tokens (a security or privacy gap) goes at the top, flagged, never buried.
 
 ## As a routine
 

@@ -17,8 +17,12 @@ import { load as loadParams } from './params.mjs';
 //    or: node audit.mjs tasks --all <file> --ticks <file>  (two saved answers, no key)
 // Output: JSON `{ lines }`.
 
+// Ranked by every token read or written, cache included: what a session pays
+// for is mostly its context re-read, and `cost_usd` is rarely there.
 const weight = (totals) => {
-  return totals.cost_usd ?? (totals.input_tokens || 0) + (totals.output_tokens || 0);
+  return ['input_tokens', 'output_tokens', 'cache_read_tokens', 'cache_write_tokens'].reduce((sum, field) => {
+    return sum + (totals[field] || 0);
+  }, 0);
 };
 
 // The counters a task group sums; `peak_context` is a maximum and cannot be
