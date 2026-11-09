@@ -378,6 +378,17 @@ test("a check child's wait on a person is not that person's answer", () => {
   assert.equal(plan({ now, params, defaults: [], children: [], tasks: [blocked] }).filter((a) => { return a.act !== 'report'; }).length, 0);
 });
 
+test('a check that failed after the merge sends the task back a round, on a fresh change', () => {
+  // The check child moved it calendar -> active, so it was written after the merge.
+  const failed = (over = {}, changeOver = {}) => { return task({ status: 'active', leaves: 'check', change: change({ merged: true, writtenSince: true, ...changeOver }), ...over }) };
+  const out = plan({ now, params, defaults: [], children: [], tasks: [failed()] });
+  assert.deepEqual(out.filter((a) => { return a.act !== 'report'; }).map((a) => { return [a.act, a.kind, a.tasks]; }), [['start_child', 'round', ['task_a']]]);
+  // A run already holds it, such as the round's own child: left to it.
+  assert.equal(acts({ tasks: [failed({}, { reviewRunActive: true })] }, 'start_child').length, 0);
+  // A person holds it: theirs.
+  assert.equal(acts({ tasks: [failed({ heldByPerson: true })] }, 'start_child').length, 0);
+});
+
 test('a check applied with its date past is dated now, never in the past', () => {
   const check = (visible_at) => {
     return acts({ tasks: [task({ leaves: 'check', check: { observe: 'o', where: 'w', visible_at }, change: change({ merged: true }) })] }, 'move_task')[0].until;
