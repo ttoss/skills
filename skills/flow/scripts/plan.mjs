@@ -16,7 +16,8 @@ import { fileURLToPath } from 'node:url';
 //             reviewRequired: bool | null,   // `Review` names a reviewer; null: not stated, a judge
 //             agentsMayIntegrate, focus: null | { task } | { tag },
 //             releaseQueue,                   // WIP limit on what waits between implementation and release; null: 20
-//             leavesByAgent: bool | null },   // the Closing evidence gives the agent the choice of what integrating leaves; null: a judge
+//             leavesByAgent: bool | null,     // the Closing evidence gives the agent the choice of what integrating leaves; null: a judge
+//             retargetByAgent: bool | null }, // the standing decision delegates retracting a blocks edge whose source integrated; null: a judge, only when one is found
 //   defaults: [{ repo, sha,                   // each repo's default branch head
 //                red: bool | null,            // its required checks or integration pipeline red there
 //                repairTask: id | null }],    // the open task tagged `repair` for that repo
@@ -26,6 +27,7 @@ import { fileURLToPath } from 'node:url';
 //   tasks: [{ id, status, priority, tags, rank, heldByPerson, inFocus,
 //             inherited: priority | null,   // held through an open commitment it blocks, above its own
 //             waitsOn: [holder],              // whom its waits are `on`
+//             blockedBy: [id | null] | null,  // its open `blocks` sources (null: one in a project the caller cannot reach); null: not read
 //             candidate: bool,                // in get-next's ready candidates
 //             due: bool,                      // date_came, hold_cleared, or an external wait past until
 //             dueKind: 'check' | 'other' | null,
@@ -512,7 +514,7 @@ const newWorkBudget = ({ tasks, params }) => {
 };
 
 // `plan: <n> acts (<kind> <count>, …) · runs <n>/<cap> by me (<free> free: <why>)`
-const planLine = ({ acts, runsByMe, cap, free, freeReason }) => {
+const planLine = ({ acts, runsByMe, cap, free, freeReason, held = 0 }) => {
   const counts = {};
   for (const a of acts) {
     counts[a.act] = (counts[a.act] ?? 0) + 1;
@@ -523,7 +525,59 @@ const planLine = ({ acts, runsByMe, cap, free, freeReason }) => {
     })
     .join(', ');
   const slots = free > 0 ? ` (${free} free: ${freeReason})` : '';
-  return `plan: ${acts.length} acts${kinds ? ` (${kinds})` : ''} · runs ${runsByMe}/${cap} by me${slots}`;
+  const integrated = held > 0 ? ` · held by integrated blockers: ${held}` : '';
+  return `plan: ${acts.length} acts${kinds ? ` (${kinds})` : ''} · runs ${runsByMe}/${cap} by me${slots}${integrated}`;
+};
+
+/**
+ * Each open task held only by `blocks` sources whose change integrated while
+ * the source stays open (released or checked later, GTF-E8): the edge still
+ * gates, and whether it should is a choice nobody made once the merge
+ * happened. A source the snapshot does not hold, or cannot name, is unknown,
+ * and an unknown is never a finding.
+ */
+export const heldByIntegrated = (tasks) => {
+  const byId = new Map(tasks.map((t) => { return [t.id, t]; }));
+  return tasks.flatMap((task) => {
+    const ids = task.blockedBy || [];
+    if (ids.length === 0) {
+      return [];
+    }
+    const sources = ids.map((id) => { return id && byId.get(id); });
+    const integrated = sources.every((s) => { return s && s.change && s.change.merged && !s.change.closed; });
+    if (!integrated) {
+      return [];
+    }
+    return [{ task: task.id, sources: sources.map((s) => { return { task: s.id, url: s.change.url }; }) }];
+  });
+};
+
+// What the tick does with a target held only by integrated sources: report it
+// (P7), since retracting the edge builds on work nobody has validated and
+// makes reverting the source cost more; or, when the standing decision
+// delegates it, retract each edge and record a `mentions` with the change.
+const integratedBlockerActs = ({ tasks, params }) => {
+  const found = heldByIntegrated(tasks);
+  if (found.length === 0) {
+    return { acts: [], findings: [] };
+  }
+  if (params.retargetByAgent === null || params.retargetByAgent === undefined) {
+    return {
+      acts: [{ act: 'judge', about: 'integrated_blockers', tasks: found.map((f) => { return f.task; }), reason: 'a task is held only by blocks sources whose change integrated: does the standing decision delegate retracting such an edge?' }],
+      findings: found,
+    };
+  }
+  if (!params.retargetByAgent) {
+    return { acts: [], findings: found };
+  }
+  return {
+    acts: found.flatMap((f) => {
+      return f.sources.map((s) => {
+        return { act: 'retarget_blocks', task: f.task, from: s.task, url: s.url, reason: `its source's change ${s.url} integrated: retract the blocks edge and record mentions, citing the standing decision` };
+      });
+    }),
+    findings: [],
+  };
 };
 
 // Each repo whose default branch is red with no repair task open yet: the tick
@@ -577,9 +631,10 @@ export const plan = ({ now, params, children = [], tasks = [], defaults = [] }) 
   const anyNew = items.some((i) => {
     return i.stage === 'new' && i.task.inFocus !== false;
   });
+  const blockers = integratedBlockerActs({ tasks, params });
   const acted = [...reconciled.acts, ...repairActs({ defaults, tasks }), ...work.flatMap((w) => {
     return w.acts;
-  }), ...delegated.acts];
+  }), ...blockers.acts, ...delegated.acts];
   const freeReason = delegated.free === 0
     ? null
     : delegated.held > 0
@@ -596,9 +651,12 @@ export const plan = ({ now, params, children = [], tasks = [], defaults = [] }) 
     freeReason,
     skipped: delegated.skipped,
     wip: newWork.wip,
+    // Targets held only by integrated but open sources, for the person: a
+    // finding, never a write.
+    heldByIntegrated: blockers.findings,
     // The tick's report line opens with this, quoted exactly, so a tick that
     // never ran the planner is visible in its own report.
-    line: planLine({ acts: acted, runsByMe: running + started, cap: params.maxRuns, free: delegated.free, freeReason }),
+    line: planLine({ acts: acted, runsByMe: running + started, cap: params.maxRuns, free: delegated.free, freeReason, held: blockers.findings.length }),
   };
   return [...acted, report];
 };

@@ -165,3 +165,13 @@ test('a saved snapshot is read instead of Flow and the code host, and a listed r
   assert.deepEqual(result.person.map((i) => { return [i.title, i.what, i.unblocks]; }), [['Ship it', 'merge it', 2]]);
   assert.deepEqual(saved, { project: 'proj_x', snapshot, rows });
 });
+
+test('a task held only by sources whose change integrated is listed for a person, with the changes, and is not counted in the queue', () => {
+  const src = t('t_src', { status: 'blocked', change: merged, blockedBy: [] });
+  const tgt = t('t_tgt', { change: null, blockedBy: ['t_src'] });
+  const notYet = t('t_wait', { change: null, blockedBy: ['t_open'] });
+  const out = pick({ tasks: [src, tgt, notYet, t('t_open')], details: { t_tgt: { task: { title: 'Build on it', url: 'https://flow/app/tasks/t_tgt' }, unblocks: 0 } }, members });
+  assert.deepEqual(out.queue, { now: 1, limit: 20 });
+  assert.deepEqual(out.person.map((i) => { return [i.id, i.who]; }), [['t_tgt', 'pedro@example.com']]);
+  assert.match(out.person[0].what, /https:\/\/gh\/pr\/2.*retract the blocks edge/);
+});

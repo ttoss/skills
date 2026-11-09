@@ -146,6 +146,10 @@ export const resolve = ({ file, main, runtime = {} }) => {
     // integrating leaves: it says so in prose, so a judge reads it when a
     // task needs the answer, never a guess here.
     leavesByAgent: null,
+    // Whether the standing decision delegates retracting a `blocks` edge
+    // whose source integrated: the decision is a Flow task, so a judge reads
+    // it when the planner finds such an edge, never a guess here.
+    retargetByAgent: null,
   };
   const projectId = (/proj_[0-9a-hjkmnp-tv-z]{10}/.exec(main['Flow project id'] || '') || [null])[0];
   const standingDecision = (/task_[0-9a-hjkmnp-tv-z]{10}/.exec(main['Standing-decision task id'] || '') || [null])[0];
