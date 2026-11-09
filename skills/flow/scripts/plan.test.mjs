@@ -687,3 +687,29 @@ test('with the standing decision delegating it, the tick retracts each edge and 
   assert.deepEqual(out.filter((a) => { return a.act === 'retarget_blocks' }).map((a) => { return [a.task, a.from, a.url] }), [['task_tgt', 'task_src', 'https://github.com/o/r/pull/1']]);
   assert.deepEqual(out.at(-1).heldByIntegrated, []);
 });
+
+test("children sharing the tick's push branch: one starts per repo, the next is skipped with that reason", () => {
+  const inRepo = (id, repos) => { return task({ id, status: 'active', candidate: true, leaves: null, rank: Number(id.slice(-1)), repos }) };
+  const capped = { ...params, maxRuns: 3, branchesPerRepo: 1 };
+  const out = plan({ now, params: capped, tasks: [inRepo('task_n1', ['o/r']), inRepo('task_n2', ['o/r'])] });
+  assert.deepEqual(out.filter((a) => { return a.act === 'start_child' }).map((a) => { return a.tasks[0] }), ['task_n1']);
+  const report = out.at(-1);
+  assert.deepEqual(report.skipped, [{ task: 'task_n2', reason: "the repo's push branch is taken this tick" }]);
+  assert.equal(report.freeReason, "the repo's push branch is taken this tick");
+  const apart = plan({ now, params: capped, tasks: [inRepo('task_n1', ['o/r']), inRepo('task_n2', ['o/s'])] });
+  assert.deepEqual(apart.filter((a) => { return a.act === 'start_child' }).map((a) => { return a.tasks[0] }), ['task_n1', 'task_n2']);
+  const sessions = plan({ now, params: { ...capped, branchesPerRepo: null }, tasks: [inRepo('task_n1', ['o/r']), inRepo('task_n2', ['o/r'])] });
+  assert.deepEqual(sessions.filter((a) => { return a.act === 'start_child' }).map((a) => { return a.tasks[0] }), ['task_n1', 'task_n2']);
+});
+
+test('under a branch cap, a round takes its change repo, a review pushes nothing, and unknown repos are a judge', () => {
+  const capped = { ...params, maxRuns: 3, branchesPerRepo: 1 };
+  const round = task({ id: 'task_r1', status: 'active', change: change({ checks: 'red', verdict: null }) });
+  const review = task({ id: 'task_v1', change: change({ url: 'https://github.com/o/r/pull/2', verdict: null }) });
+  const fresh = task({ id: 'task_n1', status: 'active', candidate: true, leaves: null, rank: 5, repos: ['o/r'] });
+  const out = plan({ now, params: capped, tasks: [round, review, fresh] });
+  assert.deepEqual(out.filter((a) => { return a.act === 'start_child' }).map((a) => { return a.tasks[0] }).sort(), ['task_r1', 'task_v1']);
+  assert.deepEqual(out.at(-1).skipped, [{ task: 'task_n1', reason: "the repo's push branch is taken this tick" }]);
+  const unknown = plan({ now, params: capped, tasks: [task({ id: 'task_n2', status: 'active', candidate: true, leaves: null, repos: null })] });
+  assert.deepEqual(unknown.filter((a) => { return a.act === 'judge' }).map((a) => { return a.about }), ['repos']);
+});

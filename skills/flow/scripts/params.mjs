@@ -150,6 +150,12 @@ export const resolve = ({ file, main, runtime = {} }) => {
     // whose source integrated: the decision is a Flow task, so a judge reads
     // it when the planner finds such an edge, never a guess here.
     retargetByAgent: null,
+    // How many children may push to one repo in one tick; null: no cap, as
+    // when each child runs in a session of its own.
+    branchesPerRepo: pick('branchesPerRepo', [
+      ['Branches per repo', intOf(main['Branches per repo'])],
+      ['Runtime file: Branches per repo', intOf(runtime['Branches per repo'])],
+    ], null),
   };
   const projectId = (/proj_[0-9a-hjkmnp-tv-z]{10}/.exec(main['Flow project id'] || '') || [null])[0];
   const standingDecision = (/task_[0-9a-hjkmnp-tv-z]{10}/.exec(main['Standing-decision task id'] || '') || [null])[0];

@@ -17,7 +17,8 @@ import { fileURLToPath } from 'node:url';
 //             agentsMayIntegrate, focus: null | { task } | { tag },
 //             releaseQueue,                   // WIP limit on what waits between implementation and release; null: 20
 //             leavesByAgent: bool | null,     // the Closing evidence gives the agent the choice of what integrating leaves; null: a judge
-//             retargetByAgent: bool | null }, // the standing decision delegates retracting a blocks edge whose source integrated; null: a judge, only when one is found
+//             retargetByAgent: bool | null,   // the standing decision delegates retracting a blocks edge whose source integrated; null: a judge, only when one is found
+//             branchesPerRepo: number | null }, // children that may push to one repo this tick (children sharing the tick's push branch: 1); null: no cap
 //   defaults: [{ repo, sha,                   // each repo's default branch head
 //                red: bool | null,            // its required checks or integration pipeline red there
 //                repairTask: id | null }],    // the open task tagged `repair` for that repo
@@ -38,6 +39,7 @@ import { fileURLToPath } from 'node:url';
 //             check: null | { observe, where, visible_at }, // with leaves check: what the check's wait names, and its date
 //             leavesWait: bool,               // it waits on a person because nothing said what integrating leaves (the tick's own wait)
 //             rounds: number,
+//             repos: [repo] | null,           // the repos its child pushes to, when it has no change yet; null: not read, a judge under a branch cap
 //             repairs: repo | null,           // the repo whose red default branch this task repairs
 //             change: null | { url, repo, draft, headSha,
 //                               checks: 'pending' | 'green' | 'red' | null,
@@ -429,9 +431,25 @@ const itemSkip = (item) => {
   return null;
 };
 
-// The act that fills a slot.
-const slotAct = (item) => {
+// The kinds of child that push a branch; a review or a check child only reads.
+const PUSHES = new Set(['implement', 'round', 'conflict', 'repair']);
+
+// The repos a child for this item pushes to: its change's, else what the
+// snapshot says the task touches; null when unknown.
+const pushRepos = (item) => {
+  if (!PUSHES.has(item.kind)) {
+    return [];
+  }
   const { task } = item;
+  return task.change ? [task.change.repo] : task.repos ?? null;
+};
+
+// The act that fills a slot.
+const slotAct = (item, { branchCap } = {}) => {
+  const { task } = item;
+  if (branchCap && pushRepos(item) === null) {
+    return { act: 'judge', about: 'repos', task: task.id, reason: "children share the tick's push branch: which repos does its child push to?" };
+  }
   if (item.stage === 'new' && task.brief === null) {
     return { act: 'judge', about: 'ready_brief', task: task.id, reason: 'does the brief meet the Ready brief, or ask for more than one delivery?' };
   }
@@ -446,13 +464,19 @@ const slotAct = (item) => {
 // holds its slot for hours, so a repair or a very_high task arriving next
 // would wait for one, and taking it back would mean interrupting a run. The
 // slot is head-of-the-line room for what ages faster, never a preemption.
-const delegate = ({ items, free, newWork, cap }) => {
+//
+// Where children share the tick's push branch per repo (`branchesPerRepo`),
+// a child past that count in a repo could not push what it made, so it is not
+// started: the slot goes to the next candidate, or ends in that reason.
+const delegate = ({ items, free, newWork, cap, branchCap = null }) => {
   const acts = [];
   const skipped = [];
   let left = free;
   let budget = newWork.budget;
   let held = 0;
   let reserved = 0;
+  let branchTaken = 0;
+  const pushing = new Map();
   const reserve = cap >= 2 ? 1 : 0;
   for (const item of [...items].sort(byPriority)) {
     const skip = itemSkip(item);
@@ -467,6 +491,12 @@ const delegate = ({ items, free, newWork, cap }) => {
     }
     if (left === 0) {
       break;
+    }
+    const repos = branchCap ? pushRepos(item) || [] : [];
+    if (repos.some((repo) => { return (pushing.get(repo) ?? 0) >= branchCap; })) {
+      branchTaken += 1;
+      skipped.push({ task: item.task.id, reason: "the repo's push branch is taken this tick" });
+      continue;
     }
     // New work beyond the WIP limit waits upstream, where waiting is cheap;
     // what the person said cannot wait (very_high, a high bug) starts anyway.
@@ -483,10 +513,13 @@ const delegate = ({ items, free, newWork, cap }) => {
       }
       budget -= 1;
     }
-    acts.push(slotAct(item));
+    acts.push(slotAct(item, { branchCap }));
+    for (const repo of repos) {
+      pushing.set(repo, (pushing.get(repo) ?? 0) + 1);
+    }
     left -= 1;
   }
-  return { acts, skipped, free: left, held, reserved };
+  return { acts, skipped, free: left, held, reserved, branchTaken };
 };
 
 // The WIP limit that holds new work upstream (W1, W21): the release queue, what
@@ -636,7 +669,7 @@ export const plan = ({ now, params, children = [], tasks = [], defaults = [] }) 
     return c.byMe && !reconciled.closed.has(c.run);
   }).length;
   const newWork = newWorkBudget({ tasks, params });
-  const delegated = delegate({ items, free: Math.max(0, params.maxRuns - running), newWork, cap: params.maxRuns });
+  const delegated = delegate({ items, free: Math.max(0, params.maxRuns - running), newWork, cap: params.maxRuns, branchCap: params.branchesPerRepo ?? null });
   const started = delegated.acts.filter((a) => {
     return a.act === 'start_child';
   }).length;
@@ -653,7 +686,9 @@ export const plan = ({ now, params, children = [], tasks = [], defaults = [] }) 
       ? `new work held upstream: ${newWork.why}`
       : delegated.reserved > 0
         ? 'kept for what ages faster'
-        : anyNew ? 'every candidate left was skipped' : 'no candidate left in the focus';
+        : delegated.branchTaken > 0
+          ? "the repo's push branch is taken this tick"
+          : anyNew ? 'every candidate left was skipped' : 'no candidate left in the focus';
   const report = {
     act: 'report',
     started,

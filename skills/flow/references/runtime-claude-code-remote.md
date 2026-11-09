@@ -11,6 +11,8 @@ The tick and each child run in a cloud session of their own, through the `claude
 | End | Close the Flow run (`upsert-agent-run` `status`, `usage` from the session), then `archive_session`. A closed run with a live session is not ended |
 | Message | `send_message` |
 
+A tick without `create_session`, such as a routine fired with only the trigger tools, runs its children in-process, in the foreground. They share the session's one designated push branch per repo, so its snapshot carries `params.branchesPerRepo: 1` (`flow` § 1); with `create_session` each child has its own, and there is no cap.
+
 **The code host** is GitHub, through the GitHub MCP tools; `gh` in these sessions is for search only, and the session's permission policy may refuse a write through it.
 
 | Act | How |

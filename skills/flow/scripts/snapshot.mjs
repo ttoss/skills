@@ -18,8 +18,9 @@ import { load as loadParams } from './params.mjs';
 // Usage: node snapshot.mjs --root <repo dir> [--extra <file>] [--now <ISO>]
 //   (params and repos from the parameters there, the code host through `gh`),
 //   or --project <proj_…> [--extra <file>] with everything else in the file.
-// --extra JSON: { "params": { maxRuns, staleAfterHours, autoRounds, reviewByAgent, reviewRequired, agentsMayIntegrate, leavesByAgent },
-//                 "tasks": { "task_…": { brief, leaves, rounds, repairs, change } },
+// --extra JSON: { "params": { maxRuns, staleAfterHours, autoRounds, reviewByAgent, reviewRequired, agentsMayIntegrate, leavesByAgent, branchesPerRepo },
+//                   (with --root, laid over the parameters file's)
+//                 "tasks": { "task_…": { brief, leaves, rounds, repairs, repos, change } },
 //                 "children": { "arun_…": { runtime } },
 //                 "defaults": [{ repo, sha, red, repairTask }] }
 // Output: the snapshot plan.mjs reads, plus `needs: { changes: [{ task, url }],
@@ -30,7 +31,7 @@ const CLOSED = ['completed', 'cancelled', 'discarded', 'archived'];
 // The statuses a task with a change in flight can hold.
 const WORKED = ['active', 'waiting', 'calendar', 'blocked'];
 
-export const DEFAULT_PARAMS = { maxRuns: 3, staleAfterHours: 4, autoRounds: 1, reviewByAgent: false, reviewRequired: null, agentsMayIntegrate: true, focus: null, releaseQueue: null, leavesByAgent: null, retargetByAgent: null };
+export const DEFAULT_PARAMS = { maxRuns: 3, staleAfterHours: 4, autoRounds: 1, reviewByAgent: false, reviewRequired: null, agentsMayIntegrate: true, focus: null, releaseQueue: null, leavesByAgent: null, retargetByAgent: null, branchesPerRepo: null };
 
 // The tick's own wait for a missing after_integration, by the words the
 // planner's reason carries, so a later tick can read it again when the
@@ -120,6 +121,7 @@ export const build = ({ now, candidates, slices, held = [], dueIds, children, mi
       leavesWait: own.leavesWait ?? waits.some((w) => { return Boolean(w.on) && LEAVES_WAIT.test(w.reason || ''); }),
       rounds: own.rounds ?? 0,
       repairs: own.repairs ?? repairOf.get(row.id) ?? null,
+      repos: own.repos ?? null,
       change: own.change ?? null,
     };
   });
@@ -379,8 +381,10 @@ if (isMain) {
     process.exit(2);
   }
   const extra = f.extra ? JSON.parse(readFileSync(f.extra, 'utf8')) : {};
-  if (p && !extra.params) {
-    extra.params = p.params;
+  // What only the tick knows this run, such as `branchesPerRepo` when its
+  // children share its push branch, is laid over the file's parameters.
+  if (p) {
+    extra.params = { ...p.params, ...(extra.params || {}) };
   }
   const progress = (line) => { process.stderr.write(`${line}\n`); };
   run({ client: clientFromEnv(), project, now: f.now, extra, repos: p?.repos, reviewers: p?.reviewers ?? [], progress }).then(
