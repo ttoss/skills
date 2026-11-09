@@ -37,9 +37,9 @@ import { fileURLToPath } from 'node:url';
 //             leaves: 'close' | 'release' | 'check' | 'none' | null, // the task's after_integration; null: not handed off, a judge reads the body
 //             check: null | { observe, where, visible_at }, // with leaves check: what the check's wait names, and its date
 //             leavesWait: bool,               // it waits on a person because nothing said what integrating leaves (the tick's own wait)
-//             rounds: number,
+//             rounds: number,                 // the task's fix runs, over all its changes
 //             repairs: repo | null,           // the repo whose red default branch this task repairs
-//             change: null | { url, repo, draft, headSha,
+//             changes: [{ url, repo, draft, headSha, // every live `implements` change, one per repo it touches
 //                               checks: 'pending' | 'green' | 'red' | null,
 //                               redOnDefault, conflict, merged, closed,
 //                               checksBeforeRepair,   // its checks last ran before the repo's latest repair integrated
@@ -52,11 +52,37 @@ import { fileURLToPath } from 'node:url';
 //                               reviewRunActive,      // a running run holds the task
 //                               reviewEnforced,       // the code host refuses to integrate without the review
 //                               touchesOwnGates, reservedToPerson,
-//                               findingsToPerson } }]  // a FINDINGS the Merge rule gives to a person, not a round; null: a judge
+//                               findingsToPerson }] }] // a FINDINGS the Merge rule gives to a person, not a round; null: a judge
 // }
+// A task written by hand may carry one `change` in place of `changes`.
 
 
 const HOUR = 3600 * 1000;
+
+/** A task's changes: the snapshot's `changes`, or the one `change` a hand-written task carries. */
+export const changesOf = (task) => {
+  return task.changes ?? (task.change ? [task.change] : []);
+};
+
+const openOf = (changes) => {
+  return changes.filter((c) => { return !c.merged && !c.closed; });
+};
+
+/**
+ * Every change of the task integrated, one closed unmerged aside: only then
+ * does it leave the release queue or take what integrating leaves, since one
+ * change in a repo says nothing about the task's change in another.
+ */
+export const allIntegrated = (task) => {
+  const live = changesOf(task).filter((c) => { return c.merged || !c.closed; });
+  return live.length > 0 && live.every((c) => { return c.merged; });
+};
+
+/** The change the task's work stands on: its first open one, else its last integrated, else its last. */
+export const changeOf = (task) => {
+  const changes = changesOf(task);
+  return openOf(changes)[0] || changes.filter((c) => { return c.merged; }).at(-1) || changes.at(-1) || null;
+};
 
 const NONE = { acts: [], item: null };
 
@@ -132,6 +158,7 @@ const reconcileChildren = ({ children, params, now }) => {
   return { acts, closed };
 };
 
+// Rounds are the task's fix runs, whichever of its changes they pushed to.
 const roundOrPerson = ({ task, params, why }) => {
   if (task.rounds < params.autoRounds) {
     return {
@@ -150,8 +177,9 @@ const roundOrPerson = ({ task, params, why }) => {
 // goes to them at once, since a round there spends a child and CI to arrive
 // at the same person.
 const findingsRound = ({ task, change, params }) => {
+  const why = `review findings on ${change.url}`;
   if (task.rounds >= params.autoRounds) {
-    return roundOrPerson({ task, params, why: 'review findings' });
+    return roundOrPerson({ task, params, why });
   }
   if (change.reservedToPerson === true || change.findingsToPerson === true) {
     return { acts: [{ act: 'wait_on_person', task: task.id, reason: `review findings on ${change.url} that the Merge rule gives to a person, with no automatic round` }], item: null };
@@ -159,13 +187,14 @@ const findingsRound = ({ task, change, params }) => {
   if (change.findingsToPerson === null || change.findingsToPerson === undefined) {
     return { acts: [{ act: 'judge', about: 'findings', task: task.id, url: change.url, reason: 'review findings: does the Merge rule give any of them, or the change, to a person rather than a round?' }], item: null };
   }
-  return roundOrPerson({ task, params, why: 'review findings' });
+  return roundOrPerson({ task, params, why });
 };
 
 // What the task's body says integrating leaves.
 const LEAVES = {
-  close: (task, change) => {
-    return { act: 'move_task', task: task.id, status: 'completed', reason: `closed on integration, citing ${change.url}` };
+  close: (task) => {
+    const urls = changesOf(task).filter((c) => { return c.merged; }).map((c) => { return c.url; });
+    return { act: 'move_task', task: task.id, status: 'completed', reason: `closed on integration, citing ${urls.join(', ')}` };
   },
   release: (task) => {
     return { act: 'release_step', task: task.id, reason: 'integrated: write its release step by the Release procedure, a task that blocks it (GTF-N4)' };
@@ -317,7 +346,7 @@ const advanceGreen = ({ task, change, params, now }) => {
 const advanceOpen = ({ task, change, params, underRepair, now }) => {
   if (change.conflict) {
     return {
-      acts: [{ act: 'move_task', task: task.id, status: 'active', reason: 'a conflict with the default branch' }],
+      acts: [{ act: 'move_task', task: task.id, status: 'active', reason: `a conflict with the default branch on ${change.url}` }],
       item: { stage: 'gates', kind: 'conflict' },
     };
   }
@@ -334,29 +363,77 @@ const advanceOpen = ({ task, change, params, underRepair, now }) => {
   if (change.checks === 'red') {
     // Red on the default branch too is caused outside the change: no round
     // counted. A repair's own change is never that: it is the fix.
-    return change.redOnDefault && !task.repairs ? NONE : roundOrPerson({ task, params, why: 'checks red' });
+    return change.redOnDefault && !task.repairs ? NONE : roundOrPerson({ task, params, why: `checks red on ${change.url}` });
   }
   return change.checks === 'green' ? advanceGreen({ task, change, params, now }) : NONE;
 };
 
-// Section 3: the transitions on one task's change, in the process's order.
-const advance = ({ task, params, underRepair, now }) => {
-  const { change } = task;
-  if (change.draft) {
-    return NONE;
+// The open change's own acts, in the process's order.
+const advanceChange = ({ task, change, params, underRepair, now }) => {
+  return change.draft ? NONE : advanceOpen({ task, change, params, underRepair, now });
+};
+
+// Which change an integrated task advances by: a red pipeline first, then one
+// merged since the task was last written, else the last.
+const integratedBy = (merged) => {
+  return merged.find((c) => { return c.pipelineRedAfterMerge && !c.writtenSince; })
+    || merged.find((c) => { return !c.writtenSince; })
+    || merged.at(-1);
+};
+
+const ITEM_ORDER = ['conflict', 'round', 'review'];
+
+// One status per task, whatever its changes asked: a wait on a person holds
+// it, so it wins over a round, which the next tick starts once they answer;
+// moves to `active` are one move. Every other act stands, each change's own.
+const combine = (results) => {
+  const acts = results.flatMap((r) => { return r.acts; });
+  const rest = acts.filter((a) => { return a.act !== 'wait_on_person' && a.act !== 'move_task'; });
+  const one = (list) => {
+    return list.length ? [{ ...list[0], reason: list.map((a) => { return a.reason; }).join('; ') }] : [];
+  };
+  const waits = acts.filter((a) => { return a.act === 'wait_on_person'; });
+  if (waits.length) {
+    return { acts: [...rest, ...one(waits)], item: null };
   }
-  if (change.closed && !change.merged) {
+  const items = results.map((r) => { return r.item; }).filter(Boolean)
+    .sort((a, b) => { return ITEM_ORDER.indexOf(a.kind) - ITEM_ORDER.indexOf(b.kind); });
+  return { acts: [...rest, ...one(acts.filter((a) => { return a.act === 'move_task'; }))], item: items[0] || null };
+};
+
+// Section 3: the transitions on a task's changes, in the process's order.
+// Each open change takes its own gates; what integrating leaves waits for the
+// last of them, so a task with one change per repo never closes, or gets its
+// release step, on the first merge.
+const advance = ({ task, params, underRepair, now }) => {
+  const changes = changesOf(task);
+  const open = openOf(changes);
+  const merged = changes.filter((c) => { return c.merged; });
+  // A change closed unmerged leaves its part of the task undone, whatever
+  // the others do: a person implements it again or cancels the task.
+  const results = changes.filter((c) => { return c.closed && !c.merged; }).map((c) => {
     return {
       acts: [
-        { act: 'retract_reference', task: task.id, url: change.url, reason: 'the change closed without integrating' },
-        { act: 'wait_on_person', task: task.id, reason: 'the change closed without integrating: implement it again, or cancel the task' },
+        { act: 'retract_reference', task: task.id, url: c.url, reason: 'the change closed without integrating' },
+        { act: 'wait_on_person', task: task.id, reason: `${c.url} closed without integrating: implement it again, or cancel the task` },
       ],
       item: null,
     };
+  });
+  if (open.length === 0 && merged.length === 0) {
+    return combine(results);
   }
-  return change.merged
-    ? advanceMerged({ task, change, params, underRepair, now })
-    : advanceOpen({ task, change, params, underRepair, now });
+  if (open.length) {
+    results.push(...open.map((change) => { return advanceChange({ task, change, params, underRepair, now }); }));
+    // A red pipeline on an integrated change costs by the hour: its reversal
+    // does not wait for the task's other changes.
+    results.push(...merged.filter((c) => { return c.pipelineRedAfterMerge && !c.writtenSince; }).map((change) => {
+      return advanceMerged({ task, change, params, underRepair, now });
+    }));
+    return combine(results);
+  }
+  results.push(advanceMerged({ task, change: integratedBy(merged), params, underRepair, now }));
+  return combine(results);
 };
 
 const isCheck = (task) => {
@@ -369,17 +446,19 @@ const judgeWait = (task) => {
 
 // One task's acts and the work items it adds for section 4.
 const taskWork = ({ task, params, underRepair, now }) => {
-  if (task.change) {
+  const changes = changesOf(task);
+  if (changes.length) {
     const advanced = advance({ task, params, underRepair, now });
     const stage = task.repairs ? { stage: 'repair' } : {};
     const items = advanced.item ? [{ ...advanced.item, ...stage, task }] : [];
-    if (task.change.merged && isCheck(task)) {
+    const integrated = allIntegrated(task);
+    if (integrated && isCheck(task)) {
       items.push({ stage: 'integratedCheck', kind: 'check', task });
     }
     // A task already advanced past its merge that nothing moves would keep a
     // past-due wait until a person reviews it. The tick's own wait for what
     // integrating leaves is excluded: "cleared means active" would start a round.
-    const idle = task.change.merged && task.change.writtenSince && advanced.acts.length === 0 && !advanced.item;
+    const idle = integrated && changes.filter((c) => { return c.merged; }).every((c) => { return c.writtenSince; }) && advanced.acts.length === 0 && !advanced.item;
     if (idle && task.due && !isCheck(task) && !task.leavesWait) {
       return { acts: [judgeWait(task)], items };
     }
@@ -501,12 +580,15 @@ const delegate = ({ items, free, newWork, cap }) => {
 // would not bring its date closer: it enters the queue when it comes due. What
 // waits on nobody is outside the team, and holding new work never drains it,
 // so a past chase date on it does not count.
-export const inReleaseQueue = ({ change, waitsOn, deferredUntil, due, heldOutside }) => {
-  if (!change || change.closed) {
-    return false;
+// A task with one change per repo stays in it until the last integrates.
+export const inReleaseQueue = (task) => {
+  const { waitsOn, deferredUntil, due, heldOutside } = task;
+  const open = openOf(changesOf(task));
+  if (open.some((c) => { return !c.draft; })) {
+    return true;
   }
-  if (!change.merged) {
-    return !change.draft;
+  if (open.length || !allIntegrated(task)) {
+    return false;
   }
   if (deferredUntil) {
     return false;
@@ -556,11 +638,11 @@ export const heldByIntegrated = (tasks) => {
       return [];
     }
     const sources = ids.map((id) => { return id && byId.get(id); });
-    const integrated = sources.every((s) => { return s && s.change && s.change.merged && !s.change.closed; });
+    const integrated = sources.every((s) => { return s && allIntegrated(s); });
     if (!integrated) {
       return [];
     }
-    return [{ task: task.id, sources: sources.map((s) => { return { task: s.id, url: s.change.url }; }) }];
+    return [{ task: task.id, sources: sources.map((s) => { return { task: s.id, url: changeOf(s).url }; }) }];
   });
 };
 
@@ -601,7 +683,7 @@ const repairActs = ({ defaults, tasks }) => {
     })
     .map((d) => {
       const held = tasks.filter((t) => {
-        return t.change && t.change.repo === d.repo && !t.change.closed;
+        return changesOf(t).some((c) => { return c.repo === d.repo && !c.closed; });
       });
       return {
         act: 'repair_default',

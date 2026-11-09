@@ -19,7 +19,7 @@ import { load as loadParams } from './params.mjs';
 //   (params and repos from the parameters there, the code host through `gh`),
 //   or --project <proj_…> [--extra <file>] with everything else in the file.
 // --extra JSON: { "params": { maxRuns, staleAfterHours, autoRounds, reviewByAgent, reviewRequired, agentsMayIntegrate, leavesByAgent },
-//                 "tasks": { "task_…": { brief, leaves, rounds, repairs, change } },
+//                 "tasks": { "task_…": { brief, leaves, rounds, repairs, changes: [change] } },
 //                 "children": { "arun_…": { runtime } },
 //                 "defaults": [{ repo, sha, red, repairTask }] }
 // Output: the snapshot plan.mjs reads, plus `needs: { changes: [{ task, url }],
@@ -51,19 +51,23 @@ const blockersOf = (row) => {
 };
 
 /**
- * How many fix rounds a change has had: the closed `flow child` runs on its
- * task that started after the change was opened and list it as `produced`.
- * The child that opened it started before it; a review or check child pushes
- * nothing to it, so neither counts.
+ * How many fix rounds a task has had: the closed `flow child` runs on it that
+ * started after one of its changes was opened and list that change as
+ * `produced`, each run once. The child that opened a change started before
+ * it; a review or check child pushes nothing to it, so neither counts.
  */
-export const roundsOf = ({ runs, change }) => {
-  const opened = Date.parse(change.createdAt);
-  if (Number.isNaN(opened)) {
-    return 0;
-  }
+export const roundsOf = ({ runs, changes }) => {
   return runs.filter((r) => {
-    return r.status !== 'running' && Date.parse(r.started_at) > opened && (r.produced || []).includes(change.url);
+    return r.status !== 'running' && changes.some((c) => {
+      const opened = Date.parse(c.createdAt);
+      return !Number.isNaN(opened) && Date.parse(r.started_at) > opened && (r.produced || []).includes(c.url);
+    });
   }).length;
+};
+
+// The changes the model already gave for a task, as `changes` or one `change`.
+const given = (own) => {
+  return Boolean(own?.changes || own?.change);
 };
 
 /** The snapshot from what was read, as a pure function. */
@@ -120,7 +124,10 @@ export const build = ({ now, candidates, slices, held = [], dueIds, children, mi
       leavesWait: own.leavesWait ?? waits.some((w) => { return Boolean(w.on) && LEAVES_WAIT.test(w.reason || ''); }),
       rounds: own.rounds ?? 0,
       repairs: own.repairs ?? repairOf.get(row.id) ?? null,
-      change: own.change ?? null,
+      // Every change the task implements, one per repo: the planner gates each
+      // and advances the task only once all integrated. A hand-written task
+      // may give one `change`.
+      changes: own.changes ?? (own.change ? [own.change] : []),
     };
   });
   const snapshotChildren = children.map((run) => {
@@ -136,7 +143,7 @@ export const build = ({ now, candidates, slices, held = [], dueIds, children, mi
     };
   });
   const needs = Object.entries(implementsOf).flatMap(([task, urls]) => {
-    return urls.filter((url) => { return !extra.tasks?.[task]?.change; }).map((url) => { return { task, url }; });
+    return urls.filter(() => { return !given(extra.tasks?.[task]); }).map((url) => { return { task, url }; });
   });
   return {
     now,
@@ -272,7 +279,7 @@ export const run = async ({ client, project, now = new Date().toISOString(), ext
     const red = new Map((extra.defaults || []).map((d) => { return [d.repo, d.red]; }));
     const enforced = new Map((extra.defaults || []).map((d) => { return [d.repo, d.reviewEnforced ?? null]; }));
     const holders = new Set([...children.runs, ...running.runs].flatMap((r) => { return r.works_on || []; }));
-    const toRead = Object.entries(implementsOf).filter(([task]) => { return !extra.tasks[task]?.change; });
+    const toRead = Object.entries(implementsOf).filter(([task]) => { return !given(extra.tasks[task]); });
     // Each repo the changes live in is asked once before any change: one the
     // session cannot read (the repo outside the session's access, say) is
     // skipped from the start, not refused once per change.
@@ -315,27 +322,34 @@ export const run = async ({ client, project, now = new Date().toISOString(), ext
       }
     };
     await mapLimit(toRead, host === 'state' ? 8 : 4, async ([task, urls]) => {
-      // One change the host cannot read never hides the others the task cites.
+      // One change the host cannot read never hides the others the task cites,
+      // but a task whose open changes are all unread is left out: what it reads
+      // as integrated may not be, and the planner would close it.
       const changes = (await Promise.all(urls.map((u) => { return readOne(task, u); }))).filter(Boolean);
-      // The open change when there is one, else the last integrated.
-      const change = changes.find((c) => { return !c.merged && !c.closed; }) || changes.at(-1);
-      if (!change) {
+      if (!changes.length || (changes.length < urls.length && !changes.some((c) => { return !c.merged && !c.closed; }))) {
         return;
       }
       try {
-        const { title, task: named, mergedAt, pipelineDoneAt, createdAt, ...rest } = change;
-        // Written after the merge and after its pipeline finished: the tick
-        // (or a person) already applied what integrating left.
-        const updated = full[task]?.task?.updated_at;
-        const settled = [mergedAt, pipelineDoneAt].filter(Boolean).map(Date.parse);
-        const writtenSince = Boolean(change.merged && updated && settled.length && Date.parse(updated) > Math.max(...settled));
         // Rounds are Flow's answer, from the runs on the task, never a count
         // the model carries between ticks. Where a change stands needs none.
-        const rounds = extra.tasks[task]?.rounds ?? (host === 'state' ? 0 : roundsOf({
-          runs: (await get('/agent-runs', { project, task, agent: 'flow child', limit: 100 })).runs || [],
-          change: { url: change.url, createdAt },
-        }));
-        extra.tasks[task] = { ...(extra.tasks[task] || {}), rounds, change: { ...rest, writtenSince, redOnDefault: red.get(change.repo) ?? null, reviewEnforced: enforced.get(change.repo) ?? null, reviewRunActive: holders.has(task) } };
+        // A fix run counts once, whichever of the task's changes it pushed to.
+        const runs = extra.tasks[task]?.rounds !== undefined || host === 'state'
+          ? null
+          : (await get('/agent-runs', { project, task, agent: 'flow child', limit: 100 })).runs || [];
+        const rounds = extra.tasks[task]?.rounds ?? (runs ? roundsOf({ runs, changes }) : 0);
+        const updated = full[task]?.task?.updated_at;
+        extra.tasks[task] = {
+          ...(extra.tasks[task] || {}),
+          rounds,
+          changes: changes.map((change) => {
+            const { title, task: named, mergedAt, pipelineDoneAt, createdAt, ...rest } = change;
+            // Written after the merge and after its pipeline finished: the tick
+            // (or a person) already applied what integrating left.
+            const settled = [mergedAt, pipelineDoneAt].filter(Boolean).map(Date.parse);
+            const writtenSince = Boolean(change.merged && updated && settled.length && Date.parse(updated) > Math.max(...settled));
+            return { ...rest, writtenSince, redOnDefault: red.get(change.repo) ?? null, reviewEnforced: enforced.get(change.repo) ?? null, reviewRunActive: holders.has(task) };
+          }),
+        };
       } catch (error) {
         hostErrors.push({ task, error: firstLine(error) });
       }

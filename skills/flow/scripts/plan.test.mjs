@@ -6,7 +6,7 @@ import { dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { plan } from './plan.mjs';
+import { inReleaseQueue, plan } from './plan.mjs';
 
 const now = '2026-10-30T12:00:00Z';
 const params = {
@@ -686,4 +686,50 @@ test('with the standing decision delegating it, the tick retracts each edge and 
   const out = plan({ now, params: { ...params, retargetByAgent: true }, tasks: [source(), target()] });
   assert.deepEqual(out.filter((a) => { return a.act === 'retarget_blocks' }).map((a) => { return [a.task, a.from, a.url] }), [['task_tgt', 'task_src', 'https://github.com/o/r/pull/1']]);
   assert.deepEqual(out.at(-1).heldByIntegrated, []);
+});
+
+// A task with one change per repo: each change takes its own gates, and what
+// integrating leaves waits for the last of them.
+const two = (a, b, over = {}) => {
+  return task({ leaves: 'release', changes: [change(a), change({ url: 'https://github.com/o/s/pull/2', repo: 'o/s', ...b })], ...over });
+};
+
+test('one change green, one conflicted: the green one integrates, the conflicted one gets a round, and no release step', () => {
+  const out = plan({ now, params, tasks: [two({}, { conflict: true })] });
+  assert.deepEqual(out.filter((a) => { return a.act === 'integrate'; }).map((a) => { return a.url; }), ['https://github.com/o/r/pull/1']);
+  assert.deepEqual(out.filter((a) => { return a.act === 'move_task'; }).map((a) => { return [a.status, a.reason]; }), [['active', 'a conflict with the default branch on https://github.com/o/s/pull/2']]);
+  assert.deepEqual(out.filter((a) => { return a.act === 'start_child'; }).map((a) => { return a.kind; }), ['conflict']);
+  assert.equal(out.filter((a) => { return a.act === 'release_step'; }).length, 0);
+});
+
+test('one change integrated, the other still open: nothing integrating leaves is applied, and the task stays in the release queue', () => {
+  const out = plan({ now, params: { ...params, releaseQueue: 1 }, tasks: [two({ merged: true }, { verdict: null, reviewRunActive: true }), task({ id: 'task_new', status: 'active', candidate: true })] });
+  assert.deepEqual(kinds(out), []);
+  assert.equal(out.at(-1).wip.releaseQueue.now, 1);
+  assert.ok(inReleaseQueue(two({ merged: true }, { draft: false })));
+  assert.ok(!inReleaseQueue(two({ merged: true }, { merged: true })));
+});
+
+test('both changes integrated: one release step, and a close cites both', () => {
+  assert.equal(acts({ tasks: [two({ merged: true }, { merged: true })] }, 'release_step').length, 1);
+  const closed = acts({ tasks: [two({ merged: true }, { merged: true }, { leaves: 'close' })] }, 'move_task');
+  assert.deepEqual(closed.map((a) => { return [a.status, a.reason]; }), [['completed', 'closed on integration, citing https://github.com/o/r/pull/1, https://github.com/o/s/pull/2']]);
+});
+
+test('two changes needing a round are one round on the task, the conflict first; with the rounds spent, one wait on a person', () => {
+  const fresh = plan({ now, params, tasks: [two({ checks: 'red' }, { conflict: true })] });
+  assert.deepEqual(kinds(fresh), ['move_task', 'start_child']);
+  assert.equal(fresh.find((a) => { return a.act === 'start_child'; }).kind, 'conflict');
+  assert.deepEqual(kinds(plan({ now, params, tasks: [two({ checks: 'red' }, { checks: 'red' }, { rounds: 1 })] })), ['wait_on_person']);
+});
+
+test('a change closed unmerged beside an open one is retracted and waits on a person, whose wait holds the other’s round', () => {
+  const out = plan({ now, params, tasks: [two({ closed: true }, { checks: 'red' })] });
+  assert.deepEqual(kinds(out), ['retract_reference', 'wait_on_person']);
+  assert.equal(out.find((a) => { return a.act === 'wait_on_person'; }).reason, 'https://github.com/o/r/pull/1 closed without integrating: implement it again, or cancel the task');
+});
+
+test('a red pipeline on an integrated change is reverted while the task’s other change is still open', () => {
+  const out = plan({ now, params, tasks: [two({ merged: true, pipelineRedAfterMerge: true, reversal: 'recorded' }, { verdict: null, reviewRunActive: true })] });
+  assert.deepEqual(kinds(out), ['revert', 'move_task', 'start_child']);
 });
