@@ -40,7 +40,7 @@ A list, one parameter per item, each a pointer or a short rule:
 - **Review**: an agent reviewer, asked by CI once `ci` is green on a ready pull request (`docs/agents/review.md`).
 - **Merge rule**: `docs/agents/merge.md`.
 - **Release procedure**: every merge to `main` deploys `acme/api`; `acme/web` bumps the published client (`docs/agents/release.md`).
-- **Closing evidence**: `docs/agents/done.md`; checked against the Staging API `https://api.staging.acme.dev`, token in `ACME_TOKEN`, GET only.
+- **Closing evidence**: `docs/agents/done.md`, the validations: `merged` (integrated, pipeline green: refactors and internal code), `staging` (the Staging API `https://api.staging.acme.dev` shows it after the deploy, token in `ACME_TOKEN`, GET only: features and API contracts), `adoption` (the usage dashboard after 14 days: a change whose effect is a behaviour).
 - **Delivery kinds**: help-center articles (a person approves, an agent publishes, the live page proves it).
 ```
 
