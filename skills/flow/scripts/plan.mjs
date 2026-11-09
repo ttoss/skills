@@ -209,7 +209,13 @@ const advanceMerged = ({ task, change, params, underRepair, now }) => {
   // person, such as a check child's for an act only they can do, asked for
   // something else, so a field written before it answers nothing. A red
   // pipeline's wait is about the pipeline, never about what integrating leaves.
+  // An `active` task nobody holds was sent back after the merge (a failed
+  // check, a revert whose round never started): it is a round, on a fresh
+  // change, or it would sit ready with no path that starts it.
   if (change.writtenSince) {
+    if (task.status === 'active' && !task.heldByPerson && !change.reviewRunActive) {
+      return { acts: [], item: { stage: 'gates', kind: 'round' } };
+    }
     const answered = task.status === 'waiting' && task.heldByPerson && task.leavesWait && !change.pipelineRedAfterMerge && LEAVES[task.leaves];
     if (answered) {
       return { acts: [answered(task, change, now)], item: null };
