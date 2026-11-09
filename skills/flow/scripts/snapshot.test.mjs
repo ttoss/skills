@@ -242,3 +242,21 @@ test('a task a blocks edge holds carries its sources, and one held only by an in
   assert.deepEqual([by.t_tgt.blockedBy, by.t_hid.blockedBy, by.t_src.blockedBy], [['t_src'], [null], []]);
   assert.deepEqual(plan(snap).at(-1).heldByIntegrated, [{ task: 't_tgt', sources: [{ task: 't_src', url: 'https://gh/pr/9' }] }]);
 });
+
+test('a task whose waits on a person are all scheduled in the future is deferred to the latest date; an external or a passed one is not', () => {
+  const wait = (kind, until, on = 'user_x') => { return { via: 'wait', kind, on, until }; };
+  const snap = build({
+    ...base,
+    slices: [
+      row('t_def', { status: 'calendar', readiness: { blocked_by: [wait('scheduled', '2026-11-05T00:00:00Z'), wait('scheduled', '2026-11-07T00:00:00Z', 'user_y')] } }),
+      row('t_ext', { status: 'waiting', readiness: { blocked_by: [wait('external', '2026-11-05T00:00:00Z')] } }),
+      row('t_mix', { status: 'waiting', readiness: { blocked_by: [wait('scheduled', '2026-11-05T00:00:00Z'), wait('external', null)] } }),
+      row('t_past', { status: 'calendar', readiness: { blocked_by: [wait('scheduled', '2026-11-01T00:00:00Z')] } }),
+      row('t_nobody', { status: 'calendar', readiness: { blocked_by: [wait('scheduled', '2026-11-05T00:00:00Z', null)] } }),
+    ],
+  });
+  const by = Object.fromEntries(snap.tasks.map((t) => { return [t.id, t.deferredUntil]; }));
+  assert.deepEqual(by, { t_def: '2026-11-07T00:00:00Z', t_ext: null, t_mix: null, t_past: null, t_nobody: null });
+  const outside = Object.fromEntries(snap.tasks.map((t) => { return [t.id, t.heldOutside]; }));
+  assert.deepEqual(outside, { t_def: false, t_ext: false, t_mix: false, t_past: false, t_nobody: true });
+});

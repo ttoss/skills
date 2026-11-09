@@ -27,6 +27,8 @@ import { fileURLToPath } from 'node:url';
 //   tasks: [{ id, status, priority, tags, rank, heldByPerson, inFocus,
 //             inherited: priority | null,   // held through an open commitment it blocks, above its own
 //             waitsOn: [holder],              // whom its waits are `on`
+//             deferredUntil: ISO date | null, // every wait on a person is `scheduled` and still in the future: the latest `until`
+//             heldOutside: bool,              // a wait on nobody, outside the team, still holds it
 //             blockedBy: [id | null] | null,  // its open `blocks` sources (null: one in a project the caller cannot reach); null: not read
 //             candidate: bool,                // in get-next's ready candidates
 //             due: bool,                      // date_came, hold_cleared, or an external wait past until
@@ -491,15 +493,25 @@ const delegate = ({ items, free, newWork, cap }) => {
 // waits between an implementation and its release to the customer (review,
 // integration, validation, a flag's removal). That is each open
 // change past draft, at its gates or with a person to integrate it, and each
-// integrated change whose task waits on a person to see it in effect. Every new
-// start lands in it, so the headroom is exact. Decisions are not in it: one
-// holds only the work it blocks, so a thousand open choices never stop the work
-// nobody has to choose about.
-export const inReleaseQueue = ({ change, waitsOn }) => {
+// integrated change whose task waits on a person to see it in effect or came
+// due. Every new start lands in it, so the headroom is exact. Decisions are not
+// in it: one holds only the work it blocks, so a thousand open choices never
+// stop the work nobody has to choose about. A validation a person dated in the
+// future is held by that decision, like `incubated` work, and holding new work
+// would not bring its date closer: it enters the queue when it comes due. What
+// waits on nobody is outside the team, and holding new work never drains it,
+// so a past chase date on it does not count.
+export const inReleaseQueue = ({ change, waitsOn, deferredUntil, due, heldOutside }) => {
   if (!change || change.closed) {
     return false;
   }
-  return change.merged ? (waitsOn || []).length > 0 : !change.draft;
+  if (!change.merged) {
+    return !change.draft;
+  }
+  if (deferredUntil) {
+    return false;
+  }
+  return (waitsOn || []).length > 0 || (Boolean(due) && !heldOutside);
 };
 
 const releaseQueue = (tasks) => {
