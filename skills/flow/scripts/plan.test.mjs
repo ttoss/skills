@@ -378,6 +378,19 @@ test("a check child's wait on a person is not that person's answer", () => {
   assert.equal(plan({ now, params, defaults: [], children: [], tasks: [blocked] }).filter((a) => { return a.act !== 'report'; }).length, 0);
 });
 
+test('a past-due wait on a task already advanced past its merge is judged against the world', () => {
+  const since = change({ merged: true, writtenSince: true });
+  const judged = (over) => { return acts({ tasks: [task({ heldByPerson: true, change: since, ...over })] }, 'judge').map((a) => { return a.about; }) };
+  assert.deepEqual(judged({ due: true, dueKind: 'other' }), ['wait_against_world']);
+  // Not due yet, or a check, which the check stage runs: no judge.
+  assert.deepEqual(judged({ due: false }), []);
+  assert.deepEqual(judged({ due: true, dueKind: 'check', status: 'calendar' }), []);
+  // The tick's own wait for what integrating leaves: cleared would mean a round, so not judged.
+  assert.deepEqual(judged({ due: true, dueKind: 'other', leavesWait: true, leaves: 'none' }), []);
+  // Not yet advanced past the merge: the advance acts, not the judge.
+  assert.deepEqual(judged({ due: true, dueKind: 'other', change: change({ merged: true }) }), []);
+});
+
 test('a check that failed after the merge sends the task back a round, on a fresh change', () => {
   // The check child moved it calendar -> active, so it was written after the merge.
   const failed = (over = {}, changeOver = {}) => { return task({ status: 'active', leaves: 'check', change: change({ merged: true, writtenSince: true, ...changeOver }), ...over }) };

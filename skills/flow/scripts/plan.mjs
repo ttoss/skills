@@ -359,6 +359,10 @@ const isCheck = (task) => {
   return task.due && task.dueKind === 'check';
 };
 
+const judgeWait = (task) => {
+  return { act: 'judge', about: 'wait_against_world', task: task.id, reason: 'a wait came due: cleared means active, citing what was checked; still held means its until moves' };
+};
+
 // One task's acts and the work items it adds for section 4.
 const taskWork = ({ task, params, underRepair, now }) => {
   if (task.change) {
@@ -367,6 +371,13 @@ const taskWork = ({ task, params, underRepair, now }) => {
     const items = advanced.item ? [{ ...advanced.item, ...stage, task }] : [];
     if (task.change.merged && isCheck(task)) {
       items.push({ stage: 'integratedCheck', kind: 'check', task });
+    }
+    // A task already advanced past its merge that nothing moves would keep a
+    // past-due wait until a person reviews it. The tick's own wait for what
+    // integrating leaves is excluded: "cleared means active" would start a round.
+    const idle = task.change.merged && task.change.writtenSince && advanced.acts.length === 0 && !advanced.item;
+    if (idle && task.due && !isCheck(task) && !task.leavesWait) {
+      return { acts: [judgeWait(task)], items };
     }
     return { acts: advanced.acts, items };
   }
@@ -377,10 +388,7 @@ const taskWork = ({ task, params, underRepair, now }) => {
     return { acts: [], items: [{ stage: 'otherCheck', kind: 'check', task }] };
   }
   if (task.due) {
-    return {
-      acts: [{ act: 'judge', about: 'wait_against_world', task: task.id, reason: 'a wait came due: cleared means active, citing what was checked; still held means its until moves' }],
-      items: [],
-    };
+    return { acts: [judgeWait(task)], items: [] };
   }
   return { acts: [], items: task.candidate ? [{ stage: 'new', kind: 'implement', task }] : [] };
 };
