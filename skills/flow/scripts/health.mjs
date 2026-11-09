@@ -297,52 +297,40 @@ const TOKENS = [
   ['cache_write_tokens', 'cache writes'],
 ];
 
-const priced = (totals) => {
-  return Boolean(totals) && totals.unpriced < totals.runs && totals.cost_usd !== undefined;
-};
-
-/**
- * One spend group, both weeks, in one unit: cost when every week that has the
- * group has priced runs, else tokens for both, so a reader never sets dollars beside tokens.
- * A token count a week did not report is said, never taken as 0.
- */
-export const spendPair = ({ now, before }) => {
-  // A group missing in one week takes the other week's unit.
-  if ((priced(now) || !now) && (priced(before) || !before) && (now || before)) {
-    return `${spendOf(now)} (${spendOf(before)} the week before)`;
-  }
-  const fields = TOKENS.filter(([field]) => {
-    return (now && now[field] !== undefined) || (before && before[field] !== undefined);
+// The counters a spend line names, of those the groups it compares report.
+const reported = (...groups) => {
+  return TOKENS.filter(([field]) => {
+    return groups.some((totals) => { return totals && totals[field] !== undefined; });
   });
-  const tokens = (totals) => {
-    if (!totals) {
-      return 'no group';
-    }
-    const runs = `${totals.runs} ${totals.runs === 1 ? 'run' : 'runs'}`;
-    if (!fields.length) {
-      return `${runs}, no tokens reported`;
-    }
-    return `${runs} · ${fields.map(([field, label]) => {
-      return totals[field] === undefined ? `${label} not reported` : `${totals[field].toLocaleString('en-US')} ${label}`;
-    }).join(', ')}`;
-  };
-  return `${tokens(now)} (${tokens(before)} the week before), in tokens because a week has no cost reported`;
 };
 
-/** One week of one spend group, as the answer gives it. */
-export const spendOf = (totals) => {
+// Spend is in tokens: a run without `cost_usd` is the normal case, never a gap.
+// A cost every run in the group carried is shown beside them, never required.
+const inTokens = (totals, fields) => {
   if (!totals) {
     return 'no group';
   }
   const runs = `${totals.runs} ${totals.runs === 1 ? 'run' : 'runs'}`;
-  if (totals.unpriced < totals.runs && totals.cost_usd !== undefined) {
-    const bound = totals.unpriced > 0 ? `at least $${totals.cost_usd.toFixed(2)} (${totals.unpriced} unpriced)` : `$${totals.cost_usd.toFixed(2)}`;
-    return `${runs} · ${bound}`;
-  }
-  const tokens = TOKENS.filter(([field]) => { return totals[field] !== undefined; }).map(([field, label]) => {
-    return `${totals[field].toLocaleString('en-US')} ${label}`;
-  });
-  return `${runs}, all unpriced · ${tokens.length ? tokens.join(', ') : 'no tokens reported'}`;
+  const tokens = fields.length
+    ? `${runs} · ${fields.map(([field, label]) => {
+      return totals[field] === undefined ? `${label} not reported` : `${totals[field].toLocaleString('en-US')} ${label}`;
+    }).join(', ')}`
+    : `${runs}, no tokens reported`;
+  return totals.cost_usd !== undefined && !totals.unpriced ? `${tokens} · $${totals.cost_usd.toFixed(2)}` : tokens;
+};
+
+/**
+ * One spend group, both weeks, in tokens. A count one week did not report is
+ * said, never taken as 0.
+ */
+export const spendPair = ({ now, before }) => {
+  const fields = reported(now, before);
+  return `${inTokens(now, fields)} (${inTokens(before, fields)} the week before)`;
+};
+
+/** One week of one spend group, as the answer gives it. */
+export const spendOf = (totals) => {
+  return inTokens(totals, reported(totals));
 };
 
 /** The Audit's spend by what became of the runs' tasks, then in total. */
