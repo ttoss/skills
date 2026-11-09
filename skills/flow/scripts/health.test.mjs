@@ -133,26 +133,25 @@ test('a window gap or a mistyped number shows as a mismatch', () => {
   assert.deepEqual(mismatches({ now: typo, before }), ['a person (waiting · blocked:external · on)']);
 });
 
-test('spend: cost where priced, a lower bound when partly unpriced, tokens or nothing when all unpriced, and a missing group', () => {
-  assert.equal(spendOf({ runs: 12, unpriced: 10, cost_usd: 19.9987 }), '12 runs · at least $20.00 (10 unpriced)');
-  assert.equal(spendOf({ runs: 3, unpriced: 0, cost_usd: 1.5 }), '3 runs · $1.50');
-  assert.equal(spendOf({ runs: 274, unpriced: 274, input_tokens: 4441646, output_tokens: 295500 }), '274 runs, all unpriced · 4,441,646 input, 295,500 output');
-  assert.equal(spendOf({ runs: 2, unpriced: 2 }), '2 runs, all unpriced · no tokens reported');
+test('spend: in tokens, a cost beside them only when every run carried one, and a missing group', () => {
+  assert.equal(spendOf({ runs: 274, unpriced: 274, input_tokens: 4441646, output_tokens: 295500 }), '274 runs · 4,441,646 input, 295,500 output');
+  assert.equal(spendOf({ runs: 3, unpriced: 0, cost_usd: 1.5, input_tokens: 10 }), '3 runs · 10 input · $1.50');
+  assert.equal(spendOf({ runs: 12, unpriced: 10, cost_usd: 19.9987, input_tokens: 5 }), '12 runs · 5 input');
+  assert.equal(spendOf({ runs: 2, unpriced: 2 }), '2 runs, no tokens reported');
   assert.equal(spendOf(undefined), 'no group');
 });
 
-test('spend: by what became of the runs\' tasks in order, then every run, in one unit for both weeks', () => {
+test('spend: a week where no run carries a cost, by what became of the runs\' tasks in order, then every run, in tokens with no note', () => {
   const { lines } = spend({
     runsThisWeek: { totals: { runs: 783, unpriced: 783, input_tokens: 22112377, output_tokens: 1388000 }, groups: [{ key: 'dropped', totals: { runs: 2, unpriced: 2 } }, { key: null, totals: { runs: 232, unpriced: 232, input_tokens: 8490000, output_tokens: 550000 } }] },
     runsWeekBefore: { totals: { runs: 342, unpriced: 319, cost_usd: 159.869 }, groups: [{ key: 'dropped', totals: { runs: 12, unpriced: 10, cost_usd: 19.9987 } }] },
   });
-  // One unit for both weeks: this week has no cost, so both are in tokens, never dollars beside tokens.
-  assert.equal(lines[0], 'Spend, dropped (tasks closed without completing): 2 runs, no tokens reported (12 runs, no tokens reported the week before), in tokens because a week has no cost reported');
-  assert.equal(lines[1], 'Spend, open (tasks still open): no group (no group the week before), in tokens because a week has no cost reported');
+  assert.equal(lines[0], 'Spend, dropped (tasks closed without completing): 2 runs, no tokens reported (12 runs, no tokens reported the week before)');
+  assert.equal(lines[1], 'Spend, open (tasks still open): no group (no group the week before)');
   assert.match(lines[3], /^Spend, no task: 232 runs · 8,490,000 input, 550,000 output \(no group the week before\)/);
   assert.match(lines[4], /^Spend, every run: 783 runs · 22,112,377 input, 1,388,000 output \(342 runs · input not reported, output not reported the week before\)/);
   assert.equal(lines.length, 5);
-  assert.doesNotMatch(lines.join('\n'), /\$/);
+  assert.doesNotMatch(lines.join('\n'), /\$|unpriced|at least|no cost/);
 });
 
 test('feeds: incubated rows and exits named with `on`, passes inside incubated left out, the inbox now only', () => {
@@ -184,14 +183,14 @@ test('the command line reads one file per answer and writes JSON', () => {
   assert.throws(() => { return execFileSync('node', [script, 'flow', '--this', file('t2', thisWeek)], { stdio: 'pipe' }); });
 });
 
-test('spend: cost for both weeks when both are priced, and a token a week did not report is said', () => {
+test('spend: both weeks in tokens, a cost only beside a week every run carried it in, and a count a week did not report is said', () => {
   assert.equal(
-    spendPair({ now: { runs: 3, unpriced: 1, cost_usd: 4 }, before: { runs: 2, unpriced: 0, cost_usd: 1 } }),
-    '3 runs · at least $4.00 (1 unpriced) (2 runs · $1.00 the week before)',
+    spendPair({ now: { runs: 3, unpriced: 1, cost_usd: 4, input_tokens: 7 }, before: { runs: 2, unpriced: 0, cost_usd: 1, input_tokens: 3 } }),
+    '3 runs · 7 input (2 runs · 3 input · $1.00 the week before)',
   );
   assert.equal(
     spendPair({ now: { runs: 5, unpriced: 5, input_tokens: 90000 }, before: { runs: 4, unpriced: 2, cost_usd: 20, input_tokens: 10, cache_read_tokens: 99 } }),
-    '5 runs · 90,000 input, cache reads not reported (4 runs · 10 input, 99 cache reads the week before), in tokens because a week has no cost reported',
+    '5 runs · 90,000 input, cache reads not reported (4 runs · 10 input, 99 cache reads the week before)',
   );
 });
 
@@ -221,7 +220,7 @@ test('with a key, the flow health reads the four windows itself, GET only, and g
 });
 
 test('spend reads the two weeks of runs by outcome, and nothing else', async () => {
-  const runsAnswer = { totals: { runs: 1, unpriced: 0, cost_usd: 1 }, groups: [] };
+  const runsAnswer = { totals: { runs: 1, unpriced: 1, input_tokens: 100 }, groups: [] };
   const { calls, fetchImpl } = fakeFlow((u) => {
     assert.equal(u.pathname, '/api/v1/agent-runs');
     assert.equal(u.searchParams.get('group_by'), 'outcome');
@@ -230,7 +229,7 @@ test('spend reads the two weeks of runs by outcome, and nothing else', async () 
   });
   const got = await readFlow({ routine: 'spend', project: 'proj_1m5wbbbf1x', now: '2026-11-02T17:00:00Z', key: 'flow_k', fetchImpl });
   assert.equal(calls.length, 2);
-  assert.equal(spend(got).lines.at(-1).split(';')[0], 'Spend, every run: 1 run · $1.00 (1 run · $1.00 the week before)');
+  assert.equal(spend(got).lines.at(-1).split(';')[0], 'Spend, every run: 1 run · 100 input (1 run · 100 input the week before)');
 });
 
 test('with a key restricted to projects, the inbox answers 404 and the Health says so instead of failing', async () => {
