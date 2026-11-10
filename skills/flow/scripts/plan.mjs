@@ -710,8 +710,17 @@ const integratedBlockerActs = ({ tasks, params }) => {
 
 // Each repo whose default branch is red with no repair task open yet: the tick
 // opens one, blocking every task whose change there it holds, and plans again.
+// A head whose red is unknown (no required check or pipeline ran on it) is a
+// judge's: a guess would open a very_high repair on a healthy branch.
 const repairActs = ({ defaults, tasks }) => {
-  return defaults
+  const unknown = defaults
+    .filter((d) => {
+      return d.red === null;
+    })
+    .map((d) => {
+      return { act: 'judge', about: 'default_red', repo: d.repo, sha: d.sha, reason: 'no required check or integration pipeline ran on the default branch head: is a check that gates it red there?' };
+    });
+  return [...unknown, ...defaults
     .filter((d) => {
       return d.red === true && !d.repairTask;
     })
@@ -728,7 +737,7 @@ const repairActs = ({ defaults, tasks }) => {
         }),
         reason: 'the default branch is red: open its one repair task, then run the planner again',
       };
-    });
+    })];
 };
 
 export const plan = ({ now, params, children = [], tasks = [], defaults = [] }) => {

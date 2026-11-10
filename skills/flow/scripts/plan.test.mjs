@@ -214,6 +214,12 @@ test('a red default branch opens one repair task, blocking the changes it holds'
   assert.equal(out.filter((a) => { return a.act === 'move_task' }).length, 0);
 });
 
+test('a default branch whose red is unknown asks a judge, never opens a repair', () => {
+  const out = plan({ now, params, defaults: [{ ...red, red: null }], tasks: [task({ id: 'task_open', change: change({ url: 'https://github.com/o/r/pull/2' }) })] });
+  assert.equal(out.filter((a) => { return a.act === 'repair_default' }).length, 0);
+  assert.deepEqual(out.filter((a) => { return a.act === 'judge' }).map((a) => { return [a.about, a.repo, a.sha] }), [['default_red', 'o/r', 'bad']]);
+});
+
 test('an open repair task is never opened twice, and its child goes first', () => {
   const out = plan({
     now,

@@ -109,11 +109,10 @@ export const verdictFor = (verdicts, head) => {
 };
 
 /**
- * Whether the code host refuses to integrate into `branch` without a
- * review: `flow/review` among its required status checks, or a required
- * approving review, by branch protection or a ruleset. Null when unread.
+ * The status check contexts the code host requires before integrating into
+ * `branch`, by branch protection and by rulesets; null when neither was read.
  */
-export const reviewEnforcedOf = ({ branch, rules }) => {
+export const requiredContextsOf = ({ branch, rules }) => {
   if (!branch && !rules) {
     return null;
   }
@@ -122,16 +121,58 @@ export const reviewEnforcedOf = ({ branch, rules }) => {
     ...(protection.required_status_checks?.contexts || []),
     ...(protection.required_status_checks?.checks || []).map((c) => { return c.context; }),
   ];
-  let approvals = protection.required_pull_request_reviews?.required_approving_review_count || 0;
   for (const rule of rules || []) {
     if (rule.type === 'required_status_checks') {
       contexts.push(...(rule.parameters?.required_status_checks || []).map((c) => { return c.context; }));
     }
+  }
+  return [...new Set(contexts)];
+};
+
+/**
+ * Whether the code host refuses to integrate into `branch` without a
+ * review: `flow/review` among its required status checks, or a required
+ * approving review, by branch protection or a ruleset. Null when unread.
+ */
+export const reviewEnforcedOf = ({ branch, rules }) => {
+  const contexts = requiredContextsOf({ branch, rules });
+  if (!contexts) {
+    return null;
+  }
+  let approvals = branch?.protection?.required_pull_request_reviews?.required_approving_review_count || 0;
+  for (const rule of rules || []) {
     if (rule.type === 'pull_request') {
       approvals = Math.max(approvals, rule.parameters?.required_approving_review_count || 0);
     }
   }
   return contexts.includes(REVIEW_CONTEXT) || approvals > 0;
+};
+
+const STATUS_RED = ['failure', 'error'];
+
+/**
+ * Whether a default branch head is red, read only from what gates it: the
+ * required checks that ran on it and the integration pipeline (the workflow
+ * runs a push to it started). A housekeeping workflow, one another workflow
+ * or a branch deletion started, never makes it red. Null when the head ran
+ * something but neither of those: a judge decides, never a guess.
+ */
+export const defaultRedOf = ({ checkRuns = [], statuses = [], required = [], pipelineSuites = [] }) => {
+  const contexts = new Set((required || []).filter((c) => { return c !== REVIEW_CONTEXT; }));
+  const suites = new Set(pipelineSuites);
+  const gating = checkRuns.filter((r) => { return contexts.has(r.name) || suites.has(r.check_suite?.id); });
+  // Statuses come newest first: the newest of each required context decides.
+  const latest = new Map();
+  for (const s of statuses) {
+    if (contexts.has(s.context) && !latest.has(s.context)) {
+      latest.set(s.context, s);
+    }
+  }
+  if (!gating.length && !latest.size) {
+    // Nothing ran on the head at all: nothing there can be red.
+    return checkRuns.length || statuses.length ? null : false;
+  }
+  return checksOf(gating) === 'red' || [...latest.values()].some((s) => { return STATUS_RED.includes(s.state); });
 };
 
 const TASK = /task_[0-9a-hjkmnp-tv-z]{10}/;
@@ -243,19 +284,31 @@ export const readChange = async (url, { gh = ghApi, reviewers = [] } = {}) => {
   };
 };
 
-/** A repo's default branch head, and whether its checks are red there. */
+/**
+ * A repo's default branch head, and whether its required checks or its
+ * integration pipeline are red there (defaultRedOf).
+ */
 export const readDefault = async (repo, { gh = ghApi } = {}) => {
   const meta = await gh(`repos/${repo}`);
   const branch = await gh(`repos/${repo}/branches/${meta.default_branch}`);
-  const [runs, rules] = await Promise.all([
-    gh(`repos/${repo}/commits/${branch.commit.sha}/check-runs?per_page=100`),
+  const sha = branch.commit.sha;
+  const [runs, statuses, rules, pushes] = await Promise.all([
+    gh(`repos/${repo}/commits/${sha}/check-runs?per_page=100`),
+    gh(`repos/${repo}/commits/${sha}/statuses?per_page=100`).catch(() => { return []; }),
     // Rulesets apply to everyone who can read the branch; unreadable → null.
     gh(`repos/${repo}/rules/branches/${meta.default_branch}`).catch(() => { return null; }),
+    // The integration pipeline: what a push to the default branch ran on it.
+    gh(`repos/${repo}/actions/runs?head_sha=${sha}&event=push&per_page=100`).catch(() => { return { workflow_runs: [] }; }),
   ]);
   return {
     repo,
-    sha: branch.commit.sha,
-    red: checksOf(runs.check_runs) === 'red',
+    sha,
+    red: defaultRedOf({
+      checkRuns: runs.check_runs,
+      statuses: Array.isArray(statuses) ? statuses : [],
+      required: requiredContextsOf({ branch, rules }) || [],
+      pipelineSuites: (pushes?.workflow_runs || []).map((w) => { return w.check_suite_id; }),
+    }),
     reviewEnforced: reviewEnforcedOf({ branch, rules }),
     repairTask: null,
   };
