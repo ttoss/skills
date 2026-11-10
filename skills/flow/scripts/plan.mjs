@@ -36,6 +36,7 @@ import { fileURLToPath } from 'node:url';
 //             dueKind: 'check' | 'other' | null,
 //             brief: 'ready' | 'short' | 'split' | null,
 //             leaves: 'close' | 'release' | 'check' | 'none' | null, // the task's after_integration; null: not handed off, a judge reads the body
+//             released: bool | null,          // a `release` task nothing holds: its step closed (true) or it was sent back (false); null: a judge reads its history
 //             check: null | { observe, where, visible_at }, // with leaves check: what the check's wait names, and its date
 //             leavesWait: bool,               // it waits on a person because nothing said what integrating leaves (the tick's own wait)
 //             rounds: number,                 // the task's fix runs, over all its changes
@@ -235,6 +236,25 @@ const rejudgeLeaves = ({ task, change, params }) => {
     : NONE;
 };
 
+// A task waiting for its release is `active` behind the release step's
+// `blocks` edge: Flow has no status for it, since the edge already says what
+// holds it. While the edge holds, nothing moves. Once nothing does, the step
+// closed or the task was sent back, which only its history tells apart.
+const released = ({ task, change, now }) => {
+  if (task.blockedBy === null || task.blockedBy === undefined || task.blockedBy.length > 0) {
+    return NONE;
+  }
+  if (task.released === null || task.released === undefined) {
+    return { acts: [{ act: 'judge', about: 'released', task: task.id, url: change.url, reason: 'integrated, waiting for a release, and no edge holds it: did its release step close, or was it sent back?' }], item: null };
+  }
+  if (!task.released) {
+    return { acts: [], item: { stage: 'gates', kind: 'round' } };
+  }
+  return task.check
+    ? { acts: [LEAVES.check(task, change, now)], item: null }
+    : { acts: [{ act: 'move_task', task: task.id, status: 'completed', reason: 'released: closed citing its release step, whose outcome is the evidence' }], item: null };
+};
+
 const advanceMerged = ({ task, change, params, underRepair, now }) => {
   // "The change integrated, nothing written since": a task written after the
   // merge and its pipeline was already advanced, and is left as it stands.
@@ -249,6 +269,9 @@ const advanceMerged = ({ task, change, params, underRepair, now }) => {
   // change, or it would sit ready with no path that starts it.
   if (change.writtenSince) {
     if (task.status === 'active' && !task.heldByPerson && !change.reviewRunActive) {
+      if (task.leaves === 'release') {
+        return released({ task, change, now });
+      }
       return { acts: [], item: { stage: 'gates', kind: 'round' } };
     }
     const answered = task.status === 'waiting' && task.heldByPerson && task.leavesWait && !change.pipelineRedAfterMerge && LEAVES[task.leaves];

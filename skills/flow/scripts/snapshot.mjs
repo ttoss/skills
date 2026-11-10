@@ -29,7 +29,7 @@ import { load as loadParams } from './params.mjs';
 
 const CLOSED = ['completed', 'cancelled', 'discarded', 'archived'];
 // The statuses a task with a change in flight can hold.
-const WORKED = ['active', 'waiting', 'calendar', 'blocked'];
+const WORKED = ['active', 'waiting', 'calendar'];
 
 export const DEFAULT_PARAMS = { maxRuns: 3, staleAfterHours: 4, autoRounds: 1, reviewByAgent: false, reviewRequired: null, agentsMayIntegrate: true, focus: null, releaseQueue: null, leavesByAgent: null, retargetByAgent: null, branchesPerRepo: null };
 
@@ -121,6 +121,7 @@ export const build = ({ now, candidates, slices, held = [], dueIds, children, mi
       dueKind: due ? (row.status === 'calendar' ? 'check' : 'other') : null,
       brief: own.brief ?? null,
       leaves: own.leaves ?? handoff?.leaves ?? null,
+      released: own.released ?? null,
       check: handoff?.check ?? null,
       leavesWait: own.leavesWait ?? waits.some((w) => { return Boolean(w.on) && LEAVES_WAIT.test(w.reason || ''); }),
       rounds: own.rounds ?? 0,
@@ -186,9 +187,9 @@ export const run = async ({ client, project, now = new Date().toISOString(), ext
     return get('/next', { project, slice: name, assignee: 'any', limit: 20 });
   };
   // Every read at once: an empty slice costs less than waiting on `counts`.
-  const [next, waiting, blocked, dateCame, holdCleared, held, implemented, children, mine, running] = await Promise.all([
+  const [next, waiting, dateCame, holdCleared, held, implemented, children, mine, running] = await Promise.all([
     get('/next', { project, limit: 10 }),
-    slice('waiting'), slice('blocked'), slice('date_came'), slice('hold_cleared'),
+    slice('waiting'), slice('date_came'), slice('hold_cleared'),
     // Every task a `blocks` edge holds, whatever its status: its row already
     // names the sources, so none is read again.
     get('/next', { project, state: 'blocked:dependency', assignee: 'any', limit: 100 }),
@@ -202,7 +203,7 @@ export const run = async ({ client, project, now = new Date().toISOString(), ext
     repos?.length ? get('/agent-runs', { project, status: 'running', limit: 100 }) : { runs: [] },
   ]);
   progress(`flow: ${implemented.length} tasks with a change out`);
-  const sliced = [...waiting.tasks, ...blocked.tasks, ...dateCame.tasks, ...holdCleared.tasks];
+  const sliced = [...waiting.tasks, ...dateCame.tasks, ...holdCleared.tasks];
   // A listed row already answers what get-task would: each get-task loads the
   // whole graph, so reading it again per row was most of the Flow side's time.
   const full = {};
@@ -264,7 +265,7 @@ export const run = async ({ client, project, now = new Date().toISOString(), ext
           return null;
         }
       });
-      const repairs = await get('/tasks', { project, tag: 'repair', status: ['active', 'waiting', 'blocked'], limit: 100 });
+      const repairs = await get('/tasks', { project, tag: 'repair', status: ['active', 'waiting'], limit: 100 });
       repairRows = repairs.tasks || [];
       // Each repair task read once, not once per repo.
       const repairRefs = Object.fromEntries(await mapLimit(repairRows, 4, async (task) => {

@@ -94,7 +94,7 @@ test('the person rows come first, most open first; other rows only when growing 
   assert.match(digest.lines[0], /^a person \(waiting · blocked:external · on\): 143 open · 219 in, 136 out \(117 in, 84 out the week before\) · growing · p90 11d · p50 left 0.8d$/);
   assert.match(digest.lines[1], /^a person \(blocked · blocked:external · on\): 1 open · 1 in, 0 out \(no row the week before\) · growing/);
   assert.match(digest.lines[2], /^the check \(calendar · waiting:scheduled\): 65 open/);
-  assert.match(digest.lines[3], /^a release \(blocked · blocked:dependency\): 9 open/);
+  assert.match(digest.lines[3], /^another task \(blocked · blocked:dependency\): 9 open/);
   // ready, the gates and active · waiting:scheduled (last week only) have no line; incubated is the Audit's.
   assert.equal(digest.lines[4], '3 other states have no line: none holds a person\'s answer or grew in both weeks');
 });

@@ -73,8 +73,10 @@ export const stageOf = (row) => {
   if (row.status === 'active' && row.state === 'ready') {
     return 'ready';
   }
-  if (row.status === 'blocked') {
-    return 'a release';
+  // Work another task holds is `active` behind the edge; `blocked` is only
+  // in history from before Flow removed it.
+  if (row.status === 'blocked' || (row.status === 'active' && row.state === 'blocked:dependency')) {
+    return 'another task';
   }
   if (row.status === 'calendar') {
     return 'the check';

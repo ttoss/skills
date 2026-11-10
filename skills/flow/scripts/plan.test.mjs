@@ -397,6 +397,22 @@ test('a past-due wait on a task already advanced past its merge is judged agains
   assert.deepEqual(judged({ due: true, dueKind: 'other', change: change({ merged: true }) }), []);
 });
 
+test('a task waiting for its release is held by the step\'s edge, and moves on once the step closes', () => {
+  const since = change({ merged: true, writtenSince: true });
+  const waiting = (over) => { return task({ status: 'active', leaves: 'release', change: since, ...over }) };
+  const quiet = (t) => { return plan({ now, params, defaults: [], children: [], tasks: [t] }).filter((a) => { return a.act !== 'report'; }).length };
+  // The release step's edge holds it: not a round, nothing to write.
+  assert.equal(quiet(waiting({ blockedBy: ['task_step'] })), 0);
+  assert.equal(quiet(waiting({ blockedBy: null })), 0);
+  // Nothing holds it: only its history tells a closed step from a send-back.
+  assert.deepEqual(acts({ tasks: [waiting({ blockedBy: [] })] }, 'judge').map((a) => { return a.about; }), ['released']);
+  const done = acts({ tasks: [waiting({ blockedBy: [], released: true })] }, 'move_task');
+  assert.equal(done[0].status, 'completed');
+  const checked = acts({ tasks: [waiting({ blockedBy: [], released: true, check: { observe: 'it answers', where: 'prod', visible_at: '2026-10-31T12:00:00Z' } })] }, 'move_task');
+  assert.deepEqual([checked[0].status, checked[0].until], ['calendar', '2026-10-31T12:00:00Z']);
+  assert.equal(acts({ tasks: [waiting({ blockedBy: [], released: false })] }, 'start_child')[0].kind, 'round');
+});
+
 test('a check that failed after the merge sends the task back a round, on a fresh change', () => {
   // The check child moved it calendar -> active, so it was written after the merge.
   const failed = (over = {}, changeOver = {}) => { return task({ status: 'active', leaves: 'check', change: change({ merged: true, writtenSince: true, ...changeOver }), ...over }) };
@@ -656,7 +672,7 @@ test('an inherited very_high or high on a bug is as urgent as an asserted one', 
 // reports the target held only by it, and retracts the edge only when the
 // standing decision delegates that.
 const source = (over = {}) => {
-  return task({ id: 'task_src', status: 'blocked', leaves: 'release', change: change({ merged: true, writtenSince: true }), ...over });
+  return task({ id: 'task_src', status: 'active', leaves: 'release', change: change({ merged: true, writtenSince: true }), ...over });
 };
 const target = (over = {}) => { return task({ id: 'task_tgt', status: 'active', change: null, blockedBy: ['task_src'], ...over }) };
 const decided = { ...params, retargetByAgent: false };

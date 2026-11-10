@@ -160,7 +160,7 @@ test('every task whose change is out is read, past the slices’ limit; a row Fl
   };
   const snap = await run({ client: { get, all }, project: 'proj_x', now });
   const listing = asked.find(([path]) => { return path === '/tasks'; });
-  assert.deepEqual(listing[1], { project: 'proj_x', status: ['active', 'waiting', 'calendar', 'blocked'], ref_role: 'implements', limit: 100 });
+  assert.deepEqual(listing[1], { project: 'proj_x', status: ['active', 'waiting', 'calendar'], ref_role: 'implements', limit: 100 });
   assert.deepEqual(snap.tasks.map((t) => { return t.id; }).sort(), ['t_pr', 't_slice']);
   assert.deepEqual(snap.needs.changes, [{ task: 't_pr', url: 'https://gh/pr/7' }]);
   assert.deepEqual(snap.needs.unread, [{ task: 't_retracted', error: 'listed by ref_role=implements without a live implements reference' }]);
@@ -226,7 +226,7 @@ test('a listed row answers what get-task would; the Chase reads one call per cha
 });
 
 test('a task a blocks edge holds carries its sources, and one held only by an integrated, open source reaches the planner as a finding', async () => {
-  const held = row('t_tgt', { readiness: { blocked_by: [{ via: 'task', id: 't_src', status: 'blocked' }] } });
+  const held = row('t_tgt', { readiness: { blocked_by: [{ via: 'task', id: 't_src', status: 'active' }] } });
   const hidden = row('t_hid', { readiness: { blocked_by: [{ via: 'task', id: null, status: null }] } });
   const get = async (path, query = {}) => {
     if (path === '/next') {
@@ -237,7 +237,7 @@ test('a task a blocks edge holds carries its sources, and one held only by an in
     }
     throw new Error(`unexpected ${path}`);
   };
-  const listed = { ...row('t_src', { status: 'blocked' }), role_refs: [{ role: 'implements', url: 'https://gh/pr/9' }], after_integration: { leaves: 'release' }, updated_at: now };
+  const listed = { ...row('t_src', { status: 'active' }), role_refs: [{ role: 'implements', url: 'https://gh/pr/9' }], after_integration: { leaves: 'release' }, updated_at: now };
   const all = async () => { return [listed]; };
   const merged = { url: 'https://gh/pr/9', repo: 'o/r', merged: true, closed: false, draft: false };
   const snap = await run({ client: { get, all }, project: 'proj_x', now, extra: { params: { retargetByAgent: false }, tasks: { t_src: { change: merged } } } });
