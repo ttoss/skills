@@ -167,7 +167,7 @@ test('a saved snapshot is read instead of Flow and the code host, and a listed r
 });
 
 test('a task held only by sources whose change integrated is listed for a person, with the changes, and is not counted in the queue', () => {
-  const src = t('t_src', { status: 'blocked', change: merged, blockedBy: [] });
+  const src = t('t_src', { status: 'active', change: merged, blockedBy: [] });
   const tgt = t('t_tgt', { change: null, blockedBy: ['t_src'] });
   const notYet = t('t_wait', { change: null, blockedBy: ['t_open'] });
   const out = pick({ tasks: [src, tgt, notYet, t('t_open')], details: { t_tgt: { task: { title: 'Build on it', url: 'https://flow/app/tasks/t_tgt' }, unblocks: 0 } }, members });
