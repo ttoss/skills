@@ -29,6 +29,26 @@ jobs:
           sys.exit(1 if bad else 0)
           PY
 
+  marketplace:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # claude.ai and Claude Code read the plugins from this file; a plugin
+      # pointing at a skill that is not there installs empty.
+      - name: Every marketplace plugin names skills that exist
+        run: |
+          python3 - <<'PY'
+          import json, os, sys
+          market = json.load(open('.claude-plugin/marketplace.json', encoding='utf-8'))
+          bad = []
+          for plugin in market['plugins']:
+              for skill in plugin.get('skills', []):
+                  if not os.path.isfile(os.path.join(plugin['source'], skill, 'SKILL.md')):
+                      bad.append(f"{plugin['name']}: {skill} has no SKILL.md")
+          print('\n'.join(bad) or 'every plugin skill exists')
+          sys.exit(1 if bad else 0)
+          PY
+
   flow-planner:
     runs-on: ubuntu-latest
     steps:

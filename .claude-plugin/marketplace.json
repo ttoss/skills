@@ -1,0 +1,21 @@
+{
+  "name": "ttoss",
+  "owner": {
+    "name": "ttoss",
+    "url": "https://github.com/ttoss"
+  },
+  "metadata": {
+    "description": "ttoss agent skills for people working with Flow (flow.ttoss.dev)."
+  },
+  "plugins": [
+    {
+      "name": "flow-me",
+      "description": "Walks you through what only a person can move in Flow, most important first: the release queue, the decision queue, inconsistencies, risks and drift, the inbox, incubated work, due reviews, your own runs and invitations. Needs the Flow connector.",
+      "source": "./",
+      "strict": false,
+      "skills": ["./skills/flow-me"],
+      "homepage": "https://flow.ttoss.dev",
+      "keywords": ["flow", "gtf", "tasks", "review"]
+    }
+  ]
+}
