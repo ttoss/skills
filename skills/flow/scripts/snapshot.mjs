@@ -120,6 +120,8 @@ export const build = ({ now, candidates, slices, held = [], dueIds, children, mi
       due,
       dueKind: due ? (row.status === 'calendar' ? 'check' : 'other') : null,
       brief: own.brief ?? null,
+      // A judge's answer this tick; the planner reads the task's tags otherwise.
+      personFree: own.personFree ?? null,
       leaves: own.leaves ?? handoff?.leaves ?? null,
       released: own.released ?? null,
       check: handoff?.check ?? null,

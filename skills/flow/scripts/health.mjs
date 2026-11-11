@@ -1,10 +1,10 @@
 import { readFileSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-import { createClient, DEFAULT_BASE } from './flow-api.mjs';
+import { createClient, DEFAULT_BASE, mapLimit } from './flow-api.mjs';
 import { byTickOrder } from './chase.mjs';
 import { load as loadParams } from './params.mjs';
-import { changeOf, changesOf, inReleaseQueue } from './plan.mjs';
+import { changeOf, changesOf, inReleaseQueue, INTEGRATE_WAIT } from './plan.mjs';
 import { run as readSnapshot } from './snapshot.mjs';
 
 // The lines the weekly Health reports, and the spend lines the Audit takes
@@ -34,7 +34,7 @@ import { run as readSnapshot } from './snapshot.mjs';
 // with `group_by: outcome` and `limit: 0`, `list-captures` with `triaged: false`
 // and `limit: 1`. Output: JSON `{ alert, lines, mismatches }` for `flow`,
 // `{ lines, mismatches }` for `feeds`, `{ lines }` for `spend`, and for
-// `report` `{ alert, lines, mismatches, answers, drain }` (with `needs` when
+// `report` `{ alert, lines, mismatches, answers, integrations, drain }` (with `needs` when
 // --root lets it read the tick's snapshot), `{ lines, drain }` for `queues`.
 
 const DAY = 86_400_000;
@@ -412,6 +412,45 @@ export const answersLine = ({ answers: list, now }) => {
 
 const DEFAULT_RELEASE_QUEUE = 20;
 
+/**
+ * The changes a person integrated over the last ANSWER_WEEKS weeks after the
+ * tick handed them over, newest first: what the model reads for a kind of
+ * change a person keeps integrating as the agents proposed it, which is an
+ * answer given more than once (GTF-E9) to "may the agents integrate this?".
+ * The wait is the planner's own, read by the words it writes; that the person
+ * integrated it, and changed nothing first, is read on the code host. Pure
+ * over what `get-task` answered.
+ */
+export const integrations = ({ tasks, now }) => {
+  const since = Date.parse(now) - ANSWER_WEEKS * 7 * DAY;
+  return tasks.flatMap((answer) => {
+    return (answer.cleared_waits || []).flatMap((wait) => {
+      const found = wait.on && wait.cleared_at ? INTEGRATE_WAIT.exec(wait.reason || '') : null;
+      if (!found || Date.parse(wait.cleared_at) < since) {
+        return [];
+      }
+      return [{ task: answer.task.id, url: answer.task.url, title: answer.task.title, change: found[1], on: wait.on, at: wait.cleared_at }];
+    });
+  }).sort((a, b) => { return Date.parse(b.at) - Date.parse(a.at) || a.task.localeCompare(b.task); });
+};
+
+const CLOSED = ['completed', 'cancelled', 'discarded', 'archived'];
+
+/**
+ * How many tasks with a change closed this week and the week before, beside
+ * the release queue's limit: a change waits about as long as the queue ahead
+ * of it takes to drain (Q12), so the limit is sized against what leaves. Two
+ * counts side by side, never their ratio. Pure over what `get-task` answered.
+ */
+export const leftLine = ({ tasks, limit = DEFAULT_RELEASE_QUEUE, now }) => {
+  const w = windows(now);
+  const within = (win) => {
+    return tasks.filter(({ task }) => { return CLOSED.includes(task.status) && task.closed_at >= win.since && task.closed_at < win.until; }).length;
+  };
+  return `Left the release queue (a task with a change closed): ${within(w.thisWeek)} this week (${within(w.weekBefore)} the week before); its limit is ${limit}`;
+};
+
+
 const ageOf = (ms) => {
   return `${(ms / DAY).toFixed(1)}d`;
 };
@@ -568,6 +607,18 @@ export const report = async ({ client, project, now = new Date().toISOString(), 
   const recent = (closed.tasks || []).filter((t) => { return Date.parse(t.updated_at) >= since; });
   const decisions = await Promise.all(recent.map(async (t) => { return (await get(`/tasks/${t.id}`)).task; }));
   const list = answers({ decisions, now });
+  // Every task with a change written within the window, newest write first
+  // and cut at the first one older, read whole: its cleared waits say what a
+  // person integrated, and its close when it left the release queue.
+  const changed = [];
+  let cursor;
+  do {
+    const page = await get('/tasks', { project, ref_role: 'implements', status: ['active', 'waiting', 'calendar', ...CLOSED], limit: 100, cursor });
+    const rows = page.tasks || [];
+    changed.push(...rows.filter((t) => { return Date.parse(t.updated_at) >= since; }));
+    cursor = rows.length && rows.every((t) => { return Date.parse(t.updated_at) >= since; }) ? page.next_cursor : null;
+  } while (cursor);
+  const delivered = await mapLimit(changed, 4, (t) => { return get(`/tasks/${t.id}`); });
   // The queues only a person drains, from the tick's own snapshot, so the
   // Health counts the release queue exactly as the tick and the Chase do.
   let queue = { lines: [], drain: [] };
@@ -578,19 +629,22 @@ export const report = async ({ client, project, now = new Date().toISOString(), 
       const admins = (projectAnswer.members || []).filter((m) => { return m.role === 'admin' && !m.pending; }).map((m) => { return m.email; });
       return named.join(', ') || admins.join(', ');
     };
+    const limit = snapshot.params?.releaseQueue ?? DEFAULT_RELEASE_QUEUE;
     queue = queues({
       tasks: snapshot.tasks,
       decisions: waiting.tasks || [],
-      limit: snapshot.params?.releaseQueue ?? DEFAULT_RELEASE_QUEUE,
+      limit,
       now,
       who: emailsOf,
     });
+    queue.lines.push(leftLine({ tasks: delivered, limit, now }));
   }
   return {
     alert: flow.alert,
     lines: [...flow.lines, ...queue.lines, ...fed.lines, answersLine({ answers: list, now })],
     mismatches: [...flow.mismatches, ...fed.mismatches],
     answers: list,
+    integrations: integrations({ tasks: delivered, now }).map((i) => { return { ...i, on: nameOfHolder(i.on) }; }),
     drain: queue.drain,
     ...(snapshot ? { needs: snapshot.needs } : {}),
   };

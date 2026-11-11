@@ -32,7 +32,7 @@ Before the first flow, one call gives every count the walk needs: `get-next` wit
 
 | # | Flow | Why at this rank |
 | --- | --- | --- |
-| 1 | Release queue | Work already built and paid for, waiting only on the person; while the queue is over its limit the tick starts no new work |
+| 1 | Release queue | Work already built and paid for, waiting only on the person; while the queue is over its limit the tick starts no new work but what reaches no person |
 | 2 | Decision queue | A choice holds every task behind it; nothing downstream can start |
 | 3 | Inconsistencies | Every later read, the agents' included, trusts the graph; a cycle or a flag makes it lie |
 | 4 | Risks and deadlines | Commitments with a priority unconfirmed past their review, and dates that passed |

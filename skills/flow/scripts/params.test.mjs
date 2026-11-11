@@ -26,7 +26,7 @@ test('items: one per top-level item, continuation lines joined', () => {
 test('each value from its own item, else the prose that states it, else the default, and says which', () => {
   const r = resolve({ file: 'f', main: items(FILE), runtime: { 'Stale after': '6 hours.' } });
   assert.deepEqual([r.projectId, r.standingDecision, r.repos], ['proj_1m5wbbbf1x', 'task_8gzt6adhhp', ['acme/api', 'acme/web']]);
-  assert.deepEqual(r.params, { maxRuns: 3, staleAfterHours: 6, autoRounds: 1, reviewByAgent: false, reviewRequired: null, agentsMayIntegrate: true, focus: null, releaseQueue: null, leavesByAgent: null, retargetByAgent: null, branchesPerRepo: null });
+  assert.deepEqual(r.params, { maxRuns: 3, staleAfterHours: 6, autoRounds: 1, reviewByAgent: false, reviewRequired: null, agentsMayIntegrate: true, focus: null, releaseQueue: null, personFreeLane: null, leavesByAgent: null, retargetByAgent: null, branchesPerRepo: null });
   const shared = resolve({ file: 'f', main: {}, runtime: { 'Branches per repo': '1, children share the tick\'s branch.' } });
   assert.deepEqual([shared.params.branchesPerRepo, shared.sources.branchesPerRepo], [1, 'Runtime file: Branches per repo']);
   assert.equal(r.sources.maxRuns, 'Runtime: "max runs N"');
@@ -36,6 +36,8 @@ test('each value from its own item, else the prose that states it, else the defa
   assert.deepEqual([own.params.maxRuns, own.params.reviewByAgent, own.params.agentsMayIntegrate, own.params.staleAfterHours], [4, true, false, 1.5]);
   const wip = resolve({ file: 'f', main: {}, runtime: { 'Release queue': '6 changes.' } });
   assert.deepEqual([wip.params.releaseQueue, wip.sources.releaseQueue], [6, 'Runtime file: Release queue']);
+  const lane = resolve({ file: 'f', main: { 'Person-free lane': '0, the queue holds every new task.' } });
+  assert.deepEqual([lane.params.personFreeLane, lane.sources.personFreeLane, wip.sources.personFreeLane], [0, 'Person-free lane', 'default']);
   const legacy = resolve({ file: 'f', main: { 'Review queue': '10.' }, runtime: {} });
   assert.deepEqual([legacy.params.releaseQueue, legacy.sources.releaseQueue], [10, 'Review queue']);
 });

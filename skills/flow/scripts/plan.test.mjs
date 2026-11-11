@@ -599,9 +599,61 @@ test('the release queue: new work starts only up to the limit, 20 by default', (
   assert.deepEqual(started({ tasks: [...queue.slice(0, 2), fresh('task_n1'), fresh('task_n2')] }, { releaseQueue: 6 }), ['task_n1', 'task_n2']);
   const many = Array.from({ length: 19 }, (_, i) => { return atGates(`task_q${i}`) });
   assert.deepEqual(started({ tasks: [...many, fresh('task_n1'), fresh('task_n2')] }), ['task_n1']);
-  const report = plan({ now, params: { ...params, releaseQueue: 5 }, tasks: [...queue, fresh('task_n1')] }).at(-1);
+  const report = plan({ now, params: { ...params, releaseQueue: 5, personFreeLane: 0 }, tasks: [...queue, fresh('task_n1')] }).at(-1);
   assert.equal(report.freeReason, 'new work held upstream: release queue 5/5');
   assert.deepEqual(report.skipped, [{ task: 'task_n1', reason: 'held upstream: release queue 5/5' }]);
+});
+
+const FULL = ['task_o1', 'task_o2'].map((id) => { return atGates(id) });
+const full = (tasks, over = {}) => { return plan({ now, params: { ...params, maxRuns: 3, releaseQueue: 2, ...over }, tasks: [...FULL, ...tasks] }) };
+const laneStarts = (out) => { return out.filter((a) => { return a.act === 'start_child' && a.lane === 'person-free' }).map((a) => { return a.tasks[0] }) };
+
+test('a full release queue still starts one new task whose path reaches no person, and holds the rest', () => {
+  const out = full([fresh('task_n1', { tags: ['flow-needs-person'] }), fresh('task_n2', { tags: ['flow-person-free'] }), fresh('task_n3', { personFree: true })]);
+  assert.deepEqual(laneStarts(out), ['task_n2']);
+  const report = out.at(-1);
+  assert.deepEqual(report.skipped, [
+    { task: 'task_n1', reason: 'held upstream: release queue 2/2, person-free lane 0/1' },
+    { task: 'task_n3', reason: 'held upstream: release queue 2/2, person-free lane 0/1' },
+  ]);
+  assert.deepEqual(report.wip.personFreeLane, { now: 0, limit: 1, tasks: [] });
+  // Both tags on one task: the no wins.
+  assert.deepEqual(laneStarts(full([fresh('task_n1', { tags: ['flow-person-free', 'flow-needs-person'] })])), []);
+  // Within the limit nothing is a lane start: the task takes the headroom.
+  assert.deepEqual(laneStarts(plan({ now, params: { ...params, maxRuns: 3 }, tasks: [fresh('task_n2', { tags: ['flow-person-free'] })] })), []);
+});
+
+test('the lane is held from a person-free task\'s start until it closes, whatever it waits on', () => {
+  const tagged = { tags: ['flow-person-free'] };
+  const next = fresh('task_n2', tagged);
+  const building = [{ run: 'arun_1', tasks: ['task_l1'], startedAt: '2026-10-30T11:00:00Z', byMe: true, runtime: 'working', handoff: false }];
+  const held = plan({ now, params: { ...params, maxRuns: 3, releaseQueue: 2 }, children: building, tasks: [...FULL, fresh('task_l1', { ...tagged, candidate: false }), next] });
+  assert.deepEqual(laneStarts(held), []);
+  assert.deepEqual(held.at(-1).wip.personFreeLane, { now: 1, limit: 1, tasks: ['task_l1'] });
+  assert.equal(held.at(-1).freeReason, 'new work held upstream: release queue 2/2, person-free lane 1/1');
+  // It landed on a person after all: it counts in the queue and keeps the lane shut.
+  const landed = task({ id: 'task_l1', ...tagged, waitsOn: ['user_ana'], heldByPerson: true, change: change({ merged: true }) });
+  assert.deepEqual(laneStarts(plan({ now, params: { ...params, maxRuns: 3, releaseQueue: 2 }, tasks: [atGates('task_o1'), landed, next] })), []);
+  assert.deepEqual(laneStarts(full([fresh('task_l1', { ...tagged, candidate: false, change: change({ checks: 'pending', verdict: null, draft: true }) }), next], { personFreeLane: 2 })), ['task_n2']);
+});
+
+test('the first candidate nobody read is a judge\'s, one a run, and the lane waits for the answer', () => {
+  const out = full([fresh('task_n1'), fresh('task_n2', { tags: ['flow-person-free'] }), fresh('task_n3')]);
+  assert.deepEqual(out.filter((a) => { return a.act === 'judge' }).map((a) => { return [a.about, a.task] }), [['person_free', 'task_n1']]);
+  assert.deepEqual(laneStarts(out), []);
+  assert.equal(out.at(-1).freeReason, 'new work held upstream: release queue 2/2, person-free lane 0/1');
+  // Answered no, the next in the order is read; with the lane taken, nobody is asked.
+  const answered = full([fresh('task_n1', { personFree: false }), fresh('task_n2', { tags: ['flow-person-free'] }), fresh('task_n3')]);
+  assert.deepEqual(laneStarts(answered), ['task_n2']);
+  assert.deepEqual(kinds(answered).filter((k) => { return k === 'judge' }), []);
+});
+
+test('the lane changes nothing above it: a very_high task and a high bug start without it, and the last free slot stays kept', () => {
+  const urgent = full([fresh('task_n1', { priority: 'very_high' }), fresh('task_n2', { priority: 'high', tags: ['bug'] })]);
+  assert.deepEqual(urgent.filter((a) => { return a.act === 'start_child' }).map((a) => { return [a.tasks[0], a.lane] }), [['task_n1', undefined], ['task_n2', undefined]]);
+  const last = full([fresh('task_n1', { tags: ['flow-person-free'] })], { maxRuns: 2 });
+  assert.deepEqual(laneStarts(plan({ now, params: { ...params, maxRuns: 2, releaseQueue: 2 }, children: [{ run: 'arun_1', tasks: ['task_o1'], startedAt: '2026-10-30T11:00:00Z', byMe: true, runtime: 'working', handoff: false }], tasks: [...FULL, fresh('task_n1', { tags: ['flow-person-free'] })] })), []);
+  assert.deepEqual(laneStarts(last), ['task_n1']);
 });
 
 test('an integrated change waiting on a person to validate it is in the queue; a draft or one an agent checks is not', () => {
@@ -725,7 +777,7 @@ test('one change green, one conflicted: the green one integrates, the conflicted
 });
 
 test('one change integrated, the other still open: nothing integrating leaves is applied, and the task stays in the release queue', () => {
-  const out = plan({ now, params: { ...params, releaseQueue: 1 }, tasks: [two({ merged: true }, { verdict: null, reviewRunActive: true }), task({ id: 'task_new', status: 'active', candidate: true })] });
+  const out = plan({ now, params: { ...params, releaseQueue: 1 }, tasks: [two({ merged: true }, { verdict: null, reviewRunActive: true }), task({ id: 'task_new', status: 'active', candidate: true, personFree: false })] });
   assert.deepEqual(kinds(out), []);
   assert.equal(out.at(-1).wip.releaseQueue.now, 1);
   assert.ok(inReleaseQueue(two({ merged: true }, { draft: false })));

@@ -66,6 +66,18 @@ test('each list is whole; the digest shows as many lines as the limit; over it n
   assert.deepEqual(within.decisions[0], { id: 'd0', title: 'decide 0', url: 'u0', who: 'ana@example.com', what: 'pick one' });
 });
 
+test('with the queue full the digest names who holds the person-free lane; within the limit, or with the lane closed, it says nothing', () => {
+  const tasks = [t('a', { waitsOn: ['user_pedro'] }), t('lane', { tags: ['flow-person-free'] })];
+  const full = pick({ tasks, limit: 2, members });
+  assert.deepEqual(full.lane, { now: 1, limit: 1, tasks: ['lane'] });
+  assert.match(digest({ date: 'd', picked: full }), /\nPerson-free lane: 1 of 1 \(https:\/\/flow\.ttoss\.dev\/app\/tasks\/lane\)\. /);
+  assert.match(digest({ date: 'd', picked: pick({ tasks: [t('a'), t('b')], limit: 2, members }) }), /\nPerson-free lane: 0 of 1\. /);
+  for (const quiet of [pick({ tasks, limit: 3, members }), pick({ tasks, limit: 2, members, laneLimit: 0 })]) {
+    assert.equal(quiet.lane, null);
+    assert.doesNotMatch(digest({ date: 'd', picked: quiet }), /Person-free lane/);
+  }
+});
+
 test('the digest says where the queue stands and shows the decisions section only within the limit', () => {
   const over = digest({ date: '2026-11-05', picked: pick({ tasks: [t('a', { waitsOn: ['user_pedro'] }), t('b')], details: { a: detail('a', 'merge it') }, limit: 1, members }) });
   assert.match(over, /Release queue: 2, limit 1\. The tick starts no new work/);
