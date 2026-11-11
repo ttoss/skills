@@ -836,6 +836,26 @@ test('a change closed unmerged beside an open one is retracted and waits on a pe
   assert.equal(out.find((a) => { return a.act === 'wait_on_person'; }).reason, 'https://github.com/o/r/pull/1 closed without integrating: implement it again, or cancel the task');
 });
 
+test('a change closed unmerged and superseded by a merged one in the same repo is retracted, and the task closes without waiting on a person', () => {
+  const out = plan({ now, params, tasks: [task({ changes: [
+    change({ closed: true }),
+    change({ url: 'https://github.com/o/r/pull/2', merged: true }),
+  ] })] });
+  assert.deepEqual(kinds(out), ['retract_reference', 'move_task']);
+  assert.equal(out.find((a) => { return a.act === 'retract_reference'; }).url, 'https://github.com/o/r/pull/1');
+  assert.equal(out.find((a) => { return a.act === 'move_task'; }).status, 'completed');
+});
+
+test('a change closed unmerged and superseded by an open one in the same repo is retracted, and the open one takes its gates', () => {
+  const out = plan({ now, params, tasks: [task({ changes: [
+    change({ closed: true }),
+    change({ url: 'https://github.com/o/r/pull/2' }),
+  ] })] });
+  assert.equal(out.filter((a) => { return a.act === 'wait_on_person'; }).length, 0);
+  assert.deepEqual(out.filter((a) => { return a.act === 'retract_reference'; }).map((a) => { return a.url; }), ['https://github.com/o/r/pull/1']);
+  assert.deepEqual(out.filter((a) => { return a.act === 'integrate'; }).map((a) => { return a.url; }), ['https://github.com/o/r/pull/2']);
+});
+
 test('a red pipeline on an integrated change is reverted while the task’s other change is still open', () => {
   const out = plan({ now, params, tasks: [two({ merged: true, pipelineRedAfterMerge: true, reversal: 'recorded' }, { verdict: null, reviewRunActive: true })] });
   assert.deepEqual(kinds(out), ['revert', 'move_task', 'start_child']);

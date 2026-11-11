@@ -492,14 +492,16 @@ const advance = ({ task, params, underRepair, now }) => {
   const changes = changesOf(task);
   const open = openOf(changes);
   const merged = changes.filter((c) => { return c.merged; });
-  // A change closed unmerged leaves its part of the task undone, whatever
-  // the others do: a person implements it again or cancels the task.
+  // A change closed unmerged leaves its part of the task undone, unless a
+  // merged or open change in the same repo superseded it: only then does a
+  // person implement it again or cancel the task.
   const results = changes.filter((c) => { return c.closed && !c.merged; }).map((c) => {
+    const superseded = changes.some((o) => { return o !== c && o.repo === c.repo && (o.merged || !o.closed); });
+    const retract = { act: 'retract_reference', task: task.id, url: c.url, reason: superseded ? 'the change closed, superseded by another in its repo' : 'the change closed without integrating' };
     return {
-      acts: [
-        { act: 'retract_reference', task: task.id, url: c.url, reason: 'the change closed without integrating' },
-        { act: 'wait_on_person', task: task.id, reason: `${c.url} closed without integrating: implement it again, or cancel the task` },
-      ],
+      acts: superseded
+        ? [retract]
+        : [retract, { act: 'wait_on_person', task: task.id, reason: `${c.url} closed without integrating: implement it again, or cancel the task` }],
       item: null,
     };
   });
