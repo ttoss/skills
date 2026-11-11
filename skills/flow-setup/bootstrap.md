@@ -93,7 +93,7 @@ Work in this repo lives in the Flow project `<proj id>`; no other tracker holds 
 
 Work lives in the Flow project `<proj id>`, under the standing decision [`<task id>`](https://flow.ttoss.dev/app/tasks/<task id>); <the code host> holds the code and its changes, in <the project's repos>. It runs the ttoss [Agentic Workflow](https://ttoss.dev/docs/engineering/workflow): every run reads a task's state from Flow, acts and writes it back, so the next run starts from the graph. The tick takes what ages fastest first ([process](https://ttoss.dev/docs/engineering/workflow/process#three-rules), rule 3).
 
-<a mermaid stateDiagram-v2 of the workflow's states as this project has them, each transition labelled with who makes it, each state coloured by who acts next: classDef routine fill:#cfe2ff, person fill:#f6c177, automation fill:#e5e5e5>
+<a mermaid stateDiagram-v2 of the workflow's states as this project has them, each transition labelled with who makes it, each state coloured by who acts next: classDef routine fill:#cfe2ff,stroke:#1f2328,color:#1f2328, person fill:#f6c177,stroke:#1f2328,color:#1f2328, automation fill:#e5e5e5,stroke:#1f2328,color:#1f2328 — each sets its text colour, or a dark theme draws light text on the light fills>
 
 Blue: a routine's run acts next. Orange: a person. Grey: automation.
 
