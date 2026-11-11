@@ -18,7 +18,9 @@ import { load as loadParams } from './params.mjs';
 // Usage: node snapshot.mjs --root <repo dir> [--extra <file>] [--now <ISO>]
 //   (params and repos from the parameters there, the code host through `gh`),
 //   or --project <proj_…> [--extra <file>] with everything else in the file.
-// --extra JSON: { "params": { maxRuns, staleAfterHours, autoRounds, reviewByAgent, reviewRequired, agentsMayIntegrate, leavesByAgent, branchesPerRepo },
+// --extra JSON: { "focus": "task_…" | "tag:<name>" | ["task_…", …] | { tasks: [id] } | { tag },
+//                   (or params.focus): only what it resolves to starts a child,
+//                 "params": { maxRuns, staleAfterHours, autoRounds, reviewByAgent, reviewRequired, agentsMayIntegrate, leavesByAgent, branchesPerRepo },
 //                   (with --root, laid over the parameters file's)
 //                 "tasks": { "task_…": { brief, leaves, rounds, repairs, repos, changes: [change] } },
 //                 "children": { "arun_…": { runtime } },
@@ -71,8 +73,39 @@ const given = (own) => {
   return Boolean(own?.changes || own?.change);
 };
 
+/**
+ * The tick's focus (flow/SKILL.md § Focus) as `{ tasks: [id] }`, `{ tag }` or
+ * null, from the forms a tick writes: one or several `task_…` ids, `tag:<name>`,
+ * or either object.
+ */
+export const focusOf = (focus) => {
+  if (!focus) {
+    return null;
+  }
+  if (typeof focus === 'string') {
+    return focus.startsWith('tag:') ? { tag: focus.slice(4) } : { tasks: [focus] };
+  }
+  if (Array.isArray(focus)) {
+    return focus.length ? { tasks: [...new Set(focus)] } : null;
+  }
+  if (focus.tag) {
+    return { tag: focus.tag };
+  }
+  const tasks = focus.tasks ?? (focus.task ? [focus.task] : []);
+  return tasks.length ? { tasks: [...new Set(tasks)] } : null;
+};
+
 /** The snapshot from what was read, as a pure function. */
-export const build = ({ now, candidates, slices, held = [], dueIds, children, mine, childTasks, implementsOf, handoffs = {}, repairRows = [], extra = {} }) => {
+export const build = ({ now, candidates, slices, held = [], dueIds, children, mine, childTasks, implementsOf, handoffs = {}, repairRows = [], focusIds = null, extra = {} }) => {
+  const focus = focusOf(extra.focus ?? extra.params?.focus);
+  // What the focus resolves to: the tasks its reads answered (the union of
+  // get-next upstream_of over each target), or any task carrying its tag.
+  const inFocus = (row) => {
+    if (!focus) {
+      return true;
+    }
+    return Boolean(focusIds?.has(row.id)) || Boolean(focus.tag && (row.tags || []).includes(focus.tag));
+  };
   const nowMs = Date.parse(now);
   const rank = new Map(candidates.map((t, i) => { return [t.id, i]; }));
   // Each repo's open repair task, found by its `source` commit: the task
@@ -111,11 +144,13 @@ export const build = ({ now, candidates, slices, held = [], dueIds, children, mi
       inherited: row.inherited_priority?.priority ?? null,
       tags: row.tags || [],
       rank: rank.has(row.id) ? rank.get(row.id) : null,
-      heldByPerson: personWaits.length > 0,
+      // A task assigned to a member or a team is theirs: agents never take
+      // work by its assignee, so the planner offers it to no child.
+      heldByPerson: personWaits.length > 0 || Boolean(row.assignee),
       // A wait on nobody is outside the team: nothing the team does drains it.
       heldOutside: waits.some((w) => { return !w.on; }),
       deferredUntil: deferred ? personWaits.map((w) => { return w.until; }).sort().at(-1) : null,
-      inFocus: true,
+      inFocus: inFocus(row),
       candidate: rank.has(row.id),
       due,
       dueKind: due ? (row.status === 'calendar' ? 'check' : 'other') : null,
@@ -152,7 +187,7 @@ export const build = ({ now, candidates, slices, held = [], dueIds, children, mi
   });
   return {
     now,
-    params: { ...DEFAULT_PARAMS, ...(extra.params || {}) },
+    params: { ...DEFAULT_PARAMS, ...(extra.params || {}), focus },
     defaults: extra.defaults || [],
     children: snapshotChildren,
     tasks,
@@ -188,9 +223,28 @@ export const run = async ({ client, project, now = new Date().toISOString(), ext
   const slice = (name) => {
     return get('/next', { project, slice: name, assignee: 'any', limit: 20 });
   };
+  // A focus narrows the candidates to its targets' upstream (each `task_…`
+  // read on its own, since `upstream_of` takes one) or to its tag.
+  const focus = focusOf(extra.focus ?? extra.params?.focus);
+  const candidatesOf = async () => {
+    if (!focus) {
+      return get('/next', { project, limit: 10 });
+    }
+    if (focus.tag) {
+      return get('/next', { project, tag: focus.tag, limit: 10 });
+    }
+    const answers = await Promise.all(focus.tasks.map((id) => { return get('/next', { project, upstream_of: id, limit: 10 }); }));
+    const seen = new Map();
+    for (const row of answers.flatMap((a) => { return a.tasks || []; })) {
+      if (!seen.has(row.id)) {
+        seen.set(row.id, row);
+      }
+    }
+    return { tasks: [...seen.values()] };
+  };
   // Every read at once: an empty slice costs less than waiting on `counts`.
   const [next, waiting, dateCame, holdCleared, held, implemented, children, mine, running] = await Promise.all([
-    get('/next', { project, limit: 10 }),
+    candidatesOf(),
     slice('waiting'), slice('date_came'), slice('hold_cleared'),
     // Every task a `blocks` edge holds, whatever its status: its row already
     // names the sources, so none is read again.
@@ -372,6 +426,7 @@ export const run = async ({ client, project, now = new Date().toISOString(), ext
     implementsOf,
     handoffs: Object.fromEntries(Object.entries(full).map(([id, a]) => { return [id, a.task?.after_integration ?? null]; })),
     repairRows,
+    focusIds: focus ? new Set((next.tasks || []).map((t) => { return t.id; })) : null,
     extra,
   });
   snapshot.needs.unread = unread;

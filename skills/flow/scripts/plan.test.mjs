@@ -415,13 +415,46 @@ test('a task waiting for its release is held by the step\'s edge, and moves on o
 
 test('a check that failed after the merge sends the task back a round, on a fresh change', () => {
   // The check child moved it calendar -> active, so it was written after the merge.
-  const failed = (over = {}, changeOver = {}) => { return task({ status: 'active', leaves: 'check', change: change({ merged: true, writtenSince: true, ...changeOver }), ...over }) };
+  const failed = (over = {}, changeOver = {}) => { return task({ status: 'active', leaves: 'check', sentBack: 'round', change: change({ merged: true, writtenSince: true, ...changeOver }), ...over }) };
+  // Not read yet: only its history tells a send-back from a handoff.
+  assert.deepEqual(acts({ tasks: [failed({ sentBack: null })] }, 'judge').map((a) => { return a.about; }), ['sent_back']);
   const out = plan({ now, params, defaults: [], children: [], tasks: [failed()] });
   assert.deepEqual(out.filter((a) => { return a.act !== 'report'; }).map((a) => { return [a.act, a.kind, a.tasks]; }), [['start_child', 'round', ['task_a']]]);
   // A run already holds it, such as the round's own child: left to it.
   assert.equal(acts({ tasks: [failed({}, { reviewRunActive: true })] }, 'start_child').length, 0);
   // A person holds it: theirs.
   assert.equal(acts({ tasks: [failed({ heldByPerson: true })] }, 'start_child').length, 0);
+});
+
+test('a person who cleared the calendar before the date asks for the check now, not a round', () => {
+  const early = task({ status: 'active', leaves: 'check', sentBack: 'check', check: { observe: 'o', where: 'w', visible_at: '2026-10-31T12:00:00Z' }, change: change({ merged: true, writtenSince: true }) });
+  assert.deepEqual(acts({ tasks: [early] }, 'start_child').map((a) => { return [a.kind, a.tasks]; }), [['check', ['task_a']]]);
+});
+
+test("a child's handoff citing a change that had already integrated takes what integrating leaves", () => {
+  const handedOff = (over) => { return task({ status: 'active', sentBack: 'handoff', change: change({ merged: true, writtenSince: true }), ...over }) };
+  assert.equal(acts({ tasks: [handedOff({ leaves: 'close' })] }, 'move_task')[0].status, 'completed');
+  assert.equal(acts({ tasks: [handedOff({ leaves: 'check', check: { observe: 'o', where: 'w', visible_at: '2026-10-31T12:00:00Z' } })] }, 'move_task')[0].status, 'calendar');
+  assert.deepEqual(acts({ tasks: [handedOff({ leaves: null })] }, 'judge').map((a) => { return a.about; }), ['leaves']);
+  assert.equal(acts({ tasks: [handedOff({ leaves: 'none' })] }, 'wait_on_person').length, 1);
+});
+
+test('an active task a blocks edge holds after its merge waits for its source: no round, no judge', () => {
+  const held = task({ status: 'active', leaves: 'close', blockedBy: ['task_release'], change: change({ merged: true, writtenSince: true }) });
+  assert.equal(plan({ now, params, defaults: [], children: [], tasks: [held] }).filter((a) => { return a.act !== 'report'; }).length, 0);
+});
+
+test('an active task whose last change integrated, nothing written since, takes what integrating leaves like a waiting one', () => {
+  const active = (over = {}, changeOver = {}) => { return task({ status: 'active', leaves: 'close', change: change({ merged: true, ...changeOver }), ...over }) };
+  assert.equal(acts({ tasks: [active()] }, 'move_task')[0].status, 'completed');
+  assert.equal(acts({ tasks: [active({ leaves: 'release' })] }, 'release_step').length, 1);
+  // Somebody works it, or an edge holds it: left as it stands.
+  const quiet = (t) => { return plan({ now, params, defaults: [], children: [], tasks: [t] }).filter((a) => { return a.act !== 'report'; }).length };
+  assert.equal(quiet(active({ heldByPerson: true })), 0);
+  assert.equal(quiet(active({}, { reviewRunActive: true })), 0);
+  assert.equal(quiet(active({ blockedBy: ['task_b'] })), 0);
+  // A calendar task is its check's, never closed on the merge.
+  assert.equal(quiet(active({ status: 'calendar' })), 0);
 });
 
 test('a check applied with its date past is dated now, never in the past', () => {

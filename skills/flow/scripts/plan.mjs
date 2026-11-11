@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 //   now: ISO date,
 //   params: { maxRuns, staleAfterHours, autoRounds, reviewByAgent,
 //             reviewRequired: bool | null,   // `Review` names a reviewer; null: not stated, a judge
-//             agentsMayIntegrate, focus: null | { task } | { tag },
+//             agentsMayIntegrate, focus: null | { tasks: [id] } | { tag }, // what the snapshot resolved inFocus by
 //             releaseQueue,                   // WIP limit on what waits between implementation and release; null: 20
 //             personFreeLane,                 // person-free tasks in flight at once while that queue is full; null: 1, 0: none
 //             leavesByAgent: bool | null,     // the Closing evidence gives the agent the choice of what integrating leaves; null: a judge
@@ -38,6 +38,7 @@ import { fileURLToPath } from 'node:url';
 //             brief: 'ready' | 'short' | 'split' | null,
 //             personFree: bool | null,        // its path to production reaches no person; null: read from its tags, else a judge while the queue is full
 //             leaves: 'close' | 'release' | 'check' | 'none' | null, // the task's after_integration; null: not handed off, a judge reads the body
+//             sentBack: 'round' | 'check' | 'handoff' | null, // an active task written after its merge: sent back, asked to check now, or only handed off; null: a judge
 //             released: bool | null,          // a `release` task nothing holds: its step closed (true) or it was sent back (false); null: a judge reads its history
 //             check: null | { observe, where, visible_at }, // with leaves check: what the check's wait names, and its date
 //             leavesWait: bool,               // it waits on a person because nothing said what integrating leaves (the tick's own wait)
@@ -275,6 +276,44 @@ const released = ({ task, change, now }) => {
     : { acts: [{ act: 'move_task', task: task.id, status: 'completed', reason: 'released: closed citing its release step, whose outcome is the evidence' }], item: null };
 };
 
+// What integrating leaves, applied: the act its after_integration names, a
+// judge when the task carries none, or a wait when the choice is a person's.
+const applyLeaves = ({ task, change, now }) => {
+  if (task.leaves === null || task.leaves === undefined) {
+    return { acts: [{ act: 'judge', about: 'leaves', task: task.id, url: change.url, reason: 'integrated: what does the body say integrating leaves (close, release, check, or none)?' }], item: null };
+  }
+  const leaves = LEAVES[task.leaves];
+  const act = leaves
+    ? leaves(task, change, now)
+    : { act: 'wait_on_person', task: task.id, reason: "integrated, and the task does not say what integrating leaves, a choice the Closing evidence keeps for a person: write the task's after_integration and the next tick applies it" };
+  return { acts: [act], item: null };
+};
+
+// An `active` task nobody holds, written after its change integrated. Only its
+// history tells why: a failed check, a revert or a person asking for rework
+// sent it back (a round, on a fresh change); a person cleared its calendar
+// before the date, asking for the check now; or the write only handed it off,
+// citing a change that had already integrated (its acceptance already held),
+// and what integrating leaves was never applied.
+const SENT_BACK = {
+  round: () => { return { acts: [], item: { stage: 'gates', kind: 'round' } }; },
+  check: () => { return { acts: [], item: { stage: 'integratedCheck', kind: 'check' } }; },
+  handoff: applyLeaves,
+};
+
+const sentBack = ({ task, change, now }) => {
+  const answer = SENT_BACK[task.sentBack];
+  if (!answer) {
+    return { acts: [{ act: 'judge', about: 'sent_back', task: task.id, url: change.url, reason: 'active and written after its change integrated: sent back (round), asked to check now (check), or only handed off (handoff)?' }], item: null };
+  }
+  return answer({ task, change, now });
+};
+
+// Nobody works it: no person and no run holds it, and no `blocks` edge does.
+const unheld = ({ task, change }) => {
+  return task.status === 'active' && !task.heldByPerson && !change.reviewRunActive && !(task.blockedBy?.length > 0);
+};
+
 const advanceMerged = ({ task, change, params, underRepair, now }) => {
   // "The change integrated, nothing written since": a task written after the
   // merge and its pipeline was already advanced, and is left as it stands.
@@ -284,15 +323,15 @@ const advanceMerged = ({ task, change, params, underRepair, now }) => {
   // person, such as a check child's for an act only they can do, asked for
   // something else, so a field written before it answers nothing. A red
   // pipeline's wait is about the pipeline, never about what integrating leaves.
-  // An `active` task nobody holds was sent back after the merge (a failed
-  // check, a revert whose round never started): it is a round, on a fresh
-  // change, or it would sit ready with no path that starts it.
+  // An `active` task nobody holds would otherwise sit ready with no path that
+  // moves it: its history says whether it is a round, a check or a handoff.
+  // One a `blocks` edge holds waits for its source, never a round.
   if (change.writtenSince) {
-    if (task.status === 'active' && !task.heldByPerson && !change.reviewRunActive) {
-      if (task.leaves === 'release') {
-        return released({ task, change, now });
-      }
-      return { acts: [], item: { stage: 'gates', kind: 'round' } };
+    if (task.status === 'active' && task.leaves === 'release' && !task.heldByPerson && !change.reviewRunActive) {
+      return released({ task, change, now });
+    }
+    if (unheld({ task, change })) {
+      return sentBack({ task, change, now });
     }
     const answered = task.status === 'waiting' && task.heldByPerson && task.leavesWait && !change.pipelineRedAfterMerge && LEAVES[task.leaves];
     if (answered) {
@@ -322,17 +361,13 @@ const advanceMerged = ({ task, change, params, underRepair, now }) => {
       item: { stage: 'gates', kind: 'round' },
     };
   }
-  if (task.status !== 'waiting') {
-    return { acts: [], item: null };
+  // "The change integrated, nothing written since" puts no condition on the
+  // status: a task moved to `active` before its last change merged, and
+  // nobody works it, takes what integrating leaves as a waiting one does.
+  if (task.status !== 'waiting' && !unheld({ task, change })) {
+    return NONE;
   }
-  if (task.leaves === null || task.leaves === undefined) {
-    return { acts: [{ act: 'judge', about: 'leaves', task: task.id, url: change.url, reason: 'integrated: what does the body say integrating leaves (close, release, check, or none)?' }], item: null };
-  }
-  const leaves = LEAVES[task.leaves];
-  const act = leaves
-    ? leaves(task, change, now)
-    : { act: 'wait_on_person', task: task.id, reason: "integrated, and the task does not say what integrating leaves, a choice the Closing evidence keeps for a person: write the task's after_integration and the next tick applies it" };
-  return { acts: [act], item: null };
+  return applyLeaves({ task, change, now });
 };
 
 /** The wait that hands a change to a person to integrate, and the change it names. */

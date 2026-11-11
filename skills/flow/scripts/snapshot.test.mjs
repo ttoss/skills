@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { plan } from './plan.mjs';
-import { build, DEFAULT_PARAMS, roundsOf, run } from './snapshot.mjs';
+import { build, DEFAULT_PARAMS, focusOf, roundsOf, run } from './snapshot.mjs';
 
 const now = '2026-11-02T12:00:00Z';
 const row = (id, over = {}) => {
@@ -295,4 +295,47 @@ test('a task carries every change it implements; one whose only open change is u
   assert.deepEqual(by.t_two.changes.map((c) => { return [c.url, c.merged]; }), [['https://github.com/o/r/pull/1', true], ['https://github.com/o/s/pull/2', false]]);
   assert.deepEqual(by.t_part.changes, []);
   assert.equal(plan(snap).filter((a) => { return a.act === 'release_step'; }).length, 0);
+});
+
+test('a task assigned to a member or a team is held by them, so the planner offers it to no child', () => {
+  const snap = build({ ...base, candidates: [row('t_mine', { assignee: 'user_x' }), row('t_team', { assignee: 'team_y' }), row('t_free', { assignee: null })] });
+  assert.deepEqual(snap.tasks.map((t) => { return [t.id, t.heldByPerson]; }), [['t_mine', true], ['t_team', true], ['t_free', false]]);
+  const started = plan({ ...snap, params: { ...snap.params, maxRuns: 1 }, tasks: snap.tasks.map((t) => { return { ...t, brief: 'ready' }; }) })
+    .filter((a) => { return a.act === 'start_child'; }).map((a) => { return a.tasks[0]; });
+  assert.deepEqual(started, ['t_free']);
+});
+
+test('a focus is resolved from every form a tick writes', () => {
+  assert.equal(focusOf(null), null);
+  assert.deepEqual(focusOf('task_a'), { tasks: ['task_a'] });
+  assert.deepEqual(focusOf('tag:billing'), { tag: 'billing' });
+  assert.deepEqual(focusOf(['task_a', 'task_b', 'task_a']), { tasks: ['task_a', 'task_b'] });
+  assert.deepEqual(focusOf({ task: 'task_a' }), { tasks: ['task_a'] });
+  assert.deepEqual(focusOf({ tasks: [] }), null);
+});
+
+test('a focus on several tasks reads each target\'s upstream and marks their union in focus; a tag marks the tasks carrying it', async () => {
+  const asked = [];
+  const get = async (path, query = {}) => {
+    asked.push(query);
+    if (path === '/next') {
+      if (query.upstream_of === 'task_a') {
+        return { tasks: [row('t_a1'), row('task_a')] };
+      }
+      if (query.upstream_of === 'task_b') {
+        return { tasks: [row('t_a1'), row('task_b')] };
+      }
+      return { tasks: query.slice === 'waiting' ? [row('t_out', { status: 'waiting' })] : [] };
+    }
+    return { runs: [] };
+  };
+  const all = async () => { return []; };
+  const snap = await run({ client: { get, all }, project: 'proj_x', now, extra: { focus: ['task_a', 'task_b'] } });
+  const by = Object.fromEntries(snap.tasks.map((t) => { return [t.id, t]; }));
+  assert.deepEqual(['t_a1', 'task_a', 'task_b', 't_out'].map((id) => { return by[id].inFocus; }), [true, true, true, false]);
+  assert.deepEqual([by.t_a1.rank, by.task_a.rank, by.task_b.rank], [0, 1, 2]);
+  assert.deepEqual(snap.params.focus, { tasks: ['task_a', 'task_b'] });
+  assert.ok(!asked.some((q) => { return q.limit === 10 && !q.upstream_of && !q.slice; }), 'no unfocused candidate read');
+  const tagged = build({ ...base, candidates: [row('t_bill', { tags: ['billing'] })], slices: [row('t_other', { status: 'waiting' })], focusIds: new Set(['t_bill']), extra: { focus: 'tag:billing' } });
+  assert.deepEqual(tagged.tasks.map((t) => { return [t.id, t.inFocus]; }), [['t_bill', true], ['t_other', false]]);
 });
