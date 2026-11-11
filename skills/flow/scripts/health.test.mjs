@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { answers, answersLine, feeds, flowHealth, holderLines, mismatches, nameOf, queues, readFlow, report, spend, spendOf, spendPair, windows } from './health.mjs';
+import { answers, answersLine, feeds, flowHealth, holderLines, integrations, leftLine, mismatches, nameOf, queues, readFlow, report, spend, spendOf, spendPair, windows } from './health.mjs';
 
 // Shapes and edge cases taken from OneClick Ads' answers in November 2026.
 const row = (status, state, on, open, entered, left, p90 = 1, p50 = 0) => {
@@ -411,6 +411,81 @@ test('report: with the tick\'s snapshot, the queue lines follow the flow\'s and 
   assert.equal(out.lines[at], 'Oldest in the release queue (1, limit 1): [change task_a](https://github.com/o/r/pull/task_a), 1.0d since opened, a review, the agents');
   assert.deepEqual(out.drain.map((d) => { return d.task; }), ['task_a']);
   assert.deepEqual(out.needs, { changes: [] });
+});
+
+const delivered = (id, over = {}) => {
+  const { waits = [], ...task } = over;
+  return { task: { id, url: `https://f/${id}`, title: `task ${id}`, status: 'waiting', closed_at: null, ...task }, cleared_waits: waits };
+};
+const handed = (url, cleared_at, over = {}) => {
+  return { kind: 'external', on: 'user_ana', reason: `ready for a person to integrate ${url}`, until: null, cleared_at, ...over };
+};
+
+test('integrations: each change the tick handed to a person that they cleared within four weeks, newest first, by the change the wait names', () => {
+  const now = '2026-11-07T00:00:00Z';
+  const out = integrations({ now, tasks: [
+    delivered('task_a', { waits: [handed('https://github.com/o/r/pull/1', '2026-11-01T00:00:00Z')] }),
+    delivered('task_b', { waits: [handed('https://github.com/o/r/pull/2', '2026-11-05T00:00:00Z', { reason: 'ready for a person to integrate https://github.com/o/r/pull/2: the code host does not require the review (flow/review) on its default branch' })] }),
+    delivered('task_old', { waits: [handed('https://github.com/o/r/pull/3', '2026-09-01T00:00:00Z')] }),
+    delivered('task_open', { waits: [handed('https://github.com/o/r/pull/4', null)] }),
+    delivered('task_other', { waits: [handed('x', '2026-11-05T00:00:00Z', { reason: 'the brief is short of the Ready brief' })] }),
+    delivered('task_nobody', { waits: [handed('https://github.com/o/r/pull/5', '2026-11-05T00:00:00Z', { on: null })] }),
+  ] });
+  assert.deepEqual(out, [
+    { task: 'task_b', url: 'https://f/task_b', title: 'task task_b', change: 'https://github.com/o/r/pull/2', on: 'user_ana', at: '2026-11-05T00:00:00Z' },
+    { task: 'task_a', url: 'https://f/task_a', title: 'task task_a', change: 'https://github.com/o/r/pull/1', on: 'user_ana', at: '2026-11-01T00:00:00Z' },
+  ]);
+});
+
+test('leftLine: the tasks with a change that closed in each week, beside the limit, never divided by it', () => {
+  const now = '2026-11-07T00:00:00Z';
+  const tasks = [
+    delivered('task_a', { status: 'completed', closed_at: '2026-11-06T00:00:00.000Z' }),
+    delivered('task_b', { status: 'cancelled', closed_at: '2026-11-01T00:00:00.000Z' }),
+    delivered('task_c', { status: 'completed', closed_at: '2026-10-28T00:00:00.000Z' }),
+    delivered('task_d', { status: 'completed', closed_at: '2026-10-01T00:00:00.000Z' }),
+    delivered('task_open'),
+  ];
+  assert.equal(leftLine({ tasks, limit: 10, now }), 'Left the release queue (a task with a change closed): 2 this week (1 the week before); its limit is 10');
+});
+
+test('report: the changes a person integrated are data beside the answers, and what left the queue follows its lines', async () => {
+  const now = '2026-11-02T17:00:00Z';
+  const whole = {
+    task_m: delivered('task_m', { status: 'completed', closed_at: '2026-11-01T00:00:00.000Z', waits: [handed('https://github.com/o/r/pull/9', '2026-10-31T00:00:00Z')] }),
+  };
+  const reads = [];
+  const get = async (path, query = {}) => {
+    reads.push([path, query.ref_role ?? null]);
+    if (path === '/projects/proj_1m5wbbbf1x') {
+      return { members: [{ user_id: 'user_ana', email: 'ana@x', role: 'admin' }], teams: [] };
+    }
+    if (path === '/projects/proj_1m5wbbbf1x/metrics') {
+      return thisWeek;
+    }
+    if (path === '/tasks') {
+      return query.ref_role
+        ? { tasks: [{ id: 'task_m', updated_at: '2026-11-01T00:00:00Z' }, { id: 'task_stale', updated_at: '2026-09-01T00:00:00Z' }], next_cursor: 'more' }
+        : { tasks: [] };
+    }
+    if (path === '/next') {
+      return { tasks: [] };
+    }
+    if (whole[path.slice('/tasks/'.length)]) {
+      return whole[path.slice('/tasks/'.length)];
+    }
+    throw new Error(`unexpected read ${path}`);
+  };
+  const snapshot = { params: { releaseQueue: 7 }, tasks: [], needs: { changes: [] } };
+  const out = await report({ client: { get }, project: 'proj_1m5wbbbf1x', now, inbox: { captures: [], total: 0 }, snapshot });
+  assert.deepEqual(out.integrations, [{ task: 'task_m', url: 'https://f/task_m', title: 'task task_m', change: 'https://github.com/o/r/pull/9', on: 'ana@x', at: '2026-10-31T00:00:00Z' }]);
+  assert.ok(out.lines.includes('Left the release queue (a task with a change closed): 1 this week (0 the week before); its limit is 7'));
+  // A page holding a task older than the window is the last one read.
+  assert.equal(reads.filter(([path, role]) => { return path === '/tasks' && role; }).length, 1);
+  // Without the snapshot the limit is not known, so the line is left out.
+  const bare = await report({ client: { get }, project: 'proj_1m5wbbbf1x', now, inbox: { captures: [], total: 0 } });
+  assert.ok(!bare.lines.some((l) => { return l.startsWith('Left the release queue'); }));
+  assert.equal(bare.integrations.length, 1);
 });
 
 test('queues by hand: the saved snapshot and waiting rows give the same lines as the function', () => {

@@ -142,6 +142,12 @@ export const resolve = ({ file, main, runtime = {} }) => {
       ['Review queue', intOf(main['Review queue'])],
       ['Runtime file: Review queue', intOf(runtime['Review queue'])],
     ], null),
+    // How many person-free tasks may be in flight while that queue is full;
+    // null leaves the planner's default, 1, and 0 closes the lane.
+    personFreeLane: pick('personFreeLane', [
+      ['Person-free lane', intOf(main['Person-free lane'])],
+      ['Runtime file: Person-free lane', intOf(runtime['Person-free lane'])],
+    ], null),
     // Whether the `Closing evidence` gives the agent the choice of what
     // integrating leaves: it says so in prose, so a judge reads it when a
     // task needs the answer, never a guess here.

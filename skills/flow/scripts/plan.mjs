@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 //             reviewRequired: bool | null,   // `Review` names a reviewer; null: not stated, a judge
 //             agentsMayIntegrate, focus: null | { task } | { tag },
 //             releaseQueue,                   // WIP limit on what waits between implementation and release; null: 20
+//             personFreeLane,                 // person-free tasks in flight at once while that queue is full; null: 1, 0: none
 //             leavesByAgent: bool | null,     // the Closing evidence gives the agent the choice of what integrating leaves; null: a judge
 //             retargetByAgent: bool | null,   // the standing decision delegates retracting a blocks edge whose source integrated; null: a judge, only when one is found
 //             branchesPerRepo: number | null }, // children that may push to one repo this tick (children sharing the tick's push branch: 1); null: no cap
@@ -35,6 +36,7 @@ import { fileURLToPath } from 'node:url';
 //             due: bool,                      // date_came, hold_cleared, or an external wait past until
 //             dueKind: 'check' | 'other' | null,
 //             brief: 'ready' | 'short' | 'split' | null,
+//             personFree: bool | null,        // its path to production reaches no person; null: read from its tags, else a judge while the queue is full
 //             leaves: 'close' | 'release' | 'check' | 'none' | null, // the task's after_integration; null: not handed off, a judge reads the body
 //             released: bool | null,          // a `release` task nothing holds: its step closed (true) or it was sent back (false); null: a judge reads its history
 //             check: null | { observe, where, visible_at }, // with leaves check: what the check's wait names, and its date
@@ -116,6 +118,24 @@ export const urgencyTier = (task) => {
     return 1;
   }
   return 2;
+};
+
+// Whether a task's path to production reaches no person is written on the
+// task as a tag, by whoever wrote its brief or by the tick's judge, so it is
+// read once and never again. A no wins over a yes: a task a person is known
+// to be on the path of never takes the lane.
+export const PERSON_FREE = 'flow-person-free';
+export const NEEDS_PERSON = 'flow-needs-person';
+
+export const personFreeOf = (task) => {
+  if (task.personFree === true || task.personFree === false) {
+    return task.personFree;
+  }
+  const tags = task.tags || [];
+  if (tags.includes(NEEDS_PERSON)) {
+    return false;
+  }
+  return tags.includes(PERSON_FREE) ? true : null;
 };
 
 // Section 2: what to do with one child, or null to leave it.
@@ -314,6 +334,9 @@ const advanceMerged = ({ task, change, params, underRepair, now }) => {
     : { act: 'wait_on_person', task: task.id, reason: "integrated, and the task does not say what integrating leaves, a choice the Closing evidence keeps for a person: write the task's after_integration and the next tick applies it" };
   return { acts: [act], item: null };
 };
+
+/** The wait that hands a change to a person to integrate, and the change it names. */
+export const INTEGRATE_WAIT = /ready for a person to integrate (https?:\/\/[^\s;,]*[^\s;,:.])/;
 
 // Gates passed: integrate, wait on a person, or ask what the Merge rule reserves.
 const gatesPassed = ({ task, change, params }) => {
@@ -576,6 +599,7 @@ const delegate = ({ items, free, newWork, cap, branchCap = null }) => {
   const skipped = [];
   let left = free;
   let budget = newWork.budget;
+  let lane = newWork.lane;
   let held = 0;
   let reserved = 0;
   let branchTaken = 0;
@@ -595,6 +619,7 @@ const delegate = ({ items, free, newWork, cap, branchCap = null }) => {
     if (left === 0) {
       break;
     }
+    let inLane = false;
     const repos = branchCap ? pushRepos(item) || [] : [];
     if (repos.some((repo) => { return (pushing.get(repo) ?? 0) >= branchCap; })) {
       branchTaken += 1;
@@ -609,14 +634,32 @@ const delegate = ({ items, free, newWork, cap, branchCap = null }) => {
         skipped.push({ task: item.task.id, reason: 'the last free slot is kept for what ages faster' });
         continue;
       }
-      if (budget === 0) {
+      // A full queue blocks the demand that feeds it (W6), and a task whose
+      // path reaches no person does not (W14): one at a time, so a brief read
+      // wrong costs the queue one item. The first candidate nobody read yet
+      // is a judge's, and the lane waits for the answer, or a task further
+      // down the order would take it.
+      const free = budget === 0 ? personFreeOf(item.task) : null;
+      if (budget === 0 && lane > 0 && free === null) {
+        lane = 0;
+        held += 1;
+        acts.push({ act: 'judge', about: 'person_free', task: item.task.id, reason: 'the release queue is full and the person-free lane is free: does this brief reach production with no person on its path?' });
+        continue;
+      }
+      if (budget === 0 && !(lane > 0 && free)) {
         held += 1;
         skipped.push({ task: item.task.id, reason: `held upstream: ${newWork.why}` });
         continue;
       }
-      budget -= 1;
+      if (budget === 0) {
+        lane -= 1;
+        inLane = true;
+      } else {
+        budget -= 1;
+      }
     }
-    acts.push(slotAct(item, { branchCap }));
+    const act = slotAct(item, { branchCap });
+    acts.push(inLane && act.act === 'start_child' ? { ...act, lane: 'person-free' } : act);
     for (const repo of repos) {
       pushing.set(repo, (pushing.get(repo) ?? 0) + 1);
     }
@@ -657,11 +700,34 @@ const releaseQueue = (tasks) => {
   return tasks.filter(inReleaseQueue).length;
 };
 
+/**
+ * The person-free lane: the tasks in flight whose path to production reaches
+ * no person, against how many may be at once while the release queue is full.
+ * A task holds it from its start until it closes, so one that lands on a
+ * person after all keeps the lane shut, and is counted in the queue like any
+ * other. Read from the snapshot alone: nothing remembers who took the lane.
+ */
+export const personFreeLane = ({ tasks, children = [], limit = null }) => {
+  const running = new Set(children.flatMap((c) => { return c.tasks || []; }));
+  const holders = tasks.filter((t) => {
+    return personFreeOf(t) === true && (changesOf(t).length > 0 || running.has(t.id));
+  }).map((t) => { return t.id; });
+  return { now: holders.length, limit: limit ?? 1, tasks: holders };
+};
+
 // How many new tasks this tick may start, and why fewer than its free slots.
-const newWorkBudget = ({ tasks, params }) => {
+const newWorkBudget = ({ tasks, params, children }) => {
   const limit = params.releaseQueue ?? 20;
   const queued = releaseQueue(tasks);
-  return { budget: Math.max(0, limit - queued), why: `release queue ${queued}/${limit}`, wip: { releaseQueue: { now: queued, limit } } };
+  const budget = Math.max(0, limit - queued);
+  const lane = personFreeLane({ tasks, children, limit: params.personFreeLane });
+  const full = budget === 0 && lane.limit > 0;
+  return {
+    budget,
+    lane: Math.max(0, lane.limit - lane.now),
+    why: `release queue ${queued}/${limit}${full ? `, person-free lane ${lane.now}/${lane.limit}` : ''}`,
+    wip: { releaseQueue: { now: queued, limit }, personFreeLane: lane },
+  };
 };
 
 // `plan: <n> acts (<kind> <count>, …) · runs <n>/<cap> by me (<free> free: <why>)`
@@ -783,7 +849,7 @@ export const plan = ({ now, params, children = [], tasks = [], defaults = [] }) 
   const running = children.filter((c) => {
     return c.byMe && !reconciled.closed.has(c.run);
   }).length;
-  const newWork = newWorkBudget({ tasks, params });
+  const newWork = newWorkBudget({ tasks, params, children: children.filter((c) => { return !reconciled.closed.has(c.run); }) });
   const delegated = delegate({ items, free: Math.max(0, params.maxRuns - running), newWork, cap: params.maxRuns, branchCap: params.branchesPerRepo ?? null });
   const started = delegated.acts.filter((a) => {
     return a.act === 'start_child';

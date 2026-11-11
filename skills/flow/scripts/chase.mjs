@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 
 import { clientFromEnv, mapLimit, parseFlags } from './flow-api.mjs';
 import { load as loadParams } from './params.mjs';
-import { allIntegrated, changeOf, changesOf, effectivePriority, heldByIntegrated, inReleaseQueue, urgencyTier } from './plan.mjs';
+import { allIntegrated, changeOf, changesOf, effectivePriority, heldByIntegrated, inReleaseQueue, personFreeLane, urgencyTier } from './plan.mjs';
 import { run as readSnapshot } from './snapshot.mjs';
 
 // The Chase's digest (references/chase.md): what only a person can do to drain
@@ -77,7 +77,7 @@ const waitOn = (detail, holders) => {
  * the snapshot's; `details` each task's `get-task` answer, by id, for those
  * waiting on a person; `decisions` the `waiting` rows `get-next` ranked.
  */
-export const pick = ({ tasks, details = {}, decisions = [], limit = DEFAULT_LIMIT, members = [], teams = [] }) => {
+export const pick = ({ tasks, details = {}, decisions = [], limit = DEFAULT_LIMIT, members = [], teams = [], children = [], laneLimit = null }) => {
   const who = whoOf({ members, teams });
   const queue = tasks.filter(inReleaseQueue);
   // A task in the queue that waits on nobody is the agents' or the gates': an
@@ -139,8 +139,13 @@ export const pick = ({ tasks, details = {}, decisions = [], limit = DEFAULT_LIMI
     const wait = (row.readiness?.blocked_by || []).find((b) => { return b.via === 'wait' && b.on; });
     return { id: row.id, title: row.title, url: row.url, who: who([wait.on]), what: wait.reason || 'decide' };
   }) : null;
+  // With the queue full the tick still starts one task at a time whose path
+  // reaches no person: the digest says who holds that lane, as the planner
+  // counts it, so nobody reads a start as the limit being ignored.
+  const lane = personFreeLane({ tasks, children, limit: laneLimit });
   return {
     queue: { now: queue.length, limit },
+    lane: queue.length >= limit && lane.limit > 0 ? lane : null,
     person,
     personTotal: person.length,
     decisions: owed,
@@ -197,11 +202,15 @@ export const unconfirmedOf = ({ tasks, host = [] }) => {
  * at `show` lines (the limit, or every line with --all).
  */
 export const digest = ({ date, picked, show = picked.queue.limit, unconfirmed = [] }) => {
-  const { queue, person, personTotal, decisions, decisionsTotal } = picked;
+  const { queue, lane = null, person, personTotal, decisions, decisionsTotal } = picked;
   const lines = [`# Chase — ${date}`, ''];
   lines.push(queue.now > queue.limit
     ? `Release queue: ${queue.now}, limit ${queue.limit}. The tick starts no new work until it is within the limit; these are what only a person can move.`
     : `Release queue: ${queue.now}, limit ${queue.limit}. The tick starts new work; the decisions below hold what it would start next.`);
+  if (lane) {
+    const holders = lane.tasks.map((id) => { return `https://flow.ttoss.dev/app/tasks/${id}`; }).join(', ');
+    lines.push('', `Person-free lane: ${lane.now} of ${lane.limit}${holders ? ` (${holders})` : ''}. With the queue full the tick still starts a task whose path to production reaches no person, while the lane has room.`);
+  }
   if (unconfirmed.length) {
     const repos = [...new Set(unconfirmed.flatMap((u) => { return u.repos; }))];
     lines.push('', `Not counted: ${unconfirmed.length} task${unconfirmed.length === 1 ? '' : 's'} with a change the code host could not read${repos.length ? ` (${repos.join(', ')})` : ''}, so the queue may be larger.`);
@@ -261,12 +270,14 @@ export const run = async ({ client, project, now = new Date().toISOString(), ext
   const picked = pick({
     tasks: snapshot.tasks, details, decisions: decisions.tasks || [], limit: queueLimit,
     members: projectAnswer.members, teams: projectAnswer.teams,
+    children: snapshot.children || [], laneLimit: snapshot.params.personFreeLane ?? null,
   });
   const unconfirmed = unconfirmedOf({ tasks: snapshot.tasks, host: snapshot.needs?.host });
   return {
     result: {
       digest: digest({ date: now.slice(0, 10), picked, show: all ? Infinity : queueLimit, unconfirmed }),
       queue: picked.queue,
+      lane: picked.lane,
       person: picked.person.map(itemOf),
       personTotal: picked.personTotal,
       decisions: picked.decisions,

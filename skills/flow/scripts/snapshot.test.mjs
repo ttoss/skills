@@ -81,7 +81,7 @@ test('whom each task waits on reaches the planner, so a change a person validate
   assert.deepEqual(snap.tasks.find((t) => { return t.id === 't_v'; }).waitsOn, ['user_x']);
   const report = plan(snap).at(-1);
   assert.deepEqual(report.wip.releaseQueue, { now: 1, limit: 1 });
-  assert.equal(report.freeReason, 'new work held upstream: release queue 1/1');
+  assert.equal(report.freeReason, 'new work held upstream: release queue 1/1, person-free lane 0/1');
 });
 
 test('the handoff field is what integrating leaves, and its check carries the date the planner moves the task to', () => {
