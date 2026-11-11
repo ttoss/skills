@@ -11,7 +11,9 @@ The tick and each child run in a cloud session of their own, through the `claude
 | End | Close the Flow run (`upsert-agent-run` `status`, `usage` from the session), then `archive_session`. A closed run with a live session is not ended |
 | Message | `send_message` |
 
-A tick without `create_session`, such as a routine fired with only the trigger tools, runs its children in-process, in the foreground. They share the session's one designated push branch per repo, so its snapshot carries `params.branchesPerRepo: 1` (`flow` § 1); with `create_session` each child has its own, and there is no cap.
+A tick without `create_session`, such as a routine fired with only the trigger tools, runs its children in-process, in the foreground, each in its own copy of each repo (`flow` § Child runs). Each pushes from that copy to a branch of its own per repo: `<the session's branch>-<task id>`, or on a later round the open change's head branch. No branch is shared, so there is no cap: `params.branchesPerRepo` stays `null`. The session's git proxy accepts a push to a branch other than its designated one but refuses to delete a remote branch, so a merged branch goes by the repo's "Automatically delete head branches" setting, or a person deletes it.
+
+A child started with `create_session` pushes to its own session's branch. The Flow tools there may carry another server prefix, so its prompt adds: "Load the Flow tools by name (`ToolSearch` `+get-task`), never by `select:mcp__Flow__…`"; and a repo it pushes to other than `<repo>` needs `add_repo` with `access: "push"`.
 
 **The code host** is GitHub, through the GitHub MCP tools; `gh` in these sessions is for search only, and the session's permission policy may refuse a write through it.
 
