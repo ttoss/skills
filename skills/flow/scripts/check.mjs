@@ -37,6 +37,18 @@ export const hostChecks = async ({ repos = [], reviewRequired, gh }) => {
   }));
 };
 
+// Only a 404 or a 403 says the key does not reach the project. A 5xx, or no
+// answer at all, says Flow is down: minting a key would not help.
+const reachDetail = ({ project, status }) => {
+  if (status === 401) {
+    return 'the key was refused (401): revoked, expired or mistyped; mint a new one';
+  }
+  if (status === 403 || status === 404) {
+    return `the key does not reach ${project} (${status}): restrict a key to this project`;
+  }
+  return `Flow is unavailable (${status ?? 'no answer'}): the tick cannot run; retry on the next firing`;
+};
+
 /** Every check, in order; stops at the first one the rest depend on. */
 export const check = async ({ project, client }) => {
   const checks = [];
@@ -53,9 +65,7 @@ export const check = async ({ project, client }) => {
     await client.get(`/projects/${project}`);
     add('reach', true, `the key reaches ${project}`);
   } catch (error) {
-    add('reach', false, error.status === 401
-      ? 'the key was refused (401): revoked, expired or mistyped; mint a new one'
-      : `the key does not reach ${project} (${error.status}): restrict a key to this project`);
+    add('reach', false, reachDetail({ project, status: error.status }));
     return { ok: false, checks };
   }
 
