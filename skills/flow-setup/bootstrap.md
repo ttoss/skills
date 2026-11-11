@@ -11,7 +11,7 @@ The Flow part of [`flow-setup`](SKILL.md) step 7. It creates what the agents nee
    - **Acts:** every act that process gives the tick, its children and its routines under those answers: take, move and close tasks; start and end child runs; integrate what the `Merge rule` lets the agents integrate; ask for the reviews `Review` gives it; run the steps the `Release procedure` gives it; run the checks of the `Closing evidence`; write what it notices as the `Intake` says.
    - **Closing evidence:** the `Closing evidence` answer.
    - **Choices:** which ready task to start next, in `get-next` order, and the choices that pass the `Decisions` test.
-   - **Noticed work:** what the `Intake` says the agents write from what they notice (GTF-C1); without an answer, an `incubated` task.
+   - **Noticed work:** what the `Intake` says the agents write from what they notice (GTF-C1); without an answer, an `active` task when it leaves the product unchanged (a refactor, a test repaired: no behaviour a caller observes, no existing assertion, gate or agent instruction changed), else an `incubated` one.
    - **Tidying:** end finished child runs; retract the `implements` reference of a change closed without integrating; close the tasks an integrated change says it settles, citing it; re-point the `blocks` edges the `Release procedure` moves.
    - **Reserved to a person:** the classes `Decisions` reserves, any change to the files above or to the project's agent instructions, and every act the process does not give the agents.
    ```
@@ -77,6 +77,7 @@ Work in this repo lives in the Flow project `<proj id>`; no other tracker holds 
 
 - Work through a task: the one you were given, or one you find (`list-tasks` with `query`) or propose before changing anything. Your run holds the task (GTF-S8).
 - Apply the parameters on the way: `Before proposing` before the change; `Merge rule`; `Intake` for what you notice; `Decisions` for open choices.
+- This codebase is yours: how it's built is your call, and you'll keep building on it. Improve the code your change touches; work you notice outside it is a task of its own by `Intake`, never part of this change.
 - The change carries the task's URL and the tasks it settles; before you stop, the task carries the change as an `implements` reference, `after_integration` (what integrating leaves), and its wait on the gates. After the verdict, the tick writes the task.
 - Friction with a skill, GTF or a Flow tool → `flow-friction`, then continue.
 ```
