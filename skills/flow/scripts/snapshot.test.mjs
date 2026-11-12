@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { plan } from './plan.mjs';
-import { build, DEFAULT_PARAMS, focusOf, roundsOf, run } from './snapshot.mjs';
+import { build, DEFAULT_PARAMS, focusOf, reposOf, roundsOf, run } from './snapshot.mjs';
 
 const now = '2026-11-02T12:00:00Z';
 const row = (id, over = {}) => {
@@ -338,4 +338,75 @@ test('a focus on several tasks reads each target\'s upstream and marks their uni
   assert.ok(!asked.some((q) => { return q.limit === 10 && !q.upstream_of && !q.slice; }), 'no unfocused candidate read');
   const tagged = build({ ...base, candidates: [row('t_bill', { tags: ['billing'] })], slices: [row('t_other', { status: 'waiting' })], focusIds: new Set(['t_bill']), extra: { focus: 'tag:billing' } });
   assert.deepEqual(tagged.tasks.map((t) => { return [t.id, t.inFocus]; }), [['t_bill', true], ['t_other', false]]);
+});
+
+// The invariant: a judge's answer lives on the task, so the next plan built
+// from the same Flow rows and host state never asks it again, and `--extra`
+// carries no judgment.
+test('every judge answer is read back from the task: the same rows give the same plan, and an answered judge is not asked again', () => {
+  const judges = (snap) => { return plan(snap).filter((a) => { return a.act === 'judge'; }).map((a) => { return [a.about, a.task]; }); };
+  const merged = { url: 'https://github.com/o/r/pull/1', repo: 'o/r', merged: true, closed: false, draft: false, writtenSince: true };
+  // Host state only: each change as the code host reports it.
+  const host = { tasks: { t_back: { changes: [merged] }, t_rel: { changes: [{ ...merged, url: 'https://github.com/o/r/pull/2' }] } } };
+  const snapOf = ({ tags = {}, references = {}, extra = host }) => {
+    return build({
+      ...base,
+      candidates: [row('t_new', { tags: tags.t_new })],
+      slices: [row('t_back', { tags: tags.t_back }), row('t_rel', { tags: tags.t_rel })],
+      handoffs: { t_back: { leaves: 'check' }, t_rel: { leaves: 'release' } },
+      references,
+      extra,
+    });
+  };
+  assert.deepEqual(plan(snapOf({})), plan(snapOf({})));
+  assert.deepEqual(judges(snapOf({})), [['sent_back', 't_back'], ['released', 't_rel'], ['ready_brief', 't_new']]);
+  const answered = snapOf({ tags: { t_new: ['flow-brief-ready'], t_back: ['flow-sent-back-check'], t_rel: ['flow-sent-back-round'] } });
+  assert.deepEqual(judges(answered), []);
+  const starts = plan(answered).filter((a) => { return a.act === 'start_child'; });
+  assert.deepEqual(starts.map((a) => { return [a.tasks[0], a.kind, a.untag ?? null]; }).sort(), [
+    ['t_back', 'check', ['flow-sent-back-check']],
+    ['t_new', 'implement', null],
+    ['t_rel', 'round', ['flow-sent-back-round']],
+  ]);
+  // Under a branch cap, the repos are the task's references to each repo's root.
+  const capped = { ...host, params: { branchesPerRepo: 1 } };
+  const ready = { t_new: ['flow-brief-ready'], t_back: ['flow-sent-back-check'], t_rel: ['flow-sent-back-round'] };
+  assert.deepEqual(judges(snapOf({ tags: ready, extra: capped })), [['repos', 't_rel'], ['repos', 't_new']]);
+  const repo = [{ role: 'context', url: 'https://github.com/o/s' }];
+  const named = snapOf({ tags: ready, extra: capped, references: { t_new: repo, t_rel: repo } });
+  assert.deepEqual(judges(named), []);
+  assert.deepEqual(named.tasks.find((t) => { return t.id === 't_new'; }).repos, ['o/s']);
+});
+
+test('a repo reference names a push repo only at its root, live, and within the project’s Repos when known', () => {
+  const refs = [
+    { role: 'context', url: 'https://github.com/o/r' },
+    { role: 'context', url: 'https://github.com/o/r/issues/3' },
+    { role: 'context', url: 'https://github.com/o/gone/', retracted_at: '2026-11-01T00:00:00Z' },
+    { role: 'implements', url: 'https://github.com/o/pr' },
+    { role: 'spec', url: 'https://github.com/O/Other.git' },
+  ];
+  assert.deepEqual(reposOf({ references: refs }), ['o/r', 'O/Other']);
+  assert.deepEqual(reposOf({ references: refs, projectRepos: ['o/other'] }), ['o/other']);
+  assert.equal(reposOf({ references: [{ url: 'https://github.com/o/r/pull/1' }] }), null);
+});
+
+test("under a branch cap, each candidate is read for its repo references; without one, no candidate is read", async () => {
+  const readsOf = async (extra) => {
+    const read = [];
+    const get = async (path, query = {}) => {
+      if (path === '/next') {
+        return { tasks: query.limit === 10 ? [row('t_new')] : [] };
+      }
+      if (path.startsWith('/tasks/')) {
+        read.push(path);
+        return { task: { status: 'active' }, references: [{ role: 'context', url: 'https://github.com/o/r' }] };
+      }
+      return { runs: [] };
+    };
+    const snap = await run({ client: { get, all: async () => { return []; } }, project: 'proj_x', now, extra });
+    return { read, repos: snap.tasks.find((t) => { return t.id === 't_new'; }).repos };
+  };
+  assert.deepEqual(await readsOf({ params: { branchesPerRepo: 1 } }), { read: ['/tasks/t_new'], repos: ['o/r'] });
+  assert.deepEqual(await readsOf({}), { read: [], repos: null });
 });
