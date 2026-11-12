@@ -262,14 +262,20 @@ export const run = async ({ client, project, now = new Date().toISOString(), ext
   // A focus narrows the candidates to its targets' upstream (each `task_…`
   // read on its own, since `upstream_of` takes one) or to its tag.
   const focus = focusOf(extra.focus ?? extra.params?.focus);
+  // Only what nobody is assigned: a child never takes assigned work, and
+  // skipping it writes nothing, so it would hold its row of the window on
+  // every tick and hide the startable work ranked below it.
+  const ready = (query = {}) => {
+    return get('/next', { project, ...query, assignee: 'none', limit: 10 });
+  };
   const candidatesOf = async () => {
     if (!focus) {
-      return get('/next', { project, limit: 10 });
+      return ready();
     }
     if (focus.tag) {
-      return get('/next', { project, tag: focus.tag, limit: 10 });
+      return ready({ tag: focus.tag });
     }
-    const answers = await Promise.all(focus.tasks.map((id) => { return get('/next', { project, upstream_of: id, limit: 10 }); }));
+    const answers = await Promise.all(focus.tasks.map((id) => { return ready({ upstream_of: id }); }));
     const seen = new Map();
     for (const row of answers.flatMap((a) => { return a.tasks || []; })) {
       if (!seen.has(row.id)) {
