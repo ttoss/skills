@@ -340,6 +340,23 @@ test('a focus on several tasks reads each target\'s upstream and marks their uni
   assert.deepEqual(tagged.tasks.map((t) => { return [t.id, t.inFocus]; }), [['t_bill', true], ['t_other', false]]);
 });
 
+test('every candidate read asks for unassigned work alone, with or without a focus', async () => {
+  for (const focus of [null, 'tag:billing', ['task_a', 'task_b']]) {
+    const asked = [];
+    const get = async (path, query = {}) => {
+      if (path === '/next') {
+        asked.push(query);
+        return { tasks: [] };
+      }
+      return { runs: [] };
+    };
+    await run({ client: { get, all: async () => { return []; } }, project: 'proj_x', now, extra: focus ? { focus } : {} });
+    const candidates = asked.filter((q) => { return q.limit === 10; });
+    assert.equal(candidates.length, Array.isArray(focus) ? 2 : 1);
+    assert.ok(candidates.every((q) => { return q.assignee === 'none'; }), `focus ${JSON.stringify(focus)}`);
+  }
+});
+
 // The invariant: a judge's answer lives on the task, so the next plan built
 // from the same Flow rows and host state never asks it again, and `--extra`
 // carries no judgment.
