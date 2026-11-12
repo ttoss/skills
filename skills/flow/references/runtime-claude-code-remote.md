@@ -21,7 +21,7 @@ A child started with `create_session` pushes to its own session's branch. The Fl
 | --- | --- |
 | Integrate | `merge_pull_request` with `merge_method` the `Merge rule`'s and `expectedHeadSha` the head the verdict is for |
 
-**Run records** are a hook: [`scripts/session-run.mjs`](../scripts/session-run.mjs) records every session's run at its session URL, creating it at the start, writing its `model` and `usage` at each turn's end and closing it `completed` at the end unless something else already closed it. A tick or a child writing the same address adds its `agent`, `parent`, `works_on` and `authority`. The key is `FLOW_API_KEY` in the environment; without it the hook writes nothing. `flow-setup` adds it to the repo's `.claude/settings.json`, with `<proj_id>` the project:
+**Run records** are a hook: [`scripts/session-run.mjs`](../scripts/session-run.mjs) records every session's run at its session URL, creating it at the start, writing its `model` and `usage` at each turn's end and closing it `completed` at the end unless something else already closed it. Usage is kept per model: the session's run holds its main thread's model; an in-process child that recorded its own run (its first `upsert-agent-run`) gets its tokens on that run; any other model's tokens go to `<session URL>#model=<model>`, with the session's run as `parent`, so `group_by=model` never prices a child at the tick's model. A tick or a child writing the same address adds its `agent`, `parent`, `works_on` and `authority`. The key is `FLOW_API_KEY` in the environment; without it the hook writes nothing. `flow-setup` adds it to the repo's `.claude/settings.json`, with `<proj_id>` the project:
 
 ```json
 {
@@ -33,7 +33,7 @@ A child started with `create_session` pushes to its own session's branch. The Fl
 }
 ```
 
-**A session its hooks never reach** writes its own: a cloud session with several repos runs from their parent directory, where no repo's `.claude/settings.json` is read, as a routine with more than one repo does. Its last act, after its run closes in § 3, is `node <flow skill>/scripts/session-run.mjs --project <proj_id> --self`, which finds its transcript by `CLAUDE_CODE_SESSION_ID` and writes `model` and `usage` to its run, its in-process children's tokens included; only the final message after it goes uncounted.
+**A session its hooks never reach** writes its own: a cloud session with several repos runs from their parent directory, where no repo's `.claude/settings.json` is read, as a routine with more than one repo does. Its last act, after its run closes in § 3, is `node <flow skill>/scripts/session-run.mjs --project <proj_id> --self`, which finds its transcript by `CLAUDE_CODE_SESSION_ID` and writes `model` and `usage` as a Stop would, its in-process children's tokens included; only the final message after it goes uncounted.
 
 A session's `usage` is its `external_metadata.usage`, with `peak_context` its `context_usage.used_tokens`, and a session reports it only after its turn ends, so a tick never knows its own.
 
