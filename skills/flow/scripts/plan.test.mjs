@@ -594,7 +594,7 @@ test('an empty graph reports free slots with a reason', () => {
 
 test('the report carries the line a tick opens its report with', () => {
   const report = plan({ now, params, tasks: [task({ change: change() })] }).at(-1);
-  assert.equal(report.line, 'plan: 1 acts (integrate 1) · runs 0/2 by me (2 free: no candidate left in the focus)');
+  assert.equal(report.line, 'plan: 1 acts (integrate 1) · runs 0/2 by me (2 free: no candidate left in the focus) · short runs 0/2 by me (2 free: no check or review due)');
 });
 
 test('a task a person holds starts no check, round or review child', () => {
@@ -685,7 +685,7 @@ test('the lane changes nothing above it: a very_high task and a high bug start w
   const urgent = full([fresh('task_n1', { priority: 'very_high' }), fresh('task_n2', { priority: 'high', tags: ['bug'] })]);
   assert.deepEqual(urgent.filter((a) => { return a.act === 'start_child' }).map((a) => { return [a.tasks[0], a.lane] }), [['task_n1', undefined], ['task_n2', undefined]]);
   const last = full([fresh('task_n1', { tags: ['flow-person-free'] })], { maxRuns: 2 });
-  assert.deepEqual(laneStarts(plan({ now, params: { ...params, maxRuns: 2, releaseQueue: 2 }, children: [{ run: 'arun_1', tasks: ['task_o1'], startedAt: '2026-10-30T11:00:00Z', byMe: true, runtime: 'working', handoff: false }], tasks: [...FULL, fresh('task_n1', { tags: ['flow-person-free'] })] })), []);
+  assert.deepEqual(laneStarts(plan({ now, params: { ...params, maxRuns: 2, releaseQueue: 2 }, children: [{ run: 'arun_1', tasks: ['task_o1'], startedAt: '2026-10-30T11:00:00Z', byMe: true, kind: 'round', runtime: 'working', handoff: false }], tasks: [...FULL, fresh('task_n1', { tags: ['flow-person-free'] })] })), []);
   assert.deepEqual(laneStarts(last), ['task_n1']);
 });
 
@@ -737,6 +737,41 @@ test('from Max runs 2 up, new work never takes the last free slot; what ages fas
   assert.deepEqual(both.map((a) => { return a.tasks[0] }), ['task_c']);
   const urgent = plan({ now, params, tasks: [fresh('task_n1'), fresh('task_n2', { priority: 'very_high' })] }).filter((a) => { return a.act === 'start_child' });
   assert.deepEqual(urgent.map((a) => { return a.tasks[0] }), ['task_n2']);
+});
+
+// ttoss/skills#206: at Max runs 5 with four due checks an hour, one pool gave
+// every slot but the reserve to checks and no new work ever started.
+const dueCheck = (id) => { return task({ id, status: 'calendar', due: true, dueKind: 'check', change: change({ url: `https://github.com/o/r/pull/${id}`, merged: true, writtenSince: true }) }) };
+const checks = ['task_k1', 'task_k2', 'task_k3', 'task_k4'].map(dueCheck);
+
+test('due checks take short slots, never the long ones new work starts in', () => {
+  const out = plan({ now, params: { ...params, maxRuns: 5, maxShortRuns: 2 }, tasks: [...checks, fresh('task_n1')] });
+  const starts = out.filter((a) => { return a.act === 'start_child' }).map((a) => { return [a.kind, a.tasks[0]] });
+  assert.deepEqual(starts, [['check', 'task_k1'], ['check', 'task_k2'], ['implement', 'task_n1']]);
+  const report = out.at(-1);
+  assert.deepEqual([report.started, report.runsByMe, report.cap, report.freeSlots], [1, 1, 5, 4]);
+  assert.deepEqual(report.short, { started: 2, runsByMe: 2, cap: 2, freeSlots: 0, freeReason: null });
+  assert.match(report.line, / · runs 1\/5 by me \(4 free: every candidate left was skipped\) · short runs 2\/2 by me$/);
+});
+
+test('a full short limit still starts new work, and a running child counts in its own pool', () => {
+  const checking = ['task_k1', 'task_k2'].map((id, i) => { return { run: `arun_${i}`, tasks: [id], startedAt: '2026-10-30T11:30:00Z', byMe: true, runtime: 'working', handoff: false } });
+  const out = plan({ now, params: { ...params, maxRuns: 2 }, children: checking, tasks: [...checks, fresh('task_n1')] });
+  assert.deepEqual(out.filter((a) => { return a.act === 'start_child' }).map((a) => { return a.tasks[0] }), ['task_n1']);
+  const report = out.at(-1);
+  assert.deepEqual([report.runsByMe, report.short.runsByMe, report.short.freeSlots], [1, 2, 0]);
+  // A child on an active task is a pushing one, and a kind the snapshot names wins.
+  const building = [{ run: 'arun_b', tasks: ['task_n9'], startedAt: '2026-10-30T11:30:00Z', byMe: true, runtime: 'working', handoff: false }];
+  const busy = plan({ now, params, children: building, tasks: [fresh('task_n9', { candidate: false }), dueCheck('task_k1'), fresh('task_n1')] }).at(-1);
+  assert.deepEqual([busy.runsByMe, busy.short.runsByMe, busy.skipped], [1, 1, [{ task: 'task_n1', reason: 'the last free slot is kept for what ages faster' }]]);
+  const named = plan({ now, params, children: [{ ...building[0], kind: 'review' }], tasks: [fresh('task_n9', { candidate: false })] }).at(-1);
+  assert.deepEqual([named.runsByMe, named.short.runsByMe], [0, 1]);
+});
+
+test('a free short slot with nothing to start names its reason', () => {
+  const held = plan({ now, params, tasks: [task({ ...dueCheck('task_k1'), heldByPerson: true })] }).at(-1);
+  assert.equal(held.short.freeReason, 'every check or review left was skipped');
+  assert.equal(plan({ now, params, tasks: [] }).at(-1).short.freeReason, 'no check or review due');
 });
 
 test('with Max runs 1 there is no slot to keep: new work takes the only one', () => {

@@ -49,6 +49,7 @@ The `flow` skill's scripts read this file (`scripts/params.mjs`): the project an
 - **Review child**: `yes` when the tick starts a review child.
 - **Agents integrate**: `no` when a person integrates every change.
 - **Reviewer**: the backticked code-host identities whose verdict counts; none named, any identity with write access to the repo.
+- **Max short runs**: how many check and review children may run at once, beside the `Max runs` that caps the children that push a branch; default 2.
 - **Release queue**: how many changes may wait for review or validation, open past draft or integrated and waiting on a person to see them in effect, before the tick stops starting new work; decisions do not count; default 20.
 - **Person-free lane**: how many tasks whose path to production reaches no person may be in flight at once while the release queue is full; default 1, and `0` makes a full queue hold every new task.
 - **Branches per repo**: how many children may push to one repo in one tick, for a runtime whose children cannot push a branch of their own and share the tick's; empty, no cap, as when each child pushes its own branch. A tick that learns it only at run time sets it in the snapshot instead (`flow` § 1).
@@ -57,6 +58,7 @@ The `flow` skill's scripts read this file (`scripts/params.mjs`): the project an
 
 ```markdown
 - **Max runs**: 3.
+- **Max short runs**: 2.
 - **Release queue**: 20.
 - **Person-free lane**: 1.
 - **Stale after**: 4 hours.

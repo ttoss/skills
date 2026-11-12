@@ -114,6 +114,13 @@ export const resolve = ({ file, main, runtime = {} }) => {
       ['Runtime file: Max runs', intOf(runtime['Max runs'])],
       ['Runtime: "max runs N"', intOf((/max runs (\d+)/i.exec(main.Runtime || '') || [])[1])],
     ], 3),
+    // Check and review children, which only read and end within minutes, take
+    // their own limit, so a due check never takes a slot new work could use.
+    maxShortRuns: pick('maxShortRuns', [
+      ['Max short runs', intOf(main['Max short runs'])],
+      ['Runtime file: Max short runs', intOf(runtime['Max short runs'])],
+      ['Runtime: "max short runs N"', intOf((/max short runs (\d+)/i.exec(main.Runtime || '') || [])[1])],
+    ], 2),
     staleAfterHours: pick('staleAfterHours', [
       ['Stale after', hours(main['Stale after'])],
       ['Runtime file: Stale after', hours(runtime['Stale after'])],
