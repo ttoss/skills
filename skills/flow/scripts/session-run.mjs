@@ -48,11 +48,15 @@ const readLines = (path) => {
 };
 
 // Each API message is one transcript line per content block, all carrying its
-// usage; the last line of an id holds the final count.
-const messagesOf = (path) => {
+// usage; the last line of an id holds the final count. A subagent's own run is
+// the address of its first `upsert-agent-run` call: a flow child records its
+// run as its first act.
+const transcriptOf = (path) => {
   const byId = new Map();
+  let run = null;
   for (const line of readLines(path)) {
-    if (!line.includes('"usage"')) {
+    const usage = line.includes('"usage"');
+    if (!usage && (run || !line.includes('upsert-agent-run'))) {
       continue;
     }
     let entry;
@@ -62,11 +66,20 @@ const messagesOf = (path) => {
       continue;
     }
     const message = entry.message;
-    if (message?.role === 'assistant' && message.usage) {
+    if (message?.role !== 'assistant') {
+      continue;
+    }
+    if (message.usage) {
       byId.set(message.id || `${byId.size}`, message);
     }
+    const call = !run && Array.isArray(message.content) && message.content.find((block) => {
+      return block?.type === 'tool_use' && block.name?.endsWith('upsert-agent-run') && typeof block.input?.url === 'string';
+    });
+    if (call) {
+      run = call.input.url;
+    }
   }
-  return [...byId.values()];
+  return { messages: [...byId.values()], run };
 };
 
 const subagentTranscripts = (transcriptPath) => {
@@ -78,30 +91,69 @@ const subagentTranscripts = (transcriptPath) => {
   }
 };
 
-/**
- * What the session spent, from its transcript and its subagents': token sums,
- * `peak_context` the largest prompt of the main thread, and the main thread's
- * last model. No `cost_usd`: the transcript holds no price.
- */
-export const usageOf = (transcriptPath) => {
-  const main = messagesOf(transcriptPath);
-  const all = [...main, ...subagentTranscripts(transcriptPath).flatMap(messagesOf)];
-  if (all.length === 0) {
-    return { usage: null, model: null };
-  }
+// A synthetic message (`<synthetic>`) is no API call and names no model.
+const modelOf = (message) => {
+  return message.model && !message.model.startsWith('<') ? message.model : null;
+};
+
+const promptOf = (u) => {
+  return (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0);
+};
+
+// Token sums, and `peak_context` the largest prompt among `peakOf`.
+const sumOf = ({ messages, peakOf = messages }) => {
   const usage = { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, peak_context: 0 };
-  for (const { usage: u } of all) {
+  for (const { usage: u } of messages) {
     usage.input_tokens += u.input_tokens || 0;
     usage.output_tokens += u.output_tokens || 0;
     usage.cache_read_tokens += u.cache_read_input_tokens || 0;
     usage.cache_write_tokens += u.cache_creation_input_tokens || 0;
   }
-  for (const { usage: u } of main) {
-    const prompt = (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0);
-    usage.peak_context = Math.max(usage.peak_context, prompt);
+  for (const { usage: u } of peakOf) {
+    usage.peak_context = Math.max(usage.peak_context, promptOf(u));
   }
-  const model = main.map((m) => { return m.model; }).filter((m) => { return m && !m.startsWith('<'); }).at(-1) || null;
-  return { usage, model };
+  return usage;
+};
+
+/**
+ * What the session spent, from its transcript and its subagents', per model,
+ * so a child on another model is never counted at the session's. The session's
+ * own run (`usage`, `model`) holds the main thread's last model: its tokens and
+ * those of every subagent on it with no run of its own, `peak_context` the main
+ * thread's largest prompt. A subagent that recorded its own run gets its tokens
+ * there (`children`); every other model's tokens are one entry of `models`. No
+ * `cost_usd`: the transcript holds no price.
+ */
+export const usageOf = (transcriptPath, { address = null } = {}) => {
+  const main = transcriptOf(transcriptPath).messages;
+  const subagents = subagentTranscripts(transcriptPath).map(transcriptOf);
+  const own = [...main];
+  const children = [];
+  for (const { messages, run } of subagents) {
+    if (run && run !== address && messages.length > 0) {
+      children.push({ url: run, model: messages.map(modelOf).filter(Boolean).at(-1) || null, usage: sumOf({ messages }) });
+    } else {
+      own.push(...messages);
+    }
+  }
+  const model = main.map(modelOf).filter(Boolean).at(-1) || null;
+  const byModel = new Map();
+  for (const message of own) {
+    const key = modelOf(message);
+    if (key) {
+      byModel.set(key, [...(byModel.get(key) || []), message]);
+    }
+  }
+  const usage = model ? sumOf({ messages: byModel.get(model), peakOf: main }) : null;
+  const models = [...byModel].filter(([key]) => { return key !== model; }).map(([key, messages]) => {
+    return { model: key, usage: sumOf({ messages }) };
+  });
+  return { usage, model, models, children };
+};
+
+/** The address of the run holding a session's tokens on one more model. */
+export const modelAddress = ({ url, model }) => {
+  return `${url}#model=${encodeURIComponent(model)}`;
 };
 
 /** The writes one hook event makes, in order; none without a key or an address. */
@@ -126,12 +178,33 @@ export const record = async ({ input, project, agent = DEFAULT_AGENT, env = proc
   if (event !== 'Stop' && event !== 'SessionEnd') {
     return written;
   }
-  const { usage, model } = usageOf(input.transcript_path || '');
+  const { usage, model, models, children } = usageOf(input.transcript_path || '', { address: url });
   const answer = await post({ ...(usage ? { usage } : {}), ...(model ? { model } : {}) });
   // A cloud session's /clear keeps its address, so the run goes on. A run a
   // tick already closed, `failed` say, keeps its status.
   const continues = input.reason === 'clear' && env.CLAUDE_CODE_REMOTE_SESSION_ID;
-  if (event === 'SessionEnd' && !continues && answer?.run?.status === 'running') {
+  const closes = event === 'SessionEnd' && !continues && answer?.run?.status === 'running';
+  // The status a model's run ends with is the session's: it is only the part
+  // of the session's spend on that model.
+  const status = closes ? 'completed' : answer?.run?.status;
+  const extra = [
+    // A child's run is its own: only its spend is written, never its status.
+    ...children.map((child) => { return { url: child.url, usage: child.usage, ...(child.model ? { model: child.model } : {}) }; }),
+    ...models.map((entry) => {
+      return { url: modelAddress({ url, model: entry.model }), parent: url, model: entry.model, usage: entry.usage, ...(status && status !== 'running' ? { status } : {}) };
+    }),
+  ];
+  for (const body of extra) {
+    // One run the key cannot write, a child's in another project say, never
+    // keeps the others or the close from landing.
+    try {
+      await client.post('/agent-runs', { project, ...body });
+      written.push(body);
+    } catch (error) {
+      process.stderr.write(`flow session-run: ${body.url}: ${error.message}\n`);
+    }
+  }
+  if (closes) {
     await post({ status: 'completed' });
   }
   return written;

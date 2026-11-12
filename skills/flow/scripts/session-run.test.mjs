@@ -5,21 +5,26 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 
 import { createClient } from './flow-api.mjs';
-import { record, selfInput, sessionAddress, usageOf } from './session-run.mjs';
+import { modelAddress, record, selfInput, sessionAddress, usageOf } from './session-run.mjs';
 
 const PROJECT = 'proj_0123456789';
 const REMOTE = { CLAUDE_CODE_REMOTE_SESSION_ID: 'cse_01AbC' };
 const URL_ = 'https://claude.ai/code/session_01AbC';
 
-const line = ({ id, model = 'claude-test-1', input = 0, read = 0, write = 0, output = 0 }) => {
+const line = ({ id, model = 'claude-test-1', input = 0, read = 0, write = 0, output = 0, content }) => {
   return JSON.stringify({
     message: {
       id,
       role: 'assistant',
       model,
+      ...(content ? { content } : {}),
       usage: { input_tokens: input, cache_read_input_tokens: read, cache_creation_input_tokens: write, output_tokens: output },
     },
   });
+};
+
+const recordsRun = (url) => {
+  return [{ type: 'tool_use', name: 'mcp__Flow__upsert-agent-run', input: { url, project: 'proj_0123456789' } }];
 };
 
 // A session that made two API calls (the first split across two lines) and
@@ -36,6 +41,26 @@ const transcript = () => {
   ].join('\n'));
   mkdirSync(join(dir, 'sess', 'subagents'), { recursive: true });
   writeFileSync(join(dir, 'sess', 'subagents', 'agent-1.jsonl'), line({ id: 's1', input: 3, write: 5000, output: 7 }));
+  return path;
+};
+
+const CHILD = `${URL_}?task=task_0123456789`;
+const SMALL = 'claude-small-1';
+
+// A tick on one model: a child on a smaller one that recorded its own run, and
+// an explorer on the smaller one that recorded none.
+const tick = () => {
+  const path = transcript();
+  const dir = join(path, '..', 'sess', 'subagents');
+  writeFileSync(join(dir, 'agent-2.jsonl'), [
+    JSON.stringify({ type: 'user', message: { role: 'user', content: `record your run at ${CHILD}` } }),
+    line({ id: 'c1', model: SMALL, input: 4, write: 3000, output: 20, content: recordsRun(CHILD) }),
+    line({ id: 'c2', model: SMALL, input: 1, read: 3000, write: 100, output: 30, content: recordsRun(`${URL_}?task=task_other00000`) }),
+  ].join('\n'));
+  writeFileSync(join(dir, 'agent-3.jsonl'), [
+    line({ id: 'e1', model: SMALL, input: 2, write: 800, output: 5 }),
+    line({ id: 'e2', model: '<synthetic>' }),
+  ].join('\n'));
   return path;
 };
 
@@ -66,8 +91,23 @@ test('usage: each message counted once, subagents in the sums, peak from the mai
   assert.deepEqual(usageOf(transcript()), {
     usage: { input_tokens: 18, output_tokens: 107, cache_read_tokens: 1000, cache_write_tokens: 6200, peak_context: 1205 },
     model: 'claude-test-1',
+    models: [],
+    children: [],
   });
-  assert.deepEqual(usageOf('/nonexistent.jsonl'), { usage: null, model: null });
+  assert.deepEqual(usageOf('/nonexistent.jsonl'), { usage: null, model: null, models: [], children: [] });
+});
+
+test('usage per model: a child with its own run gets its tokens there, the tokens of another model go apart', () => {
+  assert.deepEqual(usageOf(tick(), { address: URL_ }), {
+    usage: { input_tokens: 18, output_tokens: 107, cache_read_tokens: 1000, cache_write_tokens: 6200, peak_context: 1205 },
+    model: 'claude-test-1',
+    models: [{ model: SMALL, usage: { input_tokens: 2, output_tokens: 5, cache_read_tokens: 0, cache_write_tokens: 800, peak_context: 802 } }],
+    children: [{ url: CHILD, model: SMALL, usage: { input_tokens: 5, output_tokens: 50, cache_read_tokens: 3000, cache_write_tokens: 3100, peak_context: 3101 } }],
+  });
+  // A subagent writing the session's own run is the session's.
+  const own = usageOf(tick(), { address: CHILD });
+  assert.equal(own.children.length, 0);
+  assert.equal(own.models[0].usage.output_tokens, 55);
 });
 
 test('a session records its run at start, its usage at each turn, and closes it at the end', async () => {
@@ -119,4 +159,43 @@ test('--self: a session no hook reaches finds its own transcript and writes what
   assert.deepEqual(selfInput({ env: { CLAUDE_CODE_SESSION_ID: 'abc' }, root }), { hook_event_name: 'Stop', session_id: 'abc', transcript_path: path });
   assert.equal(selfInput({ env: { CLAUDE_CODE_SESSION_ID: 'other' }, root }), null);
   assert.equal(selfInput({ env: {}, root }), null);
+});
+
+test('a tick records each child spend on the run of the child, and another model on a run of its own', async () => {
+  const flow = fakeFlow();
+  flow.runs.set(CHILD, { url: CHILD, agent: 'flow child', model: SMALL, status: 'completed' });
+  const base = { session_id: 's', transcript_path: tick() };
+  await record({ input: { ...base, hook_event_name: 'Stop' }, project: PROJECT, env: REMOTE, client: flow.client });
+  const small = modelAddress({ url: URL_, model: SMALL });
+  assert.equal(small, `${URL_}#model=claude-small-1`);
+  assert.equal(flow.runs.get(URL_).usage.output_tokens, 107);
+  assert.deepEqual(flow.runs.get(CHILD), {
+    url: CHILD, agent: 'flow child', model: SMALL, status: 'completed', project: PROJECT,
+    usage: { input_tokens: 5, output_tokens: 50, cache_read_tokens: 3000, cache_write_tokens: 3100, peak_context: 3101 },
+  });
+  assert.equal(flow.runs.get(small).parent, URL_);
+  assert.equal(flow.runs.get(small).model, SMALL);
+  assert.equal(flow.runs.get(small).status, 'running');
+  assert.equal(flow.runs.get(small).usage.output_tokens, 5);
+
+  await record({ input: { ...base, hook_event_name: 'SessionEnd', reason: 'other' }, project: PROJECT, env: REMOTE, client: flow.client });
+  assert.equal(flow.runs.get(small).status, 'completed');
+  assert.equal(flow.runs.get(URL_).status, 'completed');
+});
+
+test('a run the key cannot write never keeps the others or the close from landing', async () => {
+  const flow = fakeFlow();
+  const client = {
+    post: async (path, body) => {
+      if (body.url === CHILD) {
+        throw new Error('404');
+      }
+      return flow.client.post(path, body);
+    },
+  };
+  const written = await record({ input: { session_id: 's', transcript_path: tick(), hook_event_name: 'SessionEnd', reason: 'other' }, project: PROJECT, env: REMOTE, client });
+  assert.ok(!flow.runs.has(CHILD));
+  assert.equal(flow.runs.get(modelAddress({ url: URL_, model: SMALL })).status, 'completed');
+  assert.equal(flow.runs.get(URL_).status, 'completed');
+  assert.deepEqual(written.at(-1), { status: 'completed' });
 });
