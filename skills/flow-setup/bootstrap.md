@@ -82,6 +82,7 @@ Work in this repo lives in the Flow project `<proj id>`; no other tracker holds 
 - Work through a task: the one you were given, or one you find (`list-tasks` with `query`) or propose before changing anything. Your run holds the task (GTF-S8).
 - Apply the parameters on the way: `Before proposing` before the change; `Merge rule`; `Intake` for what you notice; `Decisions` for open choices.
 - This codebase is yours: how it's built is your call, and you'll keep building on it. Improve the code your change touches; work you notice outside it is a task of its own by `Intake`, never part of this change.
+- A task whose `implements` change is out keeps its title and brief: new or wider scope is a successor task, `derived_from` it. Before writing again to a task you wrote earlier, `get-task` it and send `if_unmodified_since` with the `updated_at` you read.
 - The change carries the task's URL and the tasks it settles; before you stop, the task carries the change as an `implements` reference, `after_integration` (what integrating leaves), and its wait on the gates. After the verdict, the tick writes the task.
 - Friction with a skill, GTF or a Flow tool → `flow-friction`, then continue.
 ```
