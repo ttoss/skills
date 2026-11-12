@@ -930,3 +930,13 @@ test("under a branch cap, a round on a task with a change per repo takes every r
   assert.deepEqual(out.filter((a) => { return a.act === 'start_child' }).map((a) => { return a.tasks[0] }), ['task_r1']);
   assert.deepEqual(out.at(-1).skipped, [{ task: 'task_n1', reason: "the repo's push branch is taken this tick" }]);
 });
+
+test('a slot that ended in a judge nobody answered is free, and the line names the judge', () => {
+  const fresh = task({ id: 'task_n1', status: 'active', candidate: true, leaves: null, brief: null });
+  const report = plan({ now, params: { ...params, maxRuns: 1 }, tasks: [fresh] }).at(-1);
+  assert.deepEqual([report.freeSlots, report.freeReason], [1, 'judge unanswered: ready_brief task_n1']);
+  assert.match(report.line, /runs 0\/1 by me \(1 free: judge unanswered: ready_brief task_n1\)/);
+  // Beside a slot free for another reason, both are named.
+  const two = plan({ now, params: { ...params, maxRuns: 2 }, tasks: [fresh] }).at(-1);
+  assert.deepEqual([two.freeSlots, two.freeReason], [2, 'judge unanswered: ready_brief task_n1; every candidate left was skipped']);
+});

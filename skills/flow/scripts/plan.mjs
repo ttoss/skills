@@ -38,15 +38,15 @@ import { fileURLToPath } from 'node:url';
 //             candidate: bool,                // in get-next's ready candidates
 //             due: bool,                      // date_came, hold_cleared, or an external wait past until
 //             dueKind: 'check' | 'other' | null,
-//             brief: 'ready' | 'short' | 'split' | null,
+//             brief: 'ready' | 'short' | 'split' | null, // null: not read yet, a judge; ready is the `flow-brief-ready` tag
 //             personFree: bool | null,        // its path to production reaches no person; null: read from its tags, else a judge while the queue is full
 //             leaves: 'close' | 'release' | 'check' | 'none' | null, // the task's after_integration; null: not handed off, a judge reads the body
-//             sentBack: 'round' | 'check' | 'handoff' | null, // an active task written after its merge: sent back, asked to check now, or only handed off; null: a judge
-//             released: bool | null,          // a `release` task nothing holds: its step closed (true) or it was sent back (false); null: a judge reads its history
+//             sentBack: 'round' | 'check' | 'handoff' | null, // an active task written after its merge: sent back, asked to check now, or only handed off; null: a judge (round and check are the `flow-sent-back-*` tags)
+//             released: bool | null,          // a `release` task nothing holds: its step closed (true) or it was sent back (false, the `flow-sent-back-round` tag); null: a judge reads its history
 //             check: null | { observe, where, visible_at }, // with leaves check: what the check's wait names, and its date
 //             leavesWait: bool,               // it waits on a person because nothing said what integrating leaves (the tick's own wait)
 //             rounds: number,                 // the task's fix runs, over all its changes
-//             repos: [repo] | null,           // the repos its child pushes to, when it has no change yet; null: not read, a judge under a branch cap
+//             repos: [repo] | null,           // the repos its child pushes to, when it has no change yet (a reference per repo on the task); null: not read, a judge under a branch cap
 //             repairs: repo | null,           // the repo whose red default branch this task repairs
 //             changes: [{ url, repo, draft, headSha, // every live `implements` change, one per repo it touches
 //                               checks: 'pending' | 'green' | 'red' | null,
@@ -130,6 +130,15 @@ export const urgencyTier = (task) => {
 // to be on the path of never takes the lane.
 export const PERSON_FREE = 'flow-person-free';
 export const NEEDS_PERSON = 'flow-needs-person';
+
+// Every other judge's answer is written where it lives before the planner
+// runs again, so a tick that ends after any act leaves the next nothing to
+// judge again. A ready brief is a tag; so is a send-back whose round or check
+// waits for a slot, removed once a child is started on it (`untag`), since
+// the task's next send-back is a new question.
+export const BRIEF_READY = 'flow-brief-ready';
+export const SENT_BACK_ROUND = 'flow-sent-back-round';
+export const SENT_BACK_CHECK = 'flow-sent-back-check';
 
 export const personFreeOf = (task) => {
   if (task.personFree === true || task.personFree === false) {
@@ -647,7 +656,8 @@ const slotAct = (item, { branchCap } = {}) => {
   if (item.stage === 'new' && task.brief === 'split') {
     return { act: 'judge', about: 'split', task: task.id, reason: 'split into deliveries that ship alone, then delegate the first wave' };
   }
-  return { act: 'start_child', kind: item.kind, tasks: [task.id], reason: item.stage === 'gates' ? item.kind : item.stage };
+  const untag = (task.tags || []).filter((t) => { return t === SENT_BACK_ROUND || t === SENT_BACK_CHECK; });
+  return { act: 'start_child', kind: item.kind, tasks: [task.id], reason: item.stage === 'gates' ? item.kind : item.stage, ...(untag.length ? { untag } : {}) };
 };
 
 // Section 4: fill this person's free slots, what ages fastest first, each
@@ -670,6 +680,8 @@ const delegate = ({ items, free, newWork, cap, branchCap = null }) => {
   let held = 0;
   let reserved = 0;
   let branchTaken = 0;
+  // Slots that ended in a judge: no child starts there until it is answered.
+  const judged = [];
   const pushing = new Map();
   const reserve = cap >= 2 ? 1 : 0;
   for (const item of [...items].sort(byPriority)) {
@@ -730,13 +742,16 @@ const delegate = ({ items, free, newWork, cap, branchCap = null }) => {
       }
     }
     const act = slotAct(item, { branchCap });
+    if (act.act === 'judge') {
+      judged.push({ pool, about: act.about, task: item.task.id });
+    }
     acts.push(inLane && act.act === 'start_child' ? { ...act, lane: 'person-free' } : act);
     for (const repo of repos) {
       pushing.set(repo, (pushing.get(repo) ?? 0) + 1);
     }
     left[pool] -= 1;
   }
-  return { acts, skipped, free: left, held, reserved, branchTaken };
+  return { acts, skipped, free: left, held, reserved, branchTaken, judged };
 };
 
 // The WIP limit that holds new work upstream (W1, W21): the release queue, what
@@ -948,7 +963,17 @@ export const plan = ({ now, params, children = [], tasks = [], defaults = [] }) 
   const acted = [...reconciled.acts, ...repairActs({ defaults, tasks }), ...work.flatMap((w) => {
     return w.acts;
   }), ...blockers.acts, ...delegated.acts];
-  const freeReason = delegated.free.long === 0
+  // A slot whose judge nobody answered stays free, named, so a deferred judge
+  // shows in the report line instead of vanishing into a taken slot.
+  const unanswered = (pool) => {
+    const own = delegated.judged.filter((j) => { return j.pool === pool; });
+    return { n: own.length, why: own.length ? `judge unanswered: ${own.map((j) => { return `${j.about} ${j.task}`; }).join(', ')}` : null };
+  };
+  const withJudged = (pool, why) => {
+    const j = unanswered(pool);
+    return [j.why, delegated.free[pool] > 0 ? why : null].filter(Boolean).join('; ') || null;
+  };
+  const longReason = delegated.free.long === 0
     ? null
     : delegated.held > 0
       ? `new work held upstream: ${newWork.why}`
@@ -957,14 +982,14 @@ export const plan = ({ now, params, children = [], tasks = [], defaults = [] }) 
         : delegated.branchTaken > 0
           ? "the repo's push branch is taken this tick"
           : anyNew ? 'every candidate left was skipped' : 'no candidate left in the focus';
+  const freeReason = withJudged('long', longReason);
+  const freeLong = delegated.free.long + unanswered('long').n;
   const short = {
     started: startedShort,
     runsByMe: runningShort + startedShort,
     cap: shortCap,
-    freeSlots: delegated.free.short,
-    freeReason: delegated.free.short === 0
-      ? null
-      : items.some((i) => { return poolOf(i.kind) === 'short'; }) ? 'every check or review left was skipped' : 'no check or review due',
+    freeSlots: delegated.free.short + unanswered('short').n,
+    freeReason: withJudged('short', items.some((i) => { return poolOf(i.kind) === 'short'; }) ? 'every check or review left was skipped' : 'no check or review due'),
   };
   const report = {
     act: 'report',
@@ -973,7 +998,7 @@ export const plan = ({ now, params, children = [], tasks = [], defaults = [] }) 
     started,
     runsByMe: running + started,
     cap: params.maxRuns,
-    freeSlots: delegated.free.long,
+    freeSlots: freeLong,
     freeReason,
     short,
     skipped: delegated.skipped,
@@ -983,7 +1008,7 @@ export const plan = ({ now, params, children = [], tasks = [], defaults = [] }) 
     heldByIntegrated: blockers.findings,
     // The tick's report line opens with this, quoted exactly, so a tick that
     // never ran the planner is visible in its own report.
-    line: planLine({ acts: acted, runsByMe: running + started, cap: params.maxRuns, free: delegated.free.long, freeReason, short, held: blockers.findings.length }),
+    line: planLine({ acts: acted, runsByMe: running + started, cap: params.maxRuns, free: freeLong, freeReason, short, held: blockers.findings.length }),
   };
   return [...acted, report];
 };

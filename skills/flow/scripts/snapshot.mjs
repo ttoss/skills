@@ -4,15 +4,19 @@ import { fileURLToPath } from 'node:url';
 import { clientFromEnv, mapLimit, parseFlags } from './flow-api.mjs';
 import { ghApi, parseChangeUrl, readChange, readChangeState, readDefault, unreadable } from './host.mjs';
 import { load as loadParams } from './params.mjs';
+import { BRIEF_READY, SENT_BACK_CHECK, SENT_BACK_ROUND } from './plan.mjs';
 
 // The tick's snapshot (flow/SKILL.md section 1), in plan.mjs's schema, read
 // from Flow with the project's API key: the candidates and their rank, the
 // slices the tick acts on, every task whose change is out (`ref_role`, every
 // page), the children and which are this person's, what
 // holds each task and what came due. What Flow cannot know stays with the
-// model and comes in `--extra`: the code host's view of each change, the
-// runtime's view of each child and the brief. What integrating leaves is the
-// task's `after_integration`, and the rounds are counted from Flow's runs.
+// model and comes in `--extra`: what it observed of the world (the code
+// host's view of each change, the runtime's view of each child), never what
+// it judged. Every judge's answer is read back from where the tick wrote it:
+// a ready brief and a send-back from the task's tags, the repos its child
+// pushes to from its references, what integrating leaves from its
+// `after_integration`; the rounds are counted from Flow's runs.
 // `needs` lists the changes the model must read on the code host.
 //
 // Usage: node snapshot.mjs --root <repo dir> [--extra <file>] [--now <ISO>]
@@ -22,7 +26,8 @@ import { load as loadParams } from './params.mjs';
 //                   (or params.focus): only what it resolves to starts a child,
 //                 "params": { maxRuns, maxShortRuns, staleAfterHours, autoRounds, reviewByAgent, reviewRequired, agentsMayIntegrate, leavesByAgent, branchesPerRepo },
 //                   (with --root, laid over the parameters file's)
-//                 "tasks": { "task_…": { brief, leaves, rounds, repairs, repos, changes: [change] } },
+//                 "tasks": { "task_…": { rounds, repairs, changes: [change] } },   (brief, personFree, leaves,
+//                   sentBack, released, repos: a judge's answer laid over what the task carries)
 //                 "children": { "arun_…": { runtime, kind } },   (kind: what the tick started it as, when it knows)
 //                 "defaults": [{ repo, sha, red, repairTask }] }
 // Output: the snapshot plan.mjs reads, plus `needs: { changes: [{ task, url }],
@@ -95,8 +100,33 @@ export const focusOf = (focus) => {
   return tasks.length ? { tasks: [...new Set(tasks)] } : null;
 };
 
+// A reference to a repo's root names a repo the task's child pushes to.
+const REPO_ROOT = /^https?:\/\/github\.com\/([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/i;
+
+/**
+ * The repos a task's live references name by their root URL, kept to the
+ * project's `Repos` when they are known; null when none does.
+ */
+export const reposOf = ({ references = [], projectRepos = null }) => {
+  const named = references
+    .filter((r) => { return !r.retracted_at && r.role !== 'implements'; })
+    .map((r) => { return REPO_ROOT.exec(r.url || '')?.[1]; })
+    .filter(Boolean)
+    .map((repo) => { return projectRepos?.find((p) => { return p.toLowerCase() === repo.toLowerCase(); }) ?? (projectRepos?.length ? null : repo); })
+    .filter(Boolean);
+  return named.length ? [...new Set(named)] : null;
+};
+
+// What a send-back tag answers of the sent_back judge.
+const sentBackOf = (tags) => {
+  if (tags.includes(SENT_BACK_ROUND)) {
+    return 'round';
+  }
+  return tags.includes(SENT_BACK_CHECK) ? 'check' : null;
+};
+
 /** The snapshot from what was read, as a pure function. */
-export const build = ({ now, candidates, slices, held = [], dueIds, children, mine, childTasks, implementsOf, handoffs = {}, repairRows = [], focusIds = null, extra = {} }) => {
+export const build = ({ now, candidates, slices, held = [], dueIds, children, mine, childTasks, implementsOf, handoffs = {}, references = {}, projectRepos = null, repairRows = [], focusIds = null, extra = {} }) => {
   const focus = focusOf(extra.focus ?? extra.params?.focus);
   // What the focus resolves to: the tasks its reads answered (the union of
   // get-next upstream_of over each target), or any task carrying its tag.
@@ -132,6 +162,7 @@ export const build = ({ now, candidates, slices, held = [], dueIds, children, mi
     // What integrating leaves is the handoff's field; a judge reads the body
     // only for a task handed off before the field existed.
     const handoff = handoffs[row.id] || null;
+    const tags = row.tags || [];
     return {
       id: row.id,
       status: row.status,
@@ -142,7 +173,7 @@ export const build = ({ now, candidates, slices, held = [], dueIds, children, mi
       // own (get-next's `inherited_priority`); null when none, or on a row
       // that does not carry it.
       inherited: row.inherited_priority?.priority ?? null,
-      tags: row.tags || [],
+      tags,
       rank: rank.has(row.id) ? rank.get(row.id) : null,
       // A task assigned to a member or a team is theirs: agents never take
       // work by its assignee, so the planner offers it to no child.
@@ -154,16 +185,20 @@ export const build = ({ now, candidates, slices, held = [], dueIds, children, mi
       candidate: rank.has(row.id),
       due,
       dueKind: due ? (row.status === 'calendar' ? 'check' : 'other') : null,
-      brief: own.brief ?? null,
-      // A judge's answer this tick; the planner reads the task's tags otherwise.
+      // A judge's answer is written on the task and read back here; `--extra`
+      // only lays one over it. Short and split need no tag: a short brief
+      // waits on the person, and a split made the tasks that replace it.
+      brief: own.brief ?? (tags.includes(BRIEF_READY) ? 'ready' : null),
+      // The planner reads the person-free tags itself.
       personFree: own.personFree ?? null,
       leaves: own.leaves ?? handoff?.leaves ?? null,
-      released: own.released ?? null,
+      sentBack: own.sentBack ?? sentBackOf(tags),
+      released: own.released ?? (tags.includes(SENT_BACK_ROUND) ? false : null),
       check: handoff?.check ?? null,
       leavesWait: own.leavesWait ?? waits.some((w) => { return Boolean(w.on) && LEAVES_WAIT.test(w.reason || ''); }),
       rounds: own.rounds ?? 0,
       repairs: own.repairs ?? repairOf.get(row.id) ?? null,
-      repos: own.repos ?? null,
+      repos: own.repos ?? (references[row.id] ? reposOf({ references: references[row.id], projectRepos }) : null),
       // Every change the task implements, one per repo: the planner gates each
       // and advances the task only once all integrated. A hand-written task
       // may give one `change`.
@@ -270,7 +305,10 @@ export const run = async ({ client, project, now = new Date().toISOString(), ext
       full[row.id] = answer;
     }
   }
-  const ids = [...new Set([...sliced, ...implemented].map((t) => { return t.id; }).concat(children.runs.flatMap((r) => { return r.works_on || []; })))]
+  // Under a branch cap, a candidate's repos are its references, so each
+  // candidate is read too; otherwise get-next's row is all it needs.
+  const capped = Boolean(extra.params?.branchesPerRepo);
+  const ids = [...new Set([...sliced, ...implemented, ...(capped ? next.tasks || [] : [])].map((t) => { return t.id; }).concat(children.runs.flatMap((r) => { return r.works_on || []; })))]
     .filter((id) => { return !full[id]; });
   // A task Flow cannot answer right now is named in `needs.unread`, never guessed.
   const unread = [];
@@ -426,6 +464,8 @@ export const run = async ({ client, project, now = new Date().toISOString(), ext
     childTasks: Object.fromEntries(Object.entries(full).map(([id, a]) => { return [id, a.task]; })),
     implementsOf,
     handoffs: Object.fromEntries(Object.entries(full).map(([id, a]) => { return [id, a.task?.after_integration ?? null]; })),
+    references: Object.fromEntries(Object.entries(full).map(([id, a]) => { return [id, a.references || []]; })),
+    projectRepos: repos,
     repairRows,
     focusIds: focus ? new Set((next.tasks || []).map((t) => { return t.id; })) : null,
     extra,
