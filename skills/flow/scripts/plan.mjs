@@ -12,7 +12,9 @@ import { fileURLToPath } from 'node:url';
 // depends on it):
 // {
 //   now: ISO date,
-//   params: { maxRuns, staleAfterHours, autoRounds, reviewByAgent,
+//   params: { maxRuns,                        // long children at once (implement, round, conflict, repair)
+//             maxShortRuns,                   // short children at once (check, review); null: 2
+//             staleAfterHours, autoRounds, reviewByAgent,
 //             reviewRequired: bool | null,   // `Review` names a reviewer; null: not stated, a judge
 //             agentsMayIntegrate, focus: null | { tasks: [id] } | { tag }, // what the snapshot resolved inFocus by
 //             releaseQueue,                   // WIP limit on what waits between implementation and release; null: 20
@@ -24,6 +26,7 @@ import { fileURLToPath } from 'node:url';
 //                red: bool | null,            // its required checks or integration pipeline red there
 //                repairTask: id | null }],    // the open task tagged `repair` for that repo
 //   children: [{ run, tasks: [id], startedAt, byMe,
+//                kind: 'implement' | 'round' | 'conflict' | 'repair' | 'check' | 'review' | null, // null: read from its tasks
 //                runtime: 'working' | 'idle' | 'failed' | 'gone' | null,
 //                handoff: bool }],          // its task closed or waits on gates or a person
 //   tasks: [{ id, status, priority, tags, rank, heldByPerson, inFocus,
@@ -594,7 +597,32 @@ const itemSkip = (item) => {
 };
 
 // The kinds of child that push a branch; a review or a check child only reads.
+// A pushing child may hold its slot for hours and takes one of `Max runs`; a
+// reading one ends within minutes and takes one of `Max short runs`, so a due
+// check never takes a slot new work could have used.
 const PUSHES = new Set(['implement', 'round', 'conflict', 'repair']);
+
+const poolOf = (kind) => {
+  return PUSHES.has(kind) ? 'long' : 'short';
+};
+
+// A running child's pool. Flow's run carries no kind, so unless the snapshot
+// gives one it is read from the tasks it holds: a check or review child's
+// task waits (at its gates, on its check) or is due a check or review now;
+// a pushing child's task is `active` until its handoff, after which the
+// child is ending anyway. A task the snapshot lacks counts long, as before.
+const childPool = ({ child, byId, kindsOf }) => {
+  if (child.kind) {
+    return poolOf(child.kind);
+  }
+  const held = child.tasks || [];
+  const short = held.length > 0 && held.every((id) => {
+    const task = byId.get(id);
+    const kinds = kindsOf.get(id) || [];
+    return task && (task.status !== 'active' || (kinds.length > 0 && kinds.every((k) => { return !PUSHES.has(k); })));
+  });
+  return short ? 'short' : 'long';
+};
 
 // The repos a child for this item pushes to: its open changes', else what
 // the snapshot says the task touches; null when unknown.
@@ -622,11 +650,13 @@ const slotAct = (item, { branchCap } = {}) => {
   return { act: 'start_child', kind: item.kind, tasks: [task.id], reason: item.stage === 'gates' ? item.kind : item.stage };
 };
 
-// Section 4: fill this person's free slots, what ages fastest first. From
-// Max runs 2 up, new work never takes the last free slot (D15, F20): a child
-// holds its slot for hours, so a repair or a very_high task arriving next
-// would wait for one, and taking it back would mean interrupting a run. The
-// slot is head-of-the-line room for what ages faster, never a preemption.
+// Section 4: fill this person's free slots, what ages fastest first, each
+// item from its own pool: a pushing child from `Max runs`, a check or review
+// child from `Max short runs`. From Max runs 2 up, new work never takes the
+// last free long slot (D15, F20): a long child holds its slot for hours, so a
+// repair or a very_high task arriving next would wait for one, and taking it
+// back would mean interrupting a run. The slot is head-of-the-line room for
+// what ages faster, never a preemption.
 //
 // Where children share the tick's push branch per repo (`branchesPerRepo`),
 // a child past that count in a repo could not push what it made, so it is not
@@ -634,7 +664,7 @@ const slotAct = (item, { branchCap } = {}) => {
 const delegate = ({ items, free, newWork, cap, branchCap = null }) => {
   const acts = [];
   const skipped = [];
-  let left = free;
+  const left = { ...free };
   let budget = newWork.budget;
   let lane = newWork.lane;
   let held = 0;
@@ -653,8 +683,12 @@ const delegate = ({ items, free, newWork, cap, branchCap = null }) => {
       }
       continue;
     }
-    if (left === 0) {
+    if (left.long === 0 && left.short === 0) {
       break;
+    }
+    const pool = poolOf(item.kind);
+    if (left[pool] === 0) {
+      continue;
     }
     let inLane = false;
     const repos = branchCap ? pushRepos(item) || [] : [];
@@ -666,7 +700,7 @@ const delegate = ({ items, free, newWork, cap, branchCap = null }) => {
     // New work beyond the WIP limit waits upstream, where waiting is cheap;
     // what the person said cannot wait (very_high, a high bug) starts anyway.
     if (item.stage === 'new' && urgencyTier(item.task) === 2) {
-      if (left <= reserve) {
+      if (left.long <= reserve) {
         reserved += 1;
         skipped.push({ task: item.task.id, reason: 'the last free slot is kept for what ages faster' });
         continue;
@@ -700,7 +734,7 @@ const delegate = ({ items, free, newWork, cap, branchCap = null }) => {
     for (const repo of repos) {
       pushing.set(repo, (pushing.get(repo) ?? 0) + 1);
     }
-    left -= 1;
+    left[pool] -= 1;
   }
   return { acts, skipped, free: left, held, reserved, branchTaken };
 };
@@ -767,8 +801,8 @@ const newWorkBudget = ({ tasks, params, children }) => {
   };
 };
 
-// `plan: <n> acts (<kind> <count>, …) · runs <n>/<cap> by me (<free> free: <why>)`
-const planLine = ({ acts, runsByMe, cap, free, freeReason, held = 0 }) => {
+// `plan: <n> acts (<kind> <count>, …) · runs <n>/<cap> by me (<free> free: <why>) · short runs <n>/<cap> by me (<free> free: <why>)`
+const planLine = ({ acts, runsByMe, cap, free, freeReason, short, held = 0 }) => {
   const counts = {};
   for (const a of acts) {
     counts[a.act] = (counts[a.act] ?? 0) + 1;
@@ -778,9 +812,10 @@ const planLine = ({ acts, runsByMe, cap, free, freeReason, held = 0 }) => {
       return `${kind} ${n}`;
     })
     .join(', ');
-  const slots = free > 0 ? ` (${free} free: ${freeReason})` : '';
+  const slots = (n, why) => { return n > 0 ? ` (${n} free: ${why})` : ''; };
   const integrated = held > 0 ? ` · held by integrated blockers: ${held}` : '';
-  return `plan: ${acts.length} acts${kinds ? ` (${kinds})` : ''} · runs ${runsByMe}/${cap} by me${slots}${integrated}`;
+  const shortRuns = ` · short runs ${short.runsByMe}/${short.cap} by me${slots(short.freeSlots, short.freeReason)}`;
+  return `plan: ${acts.length} acts${kinds ? ` (${kinds})` : ''} · runs ${runsByMe}/${cap} by me${slots(free, freeReason)}${shortRuns}${integrated}`;
 };
 
 /**
@@ -883,14 +918,29 @@ export const plan = ({ now, params, children = [], tasks = [], defaults = [] }) 
   const items = work.flatMap((w) => {
     return w.items;
   });
-  const running = children.filter((c) => {
-    return c.byMe && !reconciled.closed.has(c.run);
-  }).length;
-  const newWork = newWorkBudget({ tasks, params, children: children.filter((c) => { return !reconciled.closed.has(c.run); }) });
-  const delegated = delegate({ items, free: Math.max(0, params.maxRuns - running), newWork, cap: params.maxRuns, branchCap: params.branchesPerRepo ?? null });
-  const started = delegated.acts.filter((a) => {
-    return a.act === 'start_child';
-  }).length;
+  const live = children.filter((c) => { return !reconciled.closed.has(c.run); });
+  const byId = new Map(tasks.map((t) => { return [t.id, t]; }));
+  const kindsOf = new Map();
+  for (const item of items) {
+    kindsOf.set(item.task.id, [...(kindsOf.get(item.task.id) || []), item.kind]);
+  }
+  const mine = live.filter((c) => { return c.byMe; });
+  const runningShort = mine.filter((child) => { return childPool({ child, byId, kindsOf }) === 'short'; }).length;
+  const running = mine.length - runningShort;
+  const shortCap = params.maxShortRuns ?? 2;
+  const newWork = newWorkBudget({ tasks, params, children: live });
+  const delegated = delegate({
+    items,
+    free: { long: Math.max(0, params.maxRuns - running), short: Math.max(0, shortCap - runningShort) },
+    newWork,
+    cap: params.maxRuns,
+    branchCap: params.branchesPerRepo ?? null,
+  });
+  const startedIn = (pool) => {
+    return delegated.acts.filter((a) => { return a.act === 'start_child' && poolOf(a.kind) === pool; }).length;
+  };
+  const started = startedIn('long');
+  const startedShort = startedIn('short');
   const anyNew = items.some((i) => {
     return i.stage === 'new' && i.task.inFocus !== false;
   });
@@ -898,7 +948,7 @@ export const plan = ({ now, params, children = [], tasks = [], defaults = [] }) 
   const acted = [...reconciled.acts, ...repairActs({ defaults, tasks }), ...work.flatMap((w) => {
     return w.acts;
   }), ...blockers.acts, ...delegated.acts];
-  const freeReason = delegated.free === 0
+  const freeReason = delegated.free.long === 0
     ? null
     : delegated.held > 0
       ? `new work held upstream: ${newWork.why}`
@@ -907,13 +957,25 @@ export const plan = ({ now, params, children = [], tasks = [], defaults = [] }) 
         : delegated.branchTaken > 0
           ? "the repo's push branch is taken this tick"
           : anyNew ? 'every candidate left was skipped' : 'no candidate left in the focus';
+  const short = {
+    started: startedShort,
+    runsByMe: runningShort + startedShort,
+    cap: shortCap,
+    freeSlots: delegated.free.short,
+    freeReason: delegated.free.short === 0
+      ? null
+      : items.some((i) => { return poolOf(i.kind) === 'short'; }) ? 'every check or review left was skipped' : 'no check or review due',
+  };
   const report = {
     act: 'report',
+    // The long children, against `Max runs`; `short` is the check and review
+    // children, against `Max short runs`.
     started,
     runsByMe: running + started,
     cap: params.maxRuns,
-    freeSlots: delegated.free,
+    freeSlots: delegated.free.long,
     freeReason,
+    short,
     skipped: delegated.skipped,
     wip: newWork.wip,
     // Targets held only by integrated but open sources, for the person: a
@@ -921,7 +983,7 @@ export const plan = ({ now, params, children = [], tasks = [], defaults = [] }) 
     heldByIntegrated: blockers.findings,
     // The tick's report line opens with this, quoted exactly, so a tick that
     // never ran the planner is visible in its own report.
-    line: planLine({ acts: acted, runsByMe: running + started, cap: params.maxRuns, free: delegated.free, freeReason, held: blockers.findings.length }),
+    line: planLine({ acts: acted, runsByMe: running + started, cap: params.maxRuns, free: delegated.free.long, freeReason, short, held: blockers.findings.length }),
   };
   return [...acted, report];
 };

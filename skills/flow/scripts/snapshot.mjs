@@ -20,10 +20,10 @@ import { load as loadParams } from './params.mjs';
 //   or --project <proj_…> [--extra <file>] with everything else in the file.
 // --extra JSON: { "focus": "task_…" | "tag:<name>" | ["task_…", …] | { tasks: [id] } | { tag },
 //                   (or params.focus): only what it resolves to starts a child,
-//                 "params": { maxRuns, staleAfterHours, autoRounds, reviewByAgent, reviewRequired, agentsMayIntegrate, leavesByAgent, branchesPerRepo },
+//                 "params": { maxRuns, maxShortRuns, staleAfterHours, autoRounds, reviewByAgent, reviewRequired, agentsMayIntegrate, leavesByAgent, branchesPerRepo },
 //                   (with --root, laid over the parameters file's)
 //                 "tasks": { "task_…": { brief, leaves, rounds, repairs, repos, changes: [change] } },
-//                 "children": { "arun_…": { runtime } },
+//                 "children": { "arun_…": { runtime, kind } },   (kind: what the tick started it as, when it knows)
 //                 "defaults": [{ repo, sha, red, repairTask }] }
 // Output: the snapshot plan.mjs reads, plus `needs: { changes: [{ task, url }],
 // unread: [{ task, error }], host: [{ repo | task, error }] }`: what could not
@@ -33,7 +33,7 @@ const CLOSED = ['completed', 'cancelled', 'discarded', 'archived'];
 // The statuses a task with a change in flight can hold.
 const WORKED = ['active', 'waiting', 'calendar'];
 
-export const DEFAULT_PARAMS = { maxRuns: 3, staleAfterHours: 4, autoRounds: 1, reviewByAgent: false, reviewRequired: null, agentsMayIntegrate: true, focus: null, releaseQueue: null, leavesByAgent: null, retargetByAgent: null, branchesPerRepo: null };
+export const DEFAULT_PARAMS = { maxRuns: 3, maxShortRuns: 2, staleAfterHours: 4, autoRounds: 1, reviewByAgent: false, reviewRequired: null, agentsMayIntegrate: true, focus: null, releaseQueue: null, leavesByAgent: null, retargetByAgent: null, branchesPerRepo: null };
 
 // The tick's own wait for a missing after_integration, by the words the
 // planner's reason carries, so a later tick can read it again when the
@@ -178,6 +178,7 @@ export const build = ({ now, candidates, slices, held = [], dueIds, children, mi
       startedAt: run.started_at,
       byMe: mine.has(run.id),
       runtime: extra.children?.[run.id]?.runtime ?? null,
+      kind: extra.children?.[run.id]?.kind ?? null,
       // Its handoff is written: every task it holds closed, or waiting on the gates or a person.
       handoff: held.length > 0 && held.every((t) => { return CLOSED.includes(t.status) || t.status === 'waiting'; }),
     };
