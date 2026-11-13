@@ -45,6 +45,8 @@ import { fileURLToPath } from 'node:url';
 //             released: bool | null,          // a `release` task nothing holds: its step closed (true) or it was sent back (false, the `flow-sent-back-round` tag); null: a judge reads its history
 //             check: null | { observe, where, visible_at }, // with leaves check: what the check's wait names, and its date
 //             leavesWait: bool,               // it waits on a person because nothing said what integrating leaves (the tick's own wait)
+//             earlyRead: bool,                // a `flow-early-read` check before its date, not read early in the last day
+//             onGates: bool,                  // `waiting` on undated `external` waits on nobody alone: the handoff's wait on its gates
 //             rounds: number,                 // the task's fix runs, over all its changes
 //             repos: [repo] | null,           // the repos its child pushes to, when it has no change yet (a reference per repo on the task); null: not read, a judge under a branch cap
 //             repairs: repo | null,           // the repo whose red default branch this task repairs
@@ -67,6 +69,14 @@ import { fileURLToPath } from 'node:url';
 
 
 const HOUR = 3600 * 1000;
+
+// Written since the change integrated, so already advanced: unless the task
+// still holds only the handoff's wait on its gates, which nothing dates and
+// nobody is chased for. A reference added after the merge then answered
+// nothing, and leaving the task as it stands would freeze it.
+const writtenSince = (task, change) => {
+  return Boolean(change.writtenSince) && !task.onGates;
+};
 
 /** A task's changes: the snapshot's `changes`, or the one `change` a hand-written task carries. */
 export const changesOf = (task) => {
@@ -103,7 +113,7 @@ const NONE = { acts: [], item: null };
 // that came due; then what is open at its gates (a conflict, a round, a
 // review), among which only Flow's ranking orders; then new work. A release
 // step is its own task, delegated as new work once written.
-const STAGES = ['repair', 'integratedCheck', 'otherCheck', 'gates', 'new'];
+const STAGES = ['repair', 'integratedCheck', 'otherCheck', 'gates', 'new', 'earlyCheck'];
 
 // The priority a task is worked by: what it inherits from an open commitment
 // it blocks, which Flow answers only when above its own, else its own. A
@@ -139,6 +149,10 @@ export const NEEDS_PERSON = 'flow-needs-person';
 export const BRIEF_READY = 'flow-brief-ready';
 export const SENT_BACK_ROUND = 'flow-sent-back-round';
 export const SENT_BACK_CHECK = 'flow-sent-back-check';
+// A `calendar` check whose signal can fail before its date (an error count
+// that must stay at zero): the handoff tags it, and a short slot nothing due
+// needs reads it early, at most daily.
+export const EARLY_READ = 'flow-early-read';
 
 export const personFreeOf = (task) => {
   if (task.personFree === true || task.personFree === false) {
@@ -338,7 +352,7 @@ const advanceMerged = ({ task, change, params, underRepair, now }) => {
   // An `active` task nobody holds would otherwise sit ready with no path that
   // moves it: its history says whether it is a round, a check or a handoff.
   // One a `blocks` edge holds waits for its source, never a round.
-  if (change.writtenSince) {
+  if (writtenSince(task, change)) {
     if (task.status === 'active' && task.leaves === 'release' && !task.heldByPerson && !change.reviewRunActive) {
       return released({ task, change, now });
     }
@@ -470,9 +484,9 @@ const advanceChange = ({ task, change, params, underRepair, now }) => {
 
 // Which change an integrated task advances by: a red pipeline first, then one
 // merged since the task was last written, else the last.
-const integratedBy = (merged) => {
-  return merged.find((c) => { return c.pipelineRedAfterMerge && !c.writtenSince; })
-    || merged.find((c) => { return !c.writtenSince; })
+const integratedBy = (task, merged) => {
+  return merged.find((c) => { return c.pipelineRedAfterMerge && !writtenSince(task, c); })
+    || merged.find((c) => { return !writtenSince(task, c); })
     || merged.at(-1);
 };
 
@@ -524,17 +538,21 @@ const advance = ({ task, params, underRepair, now }) => {
     results.push(...open.map((change) => { return advanceChange({ task, change, params, underRepair, now }); }));
     // A red pipeline on an integrated change costs by the hour: its reversal
     // does not wait for the task's other changes.
-    results.push(...merged.filter((c) => { return c.pipelineRedAfterMerge && !c.writtenSince; }).map((change) => {
+    results.push(...merged.filter((c) => { return c.pipelineRedAfterMerge && !writtenSince(task, c); }).map((change) => {
       return advanceMerged({ task, change, params, underRepair, now });
     }));
     return combine(results);
   }
-  results.push(advanceMerged({ task, change: integratedBy(merged), params, underRepair, now }));
+  results.push(advanceMerged({ task, change: integratedBy(task, merged), params, underRepair, now }));
   return combine(results);
 };
 
 const isCheck = (task) => {
   return task.due && task.dueKind === 'check';
+};
+
+const isEarlyRead = (task) => {
+  return Boolean(task.earlyRead) && task.status === 'calendar' && !task.due;
 };
 
 const judgeWait = (task) => {
@@ -555,9 +573,12 @@ const taskWork = ({ task, params, underRepair, now }) => {
     // A task already advanced past its merge that nothing moves would keep a
     // past-due wait until a person reviews it. The tick's own wait for what
     // integrating leaves is excluded: "cleared means active" would start a round.
-    const idle = integrated && changes.filter((c) => { return c.merged; }).every((c) => { return c.writtenSince; }) && advanced.acts.length === 0 && !advanced.item;
+    const idle = integrated && changes.filter((c) => { return c.merged; }).every((c) => { return writtenSince(task, c); }) && advanced.acts.length === 0 && !advanced.item;
     if (idle && task.due && !isCheck(task) && !task.leavesWait) {
       return { acts: [judgeWait(task)], items };
+    }
+    if (integrated && isEarlyRead(task) && advanced.acts.length === 0 && items.length === 0) {
+      items.push({ stage: 'earlyCheck', kind: 'early_check', task });
     }
     return { acts: advanced.acts, items };
   }
@@ -566,6 +587,9 @@ const taskWork = ({ task, params, underRepair, now }) => {
   }
   if (isCheck(task)) {
     return { acts: [], items: [{ stage: 'otherCheck', kind: 'check', task }] };
+  }
+  if (isEarlyRead(task)) {
+    return { acts: [], items: [{ stage: 'earlyCheck', kind: 'early_check', task }] };
   }
   if (task.due) {
     return { acts: [judgeWait(task)], items: [] };
@@ -576,6 +600,9 @@ const taskWork = ({ task, params, underRepair, now }) => {
 const byPriority = (a, b) => {
   return (
     (b.stage === 'repair') - (a.stage === 'repair') ||
+    // An early read is a spare short slot's, whatever the task's priority:
+    // its date already guarantees the check.
+    (a.stage === 'earlyCheck') - (b.stage === 'earlyCheck') ||
     urgencyTier(a.task) - urgencyTier(b.task) ||
     STAGES.indexOf(a.stage) - STAGES.indexOf(b.stage) ||
     (a.task.rank ?? Infinity) - (b.task.rank ?? Infinity) ||
