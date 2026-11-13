@@ -53,20 +53,22 @@ export const withoutTicks = ({ tasks, ticks }) => {
   return { ...tasks, groups };
 };
 
+// The three costliest tasks, each named by the id its group already answers:
+// a title would cost a get-task per group, and each get-task loads the graph.
+const costliest = ({ tasks, ticks }) => {
+  return [...(withoutTicks({ tasks, ticks }).groups || [])].filter((g) => { return g.key; }).sort((a, b) => { return weight(b.totals) - weight(a.totals); }).slice(0, 3)
+    .map((g) => { return `Costliest task this week: [${g.key}](https://flow.ttoss.dev/app/tasks/${g.key}): ${spendOf(g.totals)}`; });
+};
+
 /** The report lines from what was read, as a pure function. */
-export const report = ({ agentsThis, agentsBefore, tasksThis: allTasks, ticksThis, titles, unlinkedThis, unlinkedBefore, lingering }) => {
-  const tasksThis = withoutTicks({ tasks: allTasks, ticks: ticksThis });
+export const report = ({ agentsThis, agentsBefore, tasksThis, ticksThis, unlinkedThis, unlinkedBefore, lingering }) => {
   // The total is health.mjs's "Spend, every run" line, which follows these.
   const lines = [];
   const before = new Map((agentsBefore.groups || []).map((g) => { return [g.key, g.totals]; }));
   for (const group of [...(agentsThis.groups || [])].sort((a, b) => { return weight(b.totals) - weight(a.totals); })) {
     lines.push(`Spend, agent ${group.key ?? 'unnamed'}: ${spendPair({ now: group.totals, before: before.get(group.key) })}`);
   }
-  const costliest = [...(tasksThis.groups || [])].filter((g) => { return g.key; }).sort((a, b) => { return weight(b.totals) - weight(a.totals); }).slice(0, 3);
-  for (const group of costliest) {
-    const task = titles[group.key];
-    lines.push(`Costliest task this week: [${task?.title || group.key}](${task?.url || `https://flow.ttoss.dev/app/tasks/${group.key}`}): ${spendOf(group.totals)}`);
-  }
+  lines.push(...costliest({ tasks: tasksThis, ticks: ticksThis }));
   lines.push(`Runs that reached no task: ${spendPair({ now: unlinkedThis.totals, before: unlinkedBefore.totals })}`);
   lines.push(lingering.length
     ? `Runs still open after every task they worked on closed: ${lingering.map((r) => { return `${r.agent} ${r.url}`; }).join(', ')}`
@@ -87,14 +89,9 @@ export const run = async ({ client, project, now = new Date().toISOString() }) =
     runs(w.thisWeek, { linked: false }), runs(w.weekBefore, { linked: false }),
     get('/agent-runs', { project, lingering: true, limit: 100 }),
   ]);
-  const tasksThis = withoutTicks({ tasks: allTasks, ticks: ticksThis });
-  const top = [...(tasksThis.groups || [])].filter((g) => { return g.key; }).sort((a, b) => { return weight(b.totals) - weight(a.totals); }).slice(0, 3);
-  const titles = Object.fromEntries(await Promise.all(top.map(async (g) => {
-    return [g.key, (await get(`/tasks/${g.key}`)).task];
-  })));
   const total = spend(await readFlow({ routine: 'spend', project, now, client }));
   return {
-    lines: [...report({ agentsThis, agentsBefore, tasksThis: allTasks, ticksThis, titles, unlinkedThis, unlinkedBefore, lingering: lingering.runs || [] }), ...total.lines],
+    lines: [...report({ agentsThis, agentsBefore, tasksThis: allTasks, ticksThis, unlinkedThis, unlinkedBefore, lingering: lingering.runs || [] }), ...total.lines],
   };
 };
 
@@ -104,9 +101,7 @@ export const run = async ({ client, project, now = new Date().toISOString() }) =
  * without the key: the subtraction stays a script's, never the model's.
  */
 export const costliestFromFiles = ({ all, ticks }) => {
-  const tasksThis = withoutTicks({ tasks: all, ticks });
-  return [...(tasksThis.groups || [])].filter((g) => { return g.key; }).sort((a, b) => { return weight(b.totals) - weight(a.totals); }).slice(0, 3)
-    .map((g) => { return `Costliest task this week: [${g.key}](https://flow.ttoss.dev/app/tasks/${g.key}): ${spendOf(g.totals)}`; });
+  return costliest({ tasks: all, ticks });
 };
 
 const isMain = process.argv[1] && realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1]);

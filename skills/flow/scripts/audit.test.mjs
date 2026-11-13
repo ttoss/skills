@@ -1,14 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { costliestFromFiles, report, withoutTicks } from './audit.mjs';
+import { costliestFromFiles, report, run, withoutTicks } from './audit.mjs';
 
 test('no total of its own (health.mjs gives it); spend by agent costliest first, the three costliest tasks, runs on no task and lingering runs', () => {
   const lines = report({
     agentsThis: { groups: [{ key: 'flow tick', totals: { runs: 3, unpriced: 3, input_tokens: 2000 } }, { key: 'flow child', totals: { runs: 1, unpriced: 1, input_tokens: 8000 } }] },
     agentsBefore: { groups: [{ key: 'flow child', totals: { runs: 2, unpriced: 2, input_tokens: 4000 } }] },
     tasksThis: { groups: [1, 2, 3, 4].map((n) => { return { key: `task_${n}`, totals: { runs: 1, unpriced: 1, input_tokens: n } }; }) },
-    titles: { task_4: { title: 'Four', url: 'https://f/4' } },
     unlinkedThis: { totals: { runs: 1, unpriced: 1, input_tokens: 5 } },
     unlinkedBefore: { totals: { runs: 0, unpriced: 0 } },
     lingering: [{ agent: 'flow child', url: 'https://s/1' }],
@@ -20,7 +19,7 @@ test('no total of its own (health.mjs gives it); spend by agent costliest first,
     'Costliest task this week: 1 run · 3 input',
     'Costliest task this week: 1 run · 2 input',
   ]);
-  assert.ok(lines[2].includes('[Four](https://f/4)'));
+  assert.ok(lines[2].startsWith('Costliest task this week: [task_4](https://flow.ttoss.dev/app/tasks/task_4)'));
   assert.match(lines[5], /^Runs that reached no task: 1 run · 5 input/);
   assert.equal(lines[6], 'Runs still open after every task they worked on closed: flow child https://s/1');
 });
@@ -40,7 +39,6 @@ test('a task\'s spend leaves the tick out, since the tick takes every task it de
       { key: 'task_b', totals: { runs: 1, unpriced: 1, input_tokens: 50 } },
       { key: 'task_t', totals: { runs: 1, unpriced: 1, input_tokens: 50 } },
     ] },
-    titles: {},
     unlinkedThis: { totals: { runs: 0, unpriced: 0 } },
     unlinkedBefore: { totals: { runs: 0, unpriced: 0 } },
     lingering: [],
@@ -65,4 +63,23 @@ test('without the key, the same lines come from two saved answers', () => {
     ticks: { groups: [{ key: 'task_a', totals: { runs: 1, unpriced: 1, input_tokens: 40 } }] },
   });
   assert.deepEqual(lines, ['Costliest task this week: [task_a](https://flow.ttoss.dev/app/tasks/task_a): 1 run · 90 input']);
+});
+
+test('run names the costliest tasks from the runs listing alone, with no get-task per group', async () => {
+  const reads = [];
+  const get = async (path, query = {}) => {
+    reads.push(path);
+    if (path !== '/agent-runs') {
+      throw new Error(`unexpected read ${path}`);
+    }
+    if (query.group_by === 'task' && !query.agent) {
+      return { groups: [1, 2, 3, 4].map((n) => { return { key: `task_${n}`, totals: { runs: 1, unpriced: 1, input_tokens: n } }; }), totals: {} };
+    }
+    return { groups: [], runs: [], totals: { runs: 0, unpriced: 0 } };
+  };
+  const { lines } = await run({ client: { get }, project: 'proj_1m5wbbbf1x', now: '2026-11-02T17:00:00Z' });
+  assert.ok(reads.every((p) => { return p === '/agent-runs'; }));
+  assert.deepEqual(lines.filter((l) => { return l.startsWith('Costliest'); }).map((l) => { return l.split('](')[0]; }), [
+    'Costliest task this week: [task_4', 'Costliest task this week: [task_3', 'Costliest task this week: [task_2',
+  ]);
 });
