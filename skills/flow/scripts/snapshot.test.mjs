@@ -135,6 +135,54 @@ test('rounds are the closed child runs that pushed to one of the task’s change
   assert.equal(roundsOf({ changes: [{ url: change.url, createdAt: null }], runs: [run('2026-11-02T11:00:00Z')] }), 0);
 });
 
+test('one list-agent-runs call, every page, answers the rounds of every task with a change out; a task with given rounds is not asked', async () => {
+  const pr = (n) => { return `https://github.com/o/r/pull/${n}`; };
+  const get = async (path) => {
+    if (path === '/next' || path === '/tasks') {
+      return { tasks: [], counts: {} };
+    }
+    if (path === '/agent-runs') {
+      return { runs: [] };
+    }
+    throw new Error(`unexpected ${path}`);
+  };
+  const listed = (id, url) => {
+    return { ...row(id, { status: 'waiting' }), role_refs: [{ role: 'implements', url }], after_integration: null, updated_at: now };
+  };
+  const fix = (works_on, produced) => { return { status: 'completed', started_at: '2026-11-02T11:00:00Z', works_on, produced }; };
+  const asked = [];
+  const all = async (path, query, field) => {
+    if (path === '/tasks') {
+      return [listed('t_a', pr(1)), listed('t_b', pr(2)), listed('t_given', pr(3))];
+    }
+    asked.push([path, query, field]);
+    // A run on another task that cites t_a's change is not t_a's round.
+    return [fix(['t_a'], [pr(1)]), fix(['t_a', 't_b'], [pr(1), pr(2)]), fix(['t_b'], [pr(2)]), fix(['t_other'], [pr(1)])];
+  };
+  const gh = async (path) => {
+    if (/^repos\/o\/r\/pulls\/\d+$/.test(path)) {
+      return { title: 'x', body: '', draft: false, merged: false, state: 'open', mergeable: true, head: { sha: 'h' }, created_at: '2026-11-02T10:00:00Z' };
+    }
+    if (path === 'repos/o/r') {
+      return { default_branch: 'main' };
+    }
+    if (path.startsWith('repos/o/r/branches/')) {
+      return { commit: { sha: 'd' } };
+    }
+    if (path.includes('/check-runs')) {
+      return { check_runs: [] };
+    }
+    if (path.includes('/actions/runs')) {
+      return { workflow_runs: [] };
+    }
+    return [];
+  };
+  const snap = await run({ client: { get, all }, project: 'proj_x', now, repos: ['o/r'], gh, extra: { tasks: { t_given: { rounds: 4 } } } });
+  assert.deepEqual(asked, [['/agent-runs', { project: 'proj_x', task: ['t_a', 't_b'], agent: 'flow child', limit: 100 }, 'runs']]);
+  const rounds = Object.fromEntries(snap.tasks.map((t) => { return [t.id, t.rounds]; }));
+  assert.deepEqual(rounds, { t_a: 2, t_b: 2, t_given: 4 });
+});
+
 test('every task whose change is out is read, past the slices’ limit; a row Flow listed without the reference stays out, named', async () => {
   const waiting = (id) => { return row(id, { status: 'waiting' }); };
   const tasks = {

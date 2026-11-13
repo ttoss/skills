@@ -425,6 +425,13 @@ export const run = async ({ client, project, now = new Date().toISOString(), ext
         }
       }
     };
+    // Rounds are Flow's answer, from the runs on the task, never a count the
+    // model carries between ticks; where a change stands needs none. One read
+    // for every task that needs them, started beside the host reads.
+    const counted = host === 'state' ? [] : toRead.map(([task]) => { return task; }).filter((task) => { return extra.tasks[task]?.rounds === undefined; });
+    const childRuns = counted.length
+      ? all('/agent-runs', { project, task: counted, agent: 'flow child', limit: 100 }, 'runs').catch((error) => { return { error }; })
+      : null;
     await mapLimit(toRead, host === 'state' ? 8 : 4, async ([task, urls]) => {
       // One change the host cannot read never hides the others the task cites,
       // but a task whose open changes are all unread is left out: what it reads
@@ -434,13 +441,13 @@ export const run = async ({ client, project, now = new Date().toISOString(), ext
         return;
       }
       try {
-        // Rounds are Flow's answer, from the runs on the task, never a count
-        // the model carries between ticks. Where a change stands needs none.
         // A fix run counts once, whichever of the task's changes it pushed to.
-        const runs = extra.tasks[task]?.rounds !== undefined || host === 'state'
-          ? null
-          : (await get('/agent-runs', { project, task, agent: 'flow child', limit: 100 })).runs || [];
-        const rounds = extra.tasks[task]?.rounds ?? (runs ? roundsOf({ runs, changes }) : 0);
+        const runs = counted.includes(task) ? await childRuns : null;
+        if (runs?.error) {
+          throw runs.error;
+        }
+        const own = runs?.filter((r) => { return (r.works_on || []).includes(task); });
+        const rounds = extra.tasks[task]?.rounds ?? (own ? roundsOf({ runs: own, changes }) : 0);
         const updated = full[task]?.task?.updated_at;
         extra.tasks[task] = {
           ...(extra.tasks[task] || {}),
