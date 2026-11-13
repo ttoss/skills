@@ -336,6 +336,32 @@ test('report: the flow\'s lines, then what feeds and drains the graph, then the 
   assert.ok(!out.lines.some((l) => { return l.startsWith('Spend'); }));
 });
 
+test('report reads at most four decisions at once', async () => {
+  const now = '2026-11-02T17:00:00Z';
+  const ids = Array.from({ length: 10 }, (_, n) => { return `task_d${n}`; });
+  let inFlight = 0;
+  let peak = 0;
+  const get = async (path, query = {}) => {
+    if (path.startsWith('/tasks/')) {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise((resolve) => { setTimeout(resolve, 5); });
+      inFlight -= 1;
+      return { task: { id: path.slice('/tasks/'.length), status: 'completed', outcome: 'yes', updated_at: '2026-11-01T00:00:00Z', changes: [] } };
+    }
+    if (path === '/tasks') {
+      return query.kind === 'decision' ? { tasks: ids.map((id) => { return { id, updated_at: '2026-11-01T00:00:00Z' }; }) } : { tasks: [] };
+    }
+    if (path.endsWith('/metrics')) {
+      return thisWeek;
+    }
+    return { members: [], teams: [] };
+  };
+  const out = await report({ client: { get }, project: 'proj_1m5wbbbf1x', now, inbox: { captures: [], total: 0 } });
+  assert.equal(out.answers.length, 10);
+  assert.equal(peak, 4);
+});
+
 const queued = (id, over = {}) => {
   const { change: changeOver = {}, ...rest } = over;
   return {

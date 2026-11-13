@@ -600,12 +600,13 @@ export const report = async ({ client, project, now = new Date().toISOString(), 
   const flow = flowHealth({ ...flowAnswers, nameOfHolder });
   const fed = feeds(feedAnswers);
   // Closed decisions, newest write first; the summary carries no outcome, so
-  // each within the window is read whole. The list is cut at the first one
-  // older than the window, since `updated_at` never precedes the close.
+  // each within the window is read whole, four at a time: a burst of get-task
+  // is what Flow pays most for. The list is cut at the first one older than
+  // the window, since `updated_at` never precedes the close.
   const since = Date.parse(now) - ANSWER_WEEKS * 7 * DAY;
   const closed = await get('/tasks', { project, kind: 'decision', status: ['completed', 'cancelled'], limit: 100 });
   const recent = (closed.tasks || []).filter((t) => { return Date.parse(t.updated_at) >= since; });
-  const decisions = await Promise.all(recent.map(async (t) => { return (await get(`/tasks/${t.id}`)).task; }));
+  const decisions = await mapLimit(recent, 4, async (t) => { return (await get(`/tasks/${t.id}`)).task; });
   const list = answers({ decisions, now });
   // Every task with a change written within the window, newest write first
   // and cut at the first one older, read whole: its cleared waits say what a
