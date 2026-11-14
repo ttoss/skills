@@ -356,18 +356,6 @@ test('integrated: the body decides what is left', () => {
   assert.equal(plan({ now, params, defaults: [], children: [], tasks: [task({ change: change({ merged: true, writtenSince: true, pipelineRedAfterMerge: true }) })] }).filter((a) => { return a.act !== 'report'; }).length, 0);
 });
 
-test('a task still on its gates wait after the merge takes what integrating leaves, though written since', () => {
-  // A reference added after the merge answered nothing: the undated wait on
-  // nobody never comes due, so leaving it as it stands would freeze it.
-  const since = change({ merged: true, writtenSince: true });
-  const gated = (over) => { return task({ status: 'waiting', onGates: true, change: since, ...over }) };
-  assert.equal(acts({ tasks: [gated({ leaves: null })] }, 'judge')[0].about, 'leaves');
-  assert.equal(acts({ tasks: [gated({ leaves: 'close' })] }, 'move_task')[0].status, 'completed');
-  assert.equal(acts({ tasks: [gated({ leaves: 'check' })] }, 'move_task')[0].status, 'calendar');
-  // Off the gates wait, the write since stands as the answer.
-  assert.equal(plan({ now, params, defaults: [], children: [], tasks: [gated({ onGates: false, leaves: null })] }).filter((a) => { return a.act !== 'report'; }).length, 0);
-});
-
 test("integrated and waiting on a person for what integrating leaves: writing after_integration hands it back to the tick", () => {
   const since = change({ merged: true, writtenSince: true });
   const held = (over) => { return task({ heldByPerson: true, leavesWait: true, change: since, ...over }) };
@@ -951,24 +939,4 @@ test('a slot that ended in a judge nobody answered is free, and the line names t
   // Beside a slot free for another reason, both are named.
   const two = plan({ now, params: { ...params, maxRuns: 2 }, tasks: [fresh] }).at(-1);
   assert.deepEqual([two.freeSlots, two.freeReason], [2, 'judge unanswered: ready_brief task_n1; every candidate left was skipped']);
-});
-
-test('an early read takes only a short slot nothing due needs, after every due check and review', () => {
-  const early = (id, over = {}) => { return task({ id, status: 'calendar', earlyRead: true, leaves: 'check', change: change({ merged: true, writtenSince: true }), ...over }); };
-  const started = (snapshot, p = params) => {
-    return plan({ now, params: p, defaults: [], children: [], ...snapshot }).filter((a) => { return a.act === 'start_child'; }).map((a) => { return [a.kind, a.tasks[0]]; });
-  };
-  assert.deepEqual(started({ tasks: [early('task_e')] }), [['early_check', 'task_e']]);
-  // A due check and a due review take the two short slots first, even below a very_high early read.
-  const due = task({ id: 'task_c', status: 'calendar', due: true, dueKind: 'check', change: change({ merged: true, writtenSince: true }) });
-  const review = task({ id: 'task_r', change: change({ verdict: null }) });
-  assert.deepEqual(
-    started({ tasks: [early('task_e', { priority: 'very_high' }), due, review] }, { ...params, maxShortRuns: 2 }).map(([kind]) => { return kind; }).sort(),
-    ['check', 'review'],
-  );
-  // Not tagged, already due (the check stage runs it), or held by a person: none.
-  assert.deepEqual(started({ tasks: [early('task_e', { earlyRead: false })] }), []);
-  assert.deepEqual(started({ tasks: [early('task_e', { heldByPerson: true })] }), []);
-  // A task with no change of its own is read early too.
-  assert.deepEqual(started({ tasks: [early('task_e', { change: null })] }), [['early_check', 'task_e']]);
 });

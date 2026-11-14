@@ -36,7 +36,7 @@ Filing is a finding you may report without asking (GTF-A3).
      - **Evidence** — the exact tool call and response, error code, or the rule text quoted. Flow task ids and URLs are fine.
      - **Expected** — what the skill/method/tool says should happen, with the link.
      - **Workaround** — what you did instead, or "blocked".
-     - **Proposal** — the smallest change to the rule or tool that removes it.
+     - **Proposal** — the first that removes it: deleting a rule, step or script; else changing one; else adding the smallest piece.
      - The agent run's address, then any attribution your environment requires on GitHub posts.
 4. **Link it back.** Add the issue URL, or the covering task's, as a `context` reference on the Flow task you were working, so the next reader of the graph sees it. A blocked task also names the issue in its wait `reason`.
 5. **Tell** the user in one line in your report: `friction filed: <issue url>`, or `friction added: <task url>`.
