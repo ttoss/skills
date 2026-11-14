@@ -116,6 +116,41 @@ test("the tick's own wait for what integrating leaves is told from a wait a pers
   assert.equal(snap.params.leavesByAgent, null);
 });
 
+test('the handoff\'s wait on its gates is an undated external wait on nobody, and only that', () => {
+  const waiting = (...waits) => { return { status: 'waiting', readiness: { blocked_by: waits.map((w) => { return { via: 'wait', kind: 'external', on: null, until: null, reason: 'CI and review', ...w }; }) } }; };
+  const snap = build({
+    ...base,
+    slices: [
+      row('t_gates', waiting({})),
+      row('t_dated', waiting({ until: '2026-11-20T12:00:00Z' })),
+      row('t_person', waiting({ on: 'user_x' })),
+      row('t_scheduled', { ...waiting({ kind: 'scheduled', until: '2026-11-20T12:00:00Z' }), status: 'calendar' }),
+      row('t_active', { ...waiting({}), status: 'active' }),
+    ],
+  });
+  const by = Object.fromEntries(snap.tasks.map((t) => { return [t.id, t.onGates]; }));
+  assert.deepEqual(by, { t_gates: true, t_dated: false, t_person: false, t_scheduled: false, t_active: false });
+});
+
+test('a flow-early-read check before its date is read early, at most once a day; on its date it is a check like any other', () => {
+  const day = 24 * 3600 * 1000;
+  const at = (ms) => { return new Date(Date.parse(now) + ms).toISOString(); };
+  const calendar = (id, over = {}) => {
+    return row(id, { status: 'calendar', tags: ['flow-early-read'], readiness: { blocked_by: [{ via: 'wait', kind: 'scheduled', on: null, until: at(10 * day), reason: 'Level 2 check' }] }, review_due_at: at(-day), ...over });
+  };
+  const snap = build({
+    ...base,
+    earlyRows: [
+      calendar('t_early'),
+      calendar('t_read_today', { review_due_at: at(7 * day - 3600 * 1000) }),
+      calendar('t_untagged', { tags: [] }),
+      calendar('t_date_came', { readiness: { blocked_by: [] } }),
+    ],
+  });
+  const by = Object.fromEntries(snap.tasks.map((t) => { return [t.id, t.earlyRead]; }));
+  assert.deepEqual(by, { t_early: true, t_read_today: false, t_untagged: false, t_date_came: false });
+});
+
 test('rounds are the closed child runs that pushed to one of the task’s changes after it was opened, each run once', () => {
   const change = { url: 'https://gh/pr/5', createdAt: '2026-11-02T10:00:00Z' };
   const other = { url: 'https://gh/pr/6', createdAt: '2026-11-02T13:30:00Z' };
@@ -204,7 +239,8 @@ test('every task whose change is out is read, past the slices’ limit; a row Fl
   // The slice is full and holds neither: only the ref_role read finds them.
   const all = async (path, query, field) => {
     asked.push([path, query, field]);
-    return [waiting('t_pr'), waiting('t_retracted')];
+    // The early-read listing finds nothing here.
+    return query.tag ? [] : [waiting('t_pr'), waiting('t_retracted')];
   };
   const snap = await run({ client: { get, all }, project: 'proj_x', now });
   const listing = asked.find(([path]) => { return path === '/tasks'; });
