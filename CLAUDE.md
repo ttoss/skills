@@ -1,5 +1,9 @@
 # CLAUDE.md
 
+## Remove, then change, then add
+
+A fix or an improvement stops at the first step that works, and the pull request says which one did and why the earlier ones did not: remove a rule, step, routine or script; else change one; else add what is missing.
+
 ## A skill change is checked against the Agentic Workflow
 
 The skills here carry out the ttoss [Agentic Workflow](https://ttoss.dev/docs/engineering/workflow), whose pages live in [ttoss/ttoss](https://github.com/ttoss/ttoss) under `docs/website/docs/engineering/workflow/`. Every change to a skill is checked against those pages in the same piece of work, never left for later:

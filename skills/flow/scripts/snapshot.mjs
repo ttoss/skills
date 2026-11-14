@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { clientFromEnv, mapLimit, parseFlags } from './flow-api.mjs';
 import { ghApi, parseChangeUrl, readChange, readChangeState, readDefault, unreadable } from './host.mjs';
 import { load as loadParams } from './params.mjs';
-import { BRIEF_READY, EARLY_READ, SENT_BACK_CHECK, SENT_BACK_ROUND } from './plan.mjs';
+import { BRIEF_READY, SENT_BACK_CHECK, SENT_BACK_ROUND } from './plan.mjs';
 
 // The tick's snapshot (flow/SKILL.md section 1), in plan.mjs's schema, read
 // from Flow with the project's API key: the candidates and their rank, the
@@ -126,21 +126,7 @@ const sentBackOf = (tags) => {
 };
 
 /** The snapshot from what was read, as a pure function. */
-const DAY = 24 * 3600 * 1000;
-
-// A `flow-early-read` check still ahead of its date, read early at most once a
-// day: the early read confirms the task when the signal holds, and a confirm
-// sets `review_due_at` a week out, so one due within six days was read today.
-const earlyReadOf = ({ row, waits, due, nowMs }) => {
-  if (row.status !== 'calendar' || due || !(row.tags || []).includes(EARLY_READ)) {
-    return false;
-  }
-  const ahead = waits.some((w) => { return w.kind === 'scheduled' && w.until && Date.parse(w.until) > nowMs; });
-  const readToday = row.review_due_at && Date.parse(row.review_due_at) > nowMs + 6 * DAY;
-  return ahead && !readToday;
-};
-
-export const build = ({ now, candidates, slices, held = [], earlyRows = [], dueIds, children, mine, childTasks, implementsOf, handoffs = {}, references = {}, projectRepos = null, repairRows = [], focusIds = null, extra = {} }) => {
+export const build = ({ now, candidates, slices, held = [], dueIds, children, mine, childTasks, implementsOf, handoffs = {}, references = {}, projectRepos = null, repairRows = [], focusIds = null, extra = {} }) => {
   const focus = focusOf(extra.focus ?? extra.params?.focus);
   // What the focus resolves to: the tasks its reads answered (the union of
   // get-next upstream_of over each target), or any task carrying its tag.
@@ -161,7 +147,7 @@ export const build = ({ now, candidates, slices, held = [], earlyRows = [], dueI
   // A task some `blocks` edge holds is in it too, read first so a slice's
   // row of the same task wins: the planner reports one held only by sources
   // whose change integrated.
-  for (const row of [...earlyRows, ...held, ...candidates, ...slices, ...repairRows.filter((r) => { return repairOf.has(r.id); })]) {
+  for (const row of [...held, ...candidates, ...slices, ...repairRows.filter((r) => { return repairOf.has(r.id); })]) {
     rows.set(row.id, row);
   }
   const tasks = [...rows.values()].map((row) => {
@@ -210,10 +196,6 @@ export const build = ({ now, candidates, slices, held = [], earlyRows = [], dueI
       released: own.released ?? (tags.includes(SENT_BACK_ROUND) ? false : null),
       check: handoff?.check ?? null,
       leavesWait: own.leavesWait ?? waits.some((w) => { return Boolean(w.on) && LEAVES_WAIT.test(w.reason || ''); }),
-      // The handoff's wait on its gates (GTF: `external`, no `on`), undated:
-      // it never comes due, so a write after the merge must not freeze it.
-      earlyRead: own.earlyRead ?? earlyReadOf({ row, waits, due, nowMs }),
-      onGates: own.onGates ?? (row.status === 'waiting' && waits.length > 0 && waits.every((w) => { return w.kind === 'external' && !w.on && !w.until; })),
       rounds: own.rounds ?? 0,
       repairs: own.repairs ?? repairOf.get(row.id) ?? null,
       repos: own.repos ?? (references[row.id] ? reposOf({ references: references[row.id], projectRepos }) : null),
@@ -303,7 +285,7 @@ export const run = async ({ client, project, now = new Date().toISOString(), ext
     return { tasks: [...seen.values()] };
   };
   // Every read at once: an empty slice costs less than waiting on `counts`.
-  const [next, waiting, dateCame, holdCleared, held, implemented, children, mine, running, early] = await Promise.all([
+  const [next, waiting, dateCame, holdCleared, held, implemented, children, mine, running] = await Promise.all([
     candidatesOf(),
     slice('waiting'), slice('date_came'), slice('hold_cleared'),
     // Every task a `blocks` edge holds, whatever its status: its row already
@@ -317,8 +299,6 @@ export const run = async ({ client, project, now = new Date().toISOString(), ext
     // Every running run, whoever started it: a reviewer outside the tick
     // that recorded its run holds the task as surely as a child does.
     repos?.length ? get('/agent-runs', { project, status: 'running', limit: 100 }) : { runs: [] },
-    // The checks a spare short slot may read before their date.
-    all('/tasks', { project, status: ['calendar'], tag: [EARLY_READ], limit: 100 }, 'tasks'),
   ]);
   progress(`flow: ${implemented.length} tasks with a change out`);
   const sliced = [...waiting.tasks, ...dateCame.tasks, ...holdCleared.tasks];
@@ -491,7 +471,6 @@ export const run = async ({ client, project, now = new Date().toISOString(), ext
     candidates: next.tasks || [],
     slices,
     held: held.tasks || [],
-    earlyRows: early,
     dueIds: new Set([...dateCame.tasks, ...holdCleared.tasks].map((t) => { return t.id; })),
     children: children.runs,
     mine: new Set(mine.runs.map((r) => { return r.id; })),
