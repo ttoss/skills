@@ -400,9 +400,23 @@ test('every candidate read asks for unassigned work alone, with or without a foc
     };
     await run({ client: { get, all: async () => { return []; } }, project: 'proj_x', now, extra: focus ? { focus } : {} });
     const candidates = asked.filter((q) => { return q.limit === 10; });
-    assert.equal(candidates.length, Array.isArray(focus) ? 2 : 1);
+    assert.equal(candidates.length, focus === 'tag:billing' ? 1 : 2);
     assert.ok(candidates.every((q) => { return q.assignee === 'none'; }), `focus ${JSON.stringify(focus)}`);
   }
+});
+
+test('unfocused, a brief judged ready is a candidate ranked first even when it sorts out of the ranked window', async () => {
+  const get = async (path, query = {}) => {
+    if (path === '/next' && query.limit === 10) {
+      return query.tag === 'flow-brief-ready'
+        ? { tasks: [row('t_ready', { tags: ['flow-brief-ready'] }), row('t_both', { tags: ['flow-brief-ready'] })] }
+        : { tasks: [row('t_new'), row('t_both', { tags: ['flow-brief-ready'] })] };
+    }
+    return path === '/next' ? { tasks: [] } : { runs: [] };
+  };
+  const snap = await run({ client: { get, all: async () => { return []; } }, project: 'proj_x', now });
+  const by = Object.fromEntries(snap.tasks.map((t) => { return [t.id, t]; }));
+  assert.deepEqual(['t_ready', 't_both', 't_new'].map((id) => { return [by[id].rank, by[id].brief]; }), [[0, 'ready'], [1, 'ready'], [2, null]]);
 });
 
 // The invariant: a judge's answer lives on the task, so the next plan built
