@@ -269,13 +269,13 @@ export const run = async ({ client, project, now = new Date().toISOString(), ext
     return get('/next', { project, ...query, assignee: 'none', limit: 10 });
   };
   const candidatesOf = async () => {
-    if (!focus) {
-      return ready();
-    }
-    if (focus.tag) {
+    if (focus?.tag) {
       return ready({ tag: focus.tag });
     }
-    const answers = await Promise.all(focus.tasks.map((id) => { return ready({ upstream_of: id }); }));
+    // Unfocused, the briefs judged ready are read on their own and rank first
+    // within their tier: tagging one refreshes its `review_due_at`, which
+    // would sort it out of the ranked window and leave it never started.
+    const answers = await Promise.all(focus ? focus.tasks.map((id) => { return ready({ upstream_of: id }); }) : [ready({ tag: BRIEF_READY }), ready()]);
     const seen = new Map();
     for (const row of answers.flatMap((a) => { return a.tasks || []; })) {
       if (!seen.has(row.id)) {
